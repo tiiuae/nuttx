@@ -1,5 +1,3 @@
-.. _chardev:
-
 ========================
 Character Device Drivers
 ========================
@@ -17,12 +15,12 @@ Character device drivers have these properties:
 -  ``int register_driver(const char *path, const struct file_operations *fops, mode_t mode, void *priv);``.
    Each character driver registers itself by calling
    ``register_driver()``, passing it the ``path`` where it will
-   appear in the :ref:`pseudo file system <file_system_overview>` and it's
+   appear in the `pseudo-file-system <#NxFileSystem>`__ and it's
    initialized instance of ``struct file_operations``.
 
 -  **User Access**. After it has been registered, the character
-   driver can be accessed by user code using the standard driver
-   operations including
+   driver can be accessed by user code using the standard `driver
+   operations <NuttXUserGuide.html#driveroperations>`__ including
    ``open()``, ``close()``, ``read()``, ``write()``, etc.
 
 -  **Specialized Character Drivers**. Within the common character

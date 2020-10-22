@@ -26,7 +26,8 @@ Mount Interface
 
 A low-level, C-callable interface is provided to mount a file system.
 That interface is called ``mount()`` and is mentioned in the
-porting guide and is prototyped in the header file ``include/sys/mount.h``:
+```porting guide`` <NuttXPortingGuide.html#NxFileSystem>`__ and is
+prototyped in the header file ``include/sys/mount.h``:
 
 .. c:function:: int mount(const char *source, const char *target, const char *filesystemtype, unsigned long mountflags, const void *data)
 
@@ -107,7 +108,7 @@ is defined as:
 NFS Mount Command
 =================
 
-The :ref:`NuttShell (NSH) <nsh>` also supports a command called
+The `NuttShell (NSH) <NuttShell.html>`__ also supports a command called
 ``nfsmount`` that can be used to mount a remote file system via the NSH
 command line.
 

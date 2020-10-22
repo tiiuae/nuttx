@@ -8,18 +8,16 @@ Configuration Settings
 
 The availability of the above commands depends upon features that may or
 may not be enabled in the NuttX configuration file. The following
-:ref:`cmdtable <cmddependencies>` indicates the dependency of each command on
+`table <#cmddependencies>`__ indicates the dependency of each command on
 NuttX configuration settings. General configuration settings are
-discussed in the NuttX Porting Guide.
+discussed in the `NuttX Porting Guide. <NuttXPortingGuide.html>`__
 Configuration settings specific to NSH as discussed at the
-:ref:`cmdbottom <nshconfiguration>` of this document.
+`bottom <#nshconfiguration>`__ of this document.
 
 Note that in addition to general NuttX configuration settings, each NSH
 command can be individually disabled via the settings in the rightmost
 column. All of these settings make the configuration of NSH potentially
 complex but also allow it to squeeze into very small memory footprints.
-
-.. _cmddependencies:
 
 Command Dependencies on Configuration Settings
 ==============================================
@@ -28,125 +26,125 @@ Command Dependencies on Configuration Settings
 Command                Depends on Configuration                    Can Be Disabled with
 ====================== =========================================== ======================
 ``[``                  ! ``CONFIG_NSH_DISABLESCRIPT``              ``CONFIG_NSH_DISABLE_TEST``
-:ref:`cmdaddroute`     ``CONFIG_NET`` && ``CONFIG_NET_ROUTE``      ``CONFIG_NSH_DISABLE_ADDROUTE``
-:ref:`cmdarp`          ``CONFIG_NET`` && ``CONFIG_NET_ARP``        ``CONFIG_NSH_DISABLE_ARP``
-:ref:`cmdbase64dec`    ``CONFIG_NETUTILS_CODECS`` &&               ``CONFIG_NSH_DISABLE_BASE64DEC``
+``addroute``           ``CONFIG_NET`` && ``CONFIG_NET_ROUTE``      ``CONFIG_NSH_DISABLE_ADDROUTE``
+``arp``                ``CONFIG_NET`` && ``CONFIG_NET_ARP``        ``CONFIG_NSH_DISABLE_ARP``
+``base64dec``          ``CONFIG_NETUTILS_CODECS`` &&               ``CONFIG_NSH_DISABLE_BASE64DEC``
                        ``CONFIG_CODECS_BASE64``
-:ref:`cmdbase64enc`    ``CONFIG_NETUTILS_CODECS`` &&               ``CONFIG_NSH_DISABLE_BASE64ENC``
+``base64enc``          ``CONFIG_NETUTILS_CODECS`` &&               ``CONFIG_NSH_DISABLE_BASE64ENC``
                        ``CONFIG_CODECS_BASE64``
-:ref:`cmdbasename`     .                                           ``CONFIG_NSH_DISABLE_BASENAME``
-:ref:`cmdbreak`        ! ``CONFIG_NSH_DISABLESCRIPT`` &&           .
+``basename``           .                                           ``CONFIG_NSH_DISABLE_BASENAME``
+``break``              ! ``CONFIG_NSH_DISABLESCRIPT`` &&           .
                        ! ``CONFIG_NSH_DISABLE_LOOPS``  
-:ref:`cmdcat`          ``CONFIG_NSH_DISABLE_CAT``                  .
-:ref:`cmdcd`           ! ``CONFIG_DISABLE_ENVIRON``                ``CONFIG_NSH_DISABLE_CD``
-:ref:`cmdcmp`          ``CONFIG_NSH_DISABLE_CMP``                  .
-:ref:`cmdcp`           ``CONFIG_NSH_DISABLE_CP``                   .
-:ref:`cmddate`         ``CONFIG_NSH_DISABLE_DATE``                 .
-:ref:`cmddd`           ``CONFIG_NSH_DISABLE_DD``                   .
-:ref:`cmddelroute`     ``CONFIG_NET`` && ``CONFIG_NET_ROUTE``      ``CONFIG_NSH_DISABLE_DELROUTE``
-:ref:`cmddf`           ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_DF``
-:ref:`cmddirname`      ``CONFIG_NSH_DISABLE_DIRNAME``              .
-:ref:`cmddmesg`        ``CONFIG_RAMLOG_SYSLOG``                    ``CONFIG_NSH_DISABLE_DMESG``
-:ref:`cmdecho`         ``CONFIG_NSH_DISABLE_ECHO``                 .
-:ref:`cmdenv`          ``CONFIG_FS_PROCFS`` &&                     ``CONFIG_NSH_DISABLE_ENV``
+``cat``                ``CONFIG_NSH_DISABLE_CAT``                  .
+``cd``                 ! ``CONFIG_DISABLE_ENVIRON``                ``CONFIG_NSH_DISABLE_CD``
+``cmp``                ``CONFIG_NSH_DISABLE_CMP``                  .
+``cp``                 ``CONFIG_NSH_DISABLE_CP``                   .
+``date``               ``CONFIG_NSH_DISABLE_DATE``                 .
+``dd``                 ``CONFIG_NSH_DISABLE_DD``                   .
+``delroute``           ``CONFIG_NET`` && ``CONFIG_NET_ROUTE``      ``CONFIG_NSH_DISABLE_DELROUTE``
+``df``                 ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_DF``
+``dirname``            ``CONFIG_NSH_DISABLE_DIRNAME``              .
+``dmesg``              ``CONFIG_RAMLOG_SYSLOG``                    ``CONFIG_NSH_DISABLE_DMESG``
+``echo``               ``CONFIG_NSH_DISABLE_ECHO``                 .
+``env``                ``CONFIG_FS_PROCFS`` &&                     ``CONFIG_NSH_DISABLE_ENV``
                        ! ``CONFIG_DISABLE_ENVIRON`` && |br|
                        ! ``CONFIG_PROCFS_EXCLUDE_ENVIRON``
-:ref:`cmdexec`         ``CONFIG_NSH_DISABLE_EXEC``                 .
-:ref:`cmdexit`         ``CONFIG_NSH_DISABLE_EXIT``                 .
-:ref:`cmdexport`       ``CONFIG_NSH_VARS`` &&
+``exec``               ``CONFIG_NSH_DISABLE_EXEC``                 .
+``exit``               ``CONFIG_NSH_DISABLE_EXIT``                 .
+``export``             ``CONFIG_NSH_VARS`` &&
                        ! ``CONFIG_DISABLE_ENVIRON``                ``CONFIG_NSH_DISABLE_EXPORT``
-:ref:`cmdfree`         ``CONFIG_NSH_DISABLE_FREE``                 .
-:ref:`cmdget`          ``CONFIG_NET`` && ``CONFIG_NET_UDP`` &&      ``CONFIG_NSH_DISABLE_GET``
+``free``               ``CONFIG_NSH_DISABLE_FREE``                 .
+``get``                ``CONFIG_NET`` && ``CONFIG_NET_UDP`` &&      ``CONFIG_NSH_DISABLE_GET``
                        *MTU* >= 58\ [#1]_
-:ref:`cmdhelp`  [#3]_  ``CONFIG_NSH_DISABLE_HELP``                 .
-:ref:`cmdhexdump`      ``CONFIG_NSH_DISABLE_HEXDUMP``              .
-:ref:`cmdifconfig`     ``CONFIG_NET`` && ``CONFIG_FS_PROCFS`` &&    ``CONFIG_NSH_DISABLE_IFCONFIG``
+``help`` [#3]_         ``CONFIG_NSH_DISABLE_HELP``                 .
+``hexdump``            ``CONFIG_NSH_DISABLE_HEXDUMP``              .
+``ifconfig``           ``CONFIG_NET`` && ``CONFIG_FS_PROCFS`` &&    ``CONFIG_NSH_DISABLE_IFCONFIG``
                        ! ``CONFIG_FS_PROCFS_EXCLUDE_NET``
-:ref:`cmdifdown`       ``CONFIG_NET`` && ``CONFIG_FS_PROCFS`` &&   ``CONFIG_NSH_DISABLE_IFUPDOWN``
+``ifdown``             ``CONFIG_NET`` && ``CONFIG_FS_PROCFS`` &&   ``CONFIG_NSH_DISABLE_IFUPDOWN``
                        ! ``CONFIG_FS_PROCFS_EXCLUDE_NET``
-:ref:`cmdifup`         ``CONFIG_NET`` && ``CONFIG_FS_PROCFS`` &&
+``ifup``               ``CONFIG_NET`` && ``CONFIG_FS_PROCFS`` &&
                        ! ``CONFIG_FS_PROCFS_EXCLUDE_NET``          ``CONFIG_NSH_DISABLE_IFUPDOWN``
-:ref:`cmdinsmod`       ``CONFIG_MODULE``                           ``CONFIG_NSH_DISABLE_MODCMDS``
-:ref:`cmdirqinfo`      ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          .
+``insmod``             ``CONFIG_MODULE``                           ``CONFIG_NSH_DISABLE_MODCMDS``
+``irqinfo``            ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          .
                        ``CONFIG_FS_PROCFS`` && |br|
                        ``CONFIG_SCHED_IRQMONITOR``
-:ref:`cmdkill`         ``CONFIG_NSH_DISABLE_KILL``                 .
-:ref:`cmdlosetup`      ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_LOSETUP``
+``kill``               ``CONFIG_NSH_DISABLE_KILL``                 .
+``losetup``            ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_LOSETUP``
                        ``CONFIG_DEV_LOOP``
-:ref:`cmdln`           ``CONFIG_PSEUDOFS_SOFTLINKS``               ``CONFIG_NSH_DISABLE_LN``
-:ref:`cmdls`           ``CONFIG_NSH_DISABLE_LS``                   .
-:ref:`cmdlsmod`        ``CONFIG_MODULE`` && ``CONFIG_FS_PROCFS``   ``CONFIG_NSH_DISABLE_MODCMDS``
+``ln``                 ``CONFIG_PSEUDOFS_SOFTLINKS``               ``CONFIG_NSH_DISABLE_LN``
+``ls``                 ``CONFIG_NSH_DISABLE_LS``                   .
+``lsmod``              ``CONFIG_MODULE`` && ``CONFIG_FS_PROCFS``   ``CONFIG_NSH_DISABLE_MODCMDS``
                        && |br|
                        ! ``CONFIG_FS_PROCFS_EXCLUDE_MODULE``
-:ref:`cmdmd5`          ``CONFIG_NETUTILS_CODECS`` &&               ``CONFIG_NSH_DISABLE_MD5``
+``md5``                ``CONFIG_NETUTILS_CODECS`` &&               ``CONFIG_NSH_DISABLE_MD5``
                        ``CONFIG_CODECS_HASH_MD5``
-:ref:`cmdmx`           .                                           ``CONFIG_NSH_DISABLE_MB``, |br|
+``mb,mh,mw``           .                                           ``CONFIG_NSH_DISABLE_MB``, |br|
                                                                    ``CONFIG_NSH_DISABLE_MH``, |br|
                                                                    ``CONFIG_NSH_DISABLE_MW``
-:ref:`cmdmkdir`        (! ``CONFIG_DISABLE_MOUNTPOINT`` \|\|       ``CONFIG_NSH_DISABLE_MKDIR``
+``mkdir``              (! ``CONFIG_DISABLE_MOUNTPOINT`` \|\|       ``CONFIG_NSH_DISABLE_MKDIR``
                        ! ``CONFIG_DISABLE_PSEUDOFS_OPERATIONS``)
-:ref:`cmdmkfatfs`      ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_MKFATFS``
+``mkfatfs``            ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_MKFATFS``
                        ``CONFIG_FSUTILS_MKFATFS``
-:ref:`cmdmkfifo`       ``CONFIG_PIPES`` &&                         ``CONFIG_NSH_DISABLE_MKFIFO``
+``mkfifo``             ``CONFIG_PIPES`` &&                         ``CONFIG_NSH_DISABLE_MKFIFO``
                        ``CONFIG_DEV_FIFO_SIZE`` > 0
-:ref:`cmdmkrd`         ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_MKRD``
-:ref:`cmdmount`        ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_MOUNT``
-:ref:`cmdmv`           ! ``CONFIG_DISABLE_MOUNTPOINT`` \|\|        ``CONFIG_NSH_DISABLE_MV``
+``mkrd``               ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_MKRD``
+``mount``              ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_MOUNT``
+``mv``                 ! ``CONFIG_DISABLE_MOUNTPOINT`` \|\|        ``CONFIG_NSH_DISABLE_MV``
                        ! ``CONFIG_DISABLE_PSEUDOFS_OPERATIONS``
-:ref:`cmdnfsmount`     ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_NFSMOUNT``
+``nfsmount``           ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_NFSMOUNT``
                        ``CONFIG_NET`` && ``CONFIG_NFS``
-:ref:`cmdnslookup`     ``CONFIG_LIBC_NETDB`` &&                    ``CONFIG_NSH_DISABLE_NSLOOKUP``
+``nslookup``           ``CONFIG_LIBC_NETDB`` &&                    ``CONFIG_NSH_DISABLE_NSLOOKUP``
                        ``CONFIG_NETDB_DNSCLIENT``
-:ref:`cmdpasswd`       ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_PASSWD``
+``passwd``             ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_PASSWD``
                        ``CONFIG_NSH_LOGIN_PASSWD``
-:ref:`cmdpmconfig`     ``CONFIG_PM``                               ``CONFIG_NSH_DISABLE_PMCONFIG``
-:ref:`cmdpoweroff`     ``CONFIG_BOARDCTL_POWEROFF``                ``CONFIG_NSH_DISABLE_POWEROFF``
-:ref:`cmdps`           ``CONFIG_FS_PROCFS`` &&                     ``CONFIG_NSH_DISABLE_PS``
+``pmconfig``           ``CONFIG_PM``                               ``CONFIG_NSH_DISABLE_PMCONFIG``
+``poweroff``           ``CONFIG_BOARDCTL_POWEROFF``                ``CONFIG_NSH_DISABLE_POWEROFF``
+``ps``                 ``CONFIG_FS_PROCFS`` &&                     ``CONFIG_NSH_DISABLE_PS``
                        ! ``CONFIG_FS_PROCFS_EXCLUDE_PROC``
-:ref:`cmdput`          ``CONFIG_NET`` && ``CONFIG_NET_UDP`` &&     ``CONFIG_NSH_DISABLE_PUT``
+``put``                ``CONFIG_NET`` && ``CONFIG_NET_UDP`` &&     ``CONFIG_NSH_DISABLE_PUT``
                        ``MTU >= 558`` [#1]_, [#2]_
-:ref:`cmdpwd`          !  ``CONFIG_DISABLE_ENVIRON``               ``CONFIG_NSH_DISABLE_PWD``
-:ref:`cmdreadlink`     ``CONFIG_PSEUDOFS_SOFTLINKS``               ``CONFIG_NSH_DISABLE_READLINK``
-:ref:`cmdreboot`       ``CONFIG_BOARD_RESET``                      ``CONFIG_NSH_DISABLE_REBOOT``
-:ref:`cmdrm`           ! ``CONFIG_DISABLE_MOUNTPOINT`` \|\|        ``CONFIG_NSH_DISABLE_RM``
+``pwd``                !  ``CONFIG_DISABLE_ENVIRON``               ``CONFIG_NSH_DISABLE_PWD``
+``readlink``           ``CONFIG_PSEUDOFS_SOFTLINKS``               ``CONFIG_NSH_DISABLE_READLINK``
+``reboot``             ``CONFIG_BOARD_RESET``                      ``CONFIG_NSH_DISABLE_REBOOT``
+``rm``                 ! ``CONFIG_DISABLE_MOUNTPOINT`` \|\|        ``CONFIG_NSH_DISABLE_RM``
                        ! ``CONFIG_DISABLE_PSEUDOFS_OPERATIONS``
-:ref:`cmdrmdir`        ! ``CONFIG_DISABLE_MOUNTPOINT`` \|\
+``rmdir``              ! ``CONFIG_DISABLE_MOUNTPOINT`` \|\
                        ! ``CONFIG_DISABLE_PSEUDOFS_OPERATIONS``    ``CONFIG_NSH_DISABLE_RMDIR``
-:ref:`cmdrmmod`        ``CONFIG_MODULE``                           ``CONFIG_NSH_DISABLE_MODCMDS``
-:ref:`cmdroute`        ``CONFIG_FS_PROCFS`` &&                     ``CONFIG_NSH_DISABLE_ROUTE``
+``rmmod``              ``CONFIG_MODULE``                           ``CONFIG_NSH_DISABLE_MODCMDS``
+``route``              ``CONFIG_FS_PROCFS`` &&                     ``CONFIG_NSH_DISABLE_ROUTE``
                        ``CONFIG_FS_PROCFS_EXCLUDE_NET`` && |br|
                        ! ``CONFIG_FS_PROCFS_EXCLUDE_ROUTE`` &&
                        ``CONFIG_NET_ROUTE`` && |br|
                        ! ``CONFIG_NSH_DISABLE_ROUTE`` && |br|
                        (``CONFIG_NET_IPv4`` \|\
                        ``CONFIG_NET_IPv6``)
-:ref:`cmdrptun`        ``CONFIG_RPTUN``                            ``CONFIG_NSH_DISABLE_RPTUN``
-:ref:`cmdset`          ``CONFIG_NSH_VARS`` \|\|                    ``CONFIG_NSH_DISABLE_SET``
+``rptun``              ``CONFIG_RPTUN``                            ``CONFIG_NSH_DISABLE_RPTUN``
+``set``                ``CONFIG_NSH_VARS`` \|\|                    ``CONFIG_NSH_DISABLE_SET``
                        ! ``CONFIG_DISABLE_ENVIRON``
-:ref:`cmdshutdown`     ``CONFIG_BOARDCTL_POWEROFF`` \|\|           ``CONFIG_NSH_DISABLE_SHUTDOWN``
+``shutdown``           ``CONFIG_BOARDCTL_POWEROFF`` \|\|           ``CONFIG_NSH_DISABLE_SHUTDOWN``
                        ``CONFIG_BOARD_RESET``
-:ref:`cmdsleep`        .                                           ``CONFIG_NSH_DISABLE_SLEEP``
-``cmdsource``          ``CONFIG_FILE_STREAM`` &&                   ``CONFIG_NSH_DISABLE_SOURCE``
+``sleep``              .                                           ``CONFIG_NSH_DISABLE_SLEEP``
+``source``             ``CONFIG_FILE_STREAM`` &&                   ``CONFIG_NSH_DISABLE_SOURCE``
                        ! ``CONFIG_NSH_DISABLESCRIPT``
-:ref:`cmdtelnetd`      ``CONFIG_NSH_TELNET``                       ``CONFIG_NSH_DISABLE_TELNETD``
-:ref:`cmdtest`         !  ``CONFIG_NSH_DISABLESCRIPT``             ``CONFIG_NSH_DISABLE_TEST``
-:ref:`cmdtime`         .                                           ``CONFIG_NSH_DISABLE_TIME``
-:ref:`cmdtruncate`     ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_TRUNCATE``
-:ref:`cmdumount`       !  ``CONFIG_DISABLE_MOUNTPOINT``            ``CONFIG_NSH_DISABLE_UMOUNT``
-:ref:`cmduname`        .                                           ``CONFIG_NSH_DISABLE_UNAME``
-:ref:`cmdunset`        ``CONFIG_NSH_VARS`` \|\|                    ``CONFIG_NSH_DISABLE_UNSET``
+``telnetd``            ``CONFIG_NSH_TELNET``                       ``CONFIG_NSH_DISABLE_TELNETD``
+``test``               !  ``CONFIG_NSH_DISABLESCRIPT``             ``CONFIG_NSH_DISABLE_TEST``
+``time``               .                                           ``CONFIG_NSH_DISABLE_TIME``
+``truncate``           ! ``CONFIG_DISABLE_MOUNTPOINT``             ``CONFIG_NSH_DISABLE_TRUNCATE``
+``umount``             !  ``CONFIG_DISABLE_MOUNTPOINT``            ``CONFIG_NSH_DISABLE_UMOUNT``
+``uname``              .                                           ``CONFIG_NSH_DISABLE_UNAME``
+``unset``              ``CONFIG_NSH_VARS`` \|\|                    ``CONFIG_NSH_DISABLE_UNSET``
                        !  ``CONFIG_DISABLE_ENVIRON``
-:ref:`cmdurldecode`    ! ``CONFIG_NETUTILS_CODECS`` &&             ``CONFIG_NSH_DISABLE_URLDECODE``
+``urldecode``          ! ``CONFIG_NETUTILS_CODECS`` &&             ``CONFIG_NSH_DISABLE_URLDECODE``
                        ``CONFIG_CODECS_URLCODE``
-:ref:`cmdurlencode`    ! ``CONFIG_NETUTILS_CODECS`` &&             ``CONFIG_NSH_DISABLE_URLENCODE``
+``urlencode``          ! ``CONFIG_NETUTILS_CODECS`` &&             ``CONFIG_NSH_DISABLE_URLENCODE``
                        ``CONFIG_CODECS_URLCODE``
-:ref:`cmduseradd`      ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_USERADD``
+``useradd``            ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_USERADD``
                        ``CONFIG_NSH_LOGIN_PASSWD``
-:ref:`cmduserdel`      ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_USERDEL``
+``userdel``            ! ``CONFIG_DISABLE_MOUNTPOINT`` &&          ``CONFIG_NSH_DISABLE_USERDEL``
                        ``CONFIG_NSH_LOGIN_PASSWD``
-:ref:`cmdusleep`       .                                           ``CONFIG_NSH_DISABLE_USLEEP``
-:ref:`cmdwget`         ``CONFIG_NET`` && ``CONFIG_NET_TCP``        ``CONFIG_NSH_DISABLE_WGET``
-:ref:`cmdxd`           .                                           ``CONFIG_NSH_DISABLE_XD``
+``usleep``             .                                           ``CONFIG_NSH_DISABLE_USLEEP``
+``wget``               ``CONFIG_NET`` && ``CONFIG_NET_TCP``        ``CONFIG_NSH_DISABLE_WGET``
+``xd``                 .                                           ``CONFIG_NSH_DISABLE_XD``
 ====================== =========================================== ======================
 
 .. [#1] Because of hardware padding, the actual required packet size may be larger
@@ -166,8 +164,6 @@ Command        Depends on Configuration
 ``ping``       ``CONFIG_NET`` && ``CONFIG_NET_ICMP`` && ``CONFIG_NET_ICMP_SOCKET`` && ``CONFIG_SYSTEM_PING``
 ``ping6``      ``CONFIG_NET`` && ``CONFIG_NET_ICMPv6`` && ``CONFIG_NET_ICMPv6_SOCKET`` && ``CONFIG_SYSTEM_PING6``
 =============  ==================================================================================================
-
-.. _nshconfiguration:
 
 NSH-Specific Configuration Settings
 ===================================
@@ -253,7 +249,7 @@ Configuration                        Description
                                      command works very must like the set command except that is
                                      operates on environment variables. When CONFIG_NSH_VARS
                                      is enabled, there are changes in the behavior of certain commands.
-                                     See following :ref:`cmdtable <nsh_vars_table>`.
+                                     See following :ref:`table <nsh_vars_table>`.
 
  ``CONFIG_NSH_QUOTE``                Enables back-slash quoting of certain characters within the
                                      command. This option is useful for the case where an NSH script

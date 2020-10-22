@@ -1,5 +1,3 @@
-.. _nxgraphics:
-
 =====================
 NX Graphics Subsystem
 =====================
@@ -137,7 +135,7 @@ than some utilities and types from NXGLIB.
 NX Widgets (``NxWidgets``)
 --------------------------
 
-:ref:`NxWidgets <nxwidgets>` is a higher level, C++, object-oriented
+`NxWidgets <NxWidgets.html>`__ is a higher level, C++, object-oriented
 library for object-oriented access to graphical "widgets." NxWidgets is
 provided as a separate library in the ``apps/`` repository NxWidgets is
 built on top of the core NuttX graphics subsystem, but is part of the

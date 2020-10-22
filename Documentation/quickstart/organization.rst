@@ -78,8 +78,8 @@ README.md file for information on how to build it.
 ``nuttx/arch``
 ==============
 
-Arch Subdirectory Structure
----------------------------
+Subdirectory Structure
+----------------------
 
 This directory contains several sub-directories, each containing
 architecture-specific logic. The task of porting NuttX to a new
@@ -91,8 +91,8 @@ directory (plus the board-specific configurations in the
 subdirectory, *<arch-name>* under ``arch/`` with the following
 characteristics:
 
-Arch Summary of Files
----------------------
+Summary of Files
+----------------
 
 -  ``include/``\ *<chip-name>*\ ``/`` This sub-directory contains
    chip-specific header files.
@@ -252,16 +252,16 @@ configurations plus the architecture-specific configurations in
 the ``arch/`` subdirectory complete define a customized port of
 NuttX.
 
-Boards Subdirectory Structure
------------------------------
+Subdirectory Structure
+----------------------
 
 The ``boards/`` directory contains board specific configuration
 files. Each board must provide a sub-directory <board-name> under
 ``boards/``\ *<arch-name>*\ ``/``>\ *<chip-name>*\ ``/`` with the
 following characteristics:
 
-Boards Summary of Files
------------------------
+Summary of Files
+----------------
 
 **Board Specific Logic**
 

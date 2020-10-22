@@ -1,11 +1,9 @@
-========
+********
 Commands
-========
-
-.. _cmdtest:
+********
 
 Evaluate Expression (test)
-**************************
+--------------------------
 
 **Command Syntax:**
 
@@ -40,10 +38,8 @@ the conditional command following the ``if`` in the
 
     numeric-binary = integer -eq integer | integer -ge integer | integer -gt integer | integer -le integer | integer -lt integer | integer -ne integer
 
-.. _cmdaddroute:
-
 Add a Routing Table Entry (addroute)
-************************************
+------------------------------------
 
 **Command Syntax:**
 
@@ -74,8 +70,6 @@ which is equivalent to
 
 The second form of the addroute command can be used to set the
 default gateway.
-
-.. _cmdarp:
 
 Access the ARP table (arp)
 **************************
@@ -108,8 +102,6 @@ Access the ARP table (arp)
   nsh> arp -a 10.0.0.1
   nsh: arp: no such ARP entry: 10.0.0.1
 
-.. _cmdbase64dec:
-
 Base64 Decode (base64dec)
 *************************
 
@@ -119,8 +111,6 @@ Base64 Decode (base64dec)
 
 **Synopsis**. *To be provided.*
 
-.. _cmdbase64enc:
-
 Base64 Encode (base64enc)
 *************************
 
@@ -129,8 +119,6 @@ Base64 Encode (base64enc)
   base64enc [-w] [-f] <string or filepath>
 
 **Synopsis**. *To be provided.*
-
-.. _cmdbasename:
 
 Extract Base File/Directory Name (basename)
 *******************************************
@@ -143,8 +131,6 @@ Extract Base File/Directory Name (basename)
 removing the preceding path segments and (optionally) removing any
 trailing ``<suffix>``.
 
-.. _cmdbreak:
-
 Terminate a Loop (break)
 ************************
 
@@ -153,14 +139,12 @@ Terminate a Loop (break)
   break
 
 **Synopsis**. The ``break`` command is only meaningful within the
-body of the a ``while`` or ``until`` loop,
+body of the a `while <#looping>`__ or `until <#looping>`__ loop,
 between the ``do`` and ``done`` tokens. Outside of a loop,
 ``break`` command does nothing. If the ``break`` command is
 executed within the body of a loop, the loop will immediately
 terminate and execution will continue with the next command
 immediately following the ``done`` token.
-
-.. _cmdcat:
 
 Concatenate Files (cat)
 ***********************
@@ -172,8 +156,6 @@ Concatenate Files (cat)
 **Synopsis**. This command copies and concatenates all of the
 files at ``<path>`` to the console (or to another file if the
 output is redirected).
-
-.. _cmdcd:
 
 Change Current Working Directory (cd)
 *************************************
@@ -198,8 +180,6 @@ Also sets the previous working directory environment variable
 ``cd ..`` 	        sets the current working directory to the parent directory.
 ==================  =====================================
 
-.. _cmdcmp:
-
 Compare Files (cmp)
 *******************
 
@@ -211,8 +191,6 @@ Compare Files (cmp)
 with the contents of the file at ``<path2>``. Returns an
 indication only if the files differ.
 
-.. _cmdcp:
-
 Copy Files (cp)
 ***************
 
@@ -223,8 +201,6 @@ Copy Files (cp)
 **Synopsis**. Copy of the contents of the file at
 ``<source-path>`` to the location in the file system indicated by
 ``<dest-path>``.
-
-.. _cmddate:
 
 Show or set the date and time (date)
 ************************************
@@ -239,8 +215,6 @@ Only one format is used both on display and when setting the
 date/time: ``MMM DD HH:MM:SS YYYY``. For example,
 
 24-hour time is used.
-
-.. _cmddd:
 
 Copy and Convert Files (dd)
 ***************************
@@ -283,8 +257,6 @@ bucket::
    brw-rw-rw-       0 ram0
   nsh> dd if=/dev/ram0 of=/dev/null
 
-.. _cmddelroute:
-
 Delete a Routing Table Entry (delroute)
 ***************************************
 
@@ -306,8 +278,6 @@ notation. In that case, the netmask need not be provided.
 which is equivalent to::
 
   nsh> delroute 11.0.0.0/24
-
-.. _cmddf:
 
 Show Volume Status (df)
 ***********************
@@ -334,8 +304,6 @@ configuration, then the ``df`` will also support an option ``-h``
 which may be used to show the volume information in *human
 readable* format.
 
-.. _cmddirname:
-
 Extract Path to a File/Directory (dirname)
 ******************************************
 
@@ -345,8 +313,6 @@ Extract Path to a File/Directory (dirname)
 
 **Synopsis**. Extract the path string leading up to the full
 ``<path>`` by removing the final directory or file name.
-
-.. _cmddmesg:
 
 Dump Buffered SYSLOG Output (dmesg)
 ***********************************
@@ -364,8 +330,6 @@ that in-memory, circular buffer to the NSH console output.
 ``dmesg`` has the side effect of clearing the buffered data so
 that entering ``dmesg`` again will show only newly buffered data.
 
-.. _cmdecho:
-
 Echo Strings and Variables (echo)
 *********************************
 
@@ -378,8 +342,6 @@ environment variables to console output (or to a file if the
 output is re-directed).
 
 The ``-n`` option suppresses the trailing newline character.
-
-.. _cmdenv:
 
 Show Environment Variables (env)
 ********************************
@@ -408,8 +370,6 @@ environment. Example::
 .. note::NSH local variables are *not* shown by the ``env``
   command.
 
-.. _cmdexec:
-
 Execute User Code (exec)
 ************************
 
@@ -420,8 +380,6 @@ Execute User Code (exec)
 **Synopsis**. Execute the user logic at address ``<hex-address>``.
 NSH will pause until the execution unless the user logic is
 executed in background via ``exec <hex-address> &``.
-
-.. _cmdexit:
 
 Exit NSH (exit)
 ***************
@@ -434,8 +392,6 @@ Exit NSH (exit)
 you have started some other tasks (perhaps using the ``exec``
 command) and you would like to have NSH out of the way. For the
 telnet front-end, ``exit`` terminates the telnet session.
-
-.. _cmdexport:
 
 Set an Environment Variable (export)
 ************************************
@@ -482,8 +438,6 @@ examples:
 The ``export`` command is not supported by NSH unless both
 ``CONFIG_NSH_VARS=y`` and ``CONFIG_DISABLE_ENVIRON``\ is not set.
 
-.. _cmdfree:
-
 Show Memory Manager Status (free)
 *********************************
 
@@ -508,8 +462,6 @@ free     This is the total size of memory occupied by free (not in use) chunks.
 largest  Size of the largest free (not in use) chunk.
 =======  ======================================
 
-.. _cmdget:
-
 Get File Via TFTP (get)
 ***********************
 
@@ -528,8 +480,6 @@ whose IP address is identified by ``<ip-address>``.
 ``-b``               Selects binary ("octet") transfer mode
 ===================  ============================================
 
-.. _cmdhelp:
-
 Show Usage Command Usage (help)
 *******************************
 
@@ -546,8 +496,6 @@ console.
 ``-v``    how verbose output will full command usage.
 ``<cmd>`` Show full command usage only for this command.
 ========= ====================
-
-.. _cmdhexdump:
 
 Hexadecimal Dump of File or Device (hexdump)
 ********************************************
@@ -567,8 +515,6 @@ character device
 The ``skip`` and ``count`` options are only available if
 ``CONFIG_NSH_CMDOPT_HEXDUMP`` is defined in the NuttX
 configuration.
-
-.. _cmdifconfig:
 
 Manage Network Configuration (ifconfig)
 ***************************************
@@ -610,8 +556,6 @@ supported:
 
     nsh> mount -t procfs /proc
 
-.. _cmdifdown:
-
 Take a network down (ifdown)
 ****************************
 
@@ -626,8 +570,6 @@ Take a network down (ifdown)
 
   ifdown eth0
 
-.. _cmdifup:
-
 Bring a network up (ifup)
 *************************
 
@@ -641,8 +583,6 @@ Bring a network up (ifup)
 **Example**::
 
   ifup eth0
-
-.. _cmdinsmod:
 
 Install an OS module (insmod)
 *****************************
@@ -680,7 +620,6 @@ module <module-name>.
   NAME                 INIT   UNINIT      ARG     TEXT     SIZE     DATA     SIZE
   mydriver         20404659 20404625        0 20404580      552 204047a8        0
 
-.. _cmdirqinfo:
 
 Show Interrupt Status (irqinfo)
 *******************************
@@ -699,8 +638,6 @@ attached interrupts.
     3 00001b3d 00000000        156   19.122
    15 0000800d 00000000        817  100.000
    30 00000fd5 20000018         20    2.490
-
-.. _cmdkill:
 
 Send a signal to a task (kill)
 ******************************
@@ -743,8 +680,6 @@ Send a signal to a task (kill)
   exercised, however, because this is likely to cause memory leaks
   and to strand resource since there is insufficient clean-up in
   certain build configurations.
-
-.. _cmdlosetup:
 
 Setup/teardown the Loop Device (losetup)
 ****************************************
@@ -789,8 +724,6 @@ on the loop-mounted file::
 **Synopsis**. Teardown the setup for the loop device at
 <dev-path>.
 
-.. _cmdln:
-
 Link to a File or Directory (ln)
 ********************************
 
@@ -802,15 +735,13 @@ Link to a File or Directory (ln)
 at <link> for the existing file or directory, <target>. This
 implementation is simplified for use with NuttX in these ways:
 
-  -  Links may be created only within the NuttX top-level,
-     :ref:`pseudo file system <file_system_overview>` No
+  -  Links may be created only within the NuttX top-level, `pseudo
+     file system <NuttXUserGuide.html#FileSystemOverview>`__. No
      file system currently supported by NuttX provides symbolic
      links.
   -  For the same reason, only soft links are implemented.
   -  File privileges are ignored.
   -  ``c_time`` is not updated.
-
-.. _cmdls:
 
 List Directory Contents (ls)
 ****************************
@@ -830,8 +761,6 @@ no other file system object.
 ``-s`` 	Show the size of the files along with the filenames in the listing
 ``-l`` 	Show size and mode information along with the filenames in the listing.
 ======  ================================
-
-.. _cmdlsmod:
 
 Show information about installed OS modules (lsmod)
 ***************************************************
@@ -864,8 +793,6 @@ modules. This information includes:
   NAME                 INIT   UNINIT      ARG     TEXT     SIZE     DATA     SIZE
   mydriver         20404659 20404625        0 20404580      552 204047a8        0
 
-.. _cmdmd5:
-
 Calculate MD5 (md5)
 *******************
 
@@ -874,8 +801,6 @@ Calculate MD5 (md5)
   md5 [-f] <string or filepath>
 
 **Synopsis**. *To be provided.*
-
-.. _cmdmx:
 
 Access Memory (mb, mh, and mw)
 ******************************
@@ -914,8 +839,6 @@ accesses (mh), or 32-bit access (mw). In each case,
     14 = 0x0c1e
   nsh>
 
-.. _cmdps:
-
 Show Current Tasks and Threads (ps)
 ***********************************
 
@@ -940,8 +863,6 @@ have been mounted with a command like::
 
   nsh> mount -t procfs /proc
 
-.. _cmdmkdir:
-
 Create a Directory (mkdir)
 **************************
 
@@ -954,10 +875,10 @@ of ``<path>`` except the final directory name must exist on a
 mounted file system; the final directory must not.
 
 **Limited to Mounted File Systems**. Recall that NuttX uses a
-:ref:`pseudo file system <file_system_overview>`
+`pseudo file system <NuttXUserGuide.html#FileSystemOverview>`__
 for its root file system. The ``mkdir`` command can only be used
 to create directories in volumes set up with the
-:ref:`mount <cmdmount>` command; it cannot be used to create
+```mount`` <#cmdmount>`__ command; it cannot be used to create
 directories in the *pseudo* file system.
 
 **Example**::
@@ -968,8 +889,6 @@ directories in the *pseudo* file system.
    drw-rw-rw-       0 TESTDIR/
    drw-rw-rw-       0 TMP/
   nsh>
-
-.. _cmdmkfatfs:
 
 Create a FAT File System (mkfatfs)
 **********************************
@@ -995,12 +914,11 @@ The reported number of root directory entries used with FAT32 is
 zero because the FAT32 root directory is a cluster chain.
 
 NSH provides this command to access the
-``mkfatfs()`` NuttX API. This block device must
-reside in the NuttX :ref:`pseudo file system <file_system_overview>`
-and must have been created by some call to ``register_blockdriver()``
-(see ``include/nuttx/fs/fs.h``).
-
-.. _cmdmkfifo:
+```mkfatfs()`` <mkfatfs>`__ NuttX API. This block device must
+reside in the NuttX `pseudo file
+system <NuttXUserGuide.html#FileSystemOverview>`__ and must have
+been created by some call to ``register_blockdriver()`` (see
+``include/nuttx/fs/fs.h``).
 
 Create a FIFO (mkfifo)
 **********************
@@ -1015,7 +933,7 @@ be needed to complete the ``<path>``. By convention, however,
 device drivers are place in the standard ``/dev`` directory. After
 it is created, the FIFO device may be used as any other device
 driver. NSH provides this command to access the
-```mkfifo()`` NuttX API.
+```mkfifo()`` <NuttXUserGuide.html#mkfifo>`__ NuttX API.
 
 **Example**::
 
@@ -1033,8 +951,6 @@ driver. NSH provides this command to access the
    crw-rw-rw-       0 null
    brw-rw-rw-       0 ram0
   nsh>
-
-.. _cmdmkrd:
 
 Create a RAMDISK (mkrd)
 ***********************
@@ -1079,8 +995,6 @@ Once the ramdisk has been created, it may be formatted using the
   /tmp:
   nsh>
 
-.. _cmdmount:
-
 Mount a File System (mount)
 ***************************
 
@@ -1103,23 +1017,24 @@ way association, binding:
      ``<block-device>``. As of this writing, ``vfat`` is the only
      supported value for ``<fstype>``
   #. **Block Device.** The ``<block-device>`` argument is the full
-     or relative path to a block driver inode in the
-     :ref:`pseudo file system <file_system_overview>`. By
+     or relative path to a block driver inode in the `pseudo file
+     system <NuttXUserGuide.html#FileSystemOverview>`__. By
      convention, this is a name under the ``/dev`` sub-directory.
      This ``<block-device>`` must have been previously formatted
      with the same file system type as specified by ``<fstype>``
   #. **Mount Point.** The mount point, ``<dir-path>``, is the
-     location in the :ref:`pseudo file system <file_system_overview>`
-     where the mounted volume will appear. This mount point can only
-     reside in the NuttX
-     :ref:`pseudo file system <file_system_overview>`. By
+     location in the `pseudo file
+     system <NuttXUserGuide.html#FileSystemOverview>`__ where the
+     mounted volume will appear. This mount point can only reside in
+     the NuttX `pseudo file
+     system <NuttXUserGuide.html#FileSystemOverview>`__. By
      convention, this mount point is a subdirectory under ``/mnt``.
      The mount command will create whatever pseudo directories that
      may be needed to complete the full path but the full path must
      not already exist.
 
-After the volume has been mounted in the NuttX
-:ref:`pseudo file system <file_system_overview>`, it may be
+After the volume has been mounted in the NuttX `pseudo file
+system <NuttXUserGuide.html#FileSystemOverview>`__, it may be
 access in the same way as other objects in the file system.
 
 **Examples**:
@@ -1153,8 +1068,6 @@ Using ``mount`` to enumerate mounts::
     /mnt/fs type vfat
     /tmp type vfat
 
-.. _cmdmv:
-
 Rename a File (mv)
 ******************
 
@@ -1165,8 +1078,6 @@ Rename a File (mv)
 **Synopsis**. Rename the file object at ``<old-path>`` to
 ``<new-path>``. Both paths must reside in the same mounted file
 system.
-
-.. _cmdnfsmount:
 
 Mount an NFS file system (nfsmount)
 ***********************************
@@ -1179,8 +1090,6 @@ Mount an NFS file system (nfsmount)
 at <mount-point> on the target machine. <server-address> is the IP
 address of the remote server.
 
-.. _cmdnslookup:
-
 Lookup a network address (nslookup)
 ***********************************
 
@@ -1190,8 +1099,6 @@ Lookup a network address (nslookup)
 
 **Synopsis**. Lookup and print the IP address associated with
 ``<host-name>``.
-
-.. _cmdpasswd:
 
 Change a User's Password (passwd)
 *********************************
@@ -1203,8 +1110,6 @@ Change a User's Password (passwd)
 **Synopsis**. Set the password for the existing user <username> to
 <password>.
 
-.. _cmdpmconfig:
-
 Manage Power Management Subsystem (pmconfig)
 ********************************************
 
@@ -1213,8 +1118,6 @@ Manage Power Management Subsystem (pmconfig)
   pmconfig [stay|relax] [normal|idle|standby|sleep]
 
 **Synopsis**. Control power management subsystem.
-
-.. _cmdpoweroff:
 
 Shut the system down (poweroff)
 *******************************
@@ -1230,8 +1133,6 @@ to provide power off mode to board-specific power off logic.
 
 NOTE: Supporting both the ``poweroff`` and ``shutdown`` commands
 is redundant.
-
-.. _cmdput:
 
 Send File Via TFTP (put)
 ************************
@@ -1251,8 +1152,6 @@ whose IP address is identified by ``<ip-address>``.
 ``-b|-n``             Selects either binary ("octet") or text ("netascii")
                       transfer mode. Default: text.
 ====================  =============================================
-
-.. _cmdpwd:
 
 Show Current Working Directory (pwd)
 ************************************
@@ -1274,8 +1173,6 @@ Same as ``echo $PWD``::
   /dev
   nsh>
 
-.. _cmdreadlink:
-
 Show target of a link (readlink)
 ********************************
 
@@ -1285,8 +1182,6 @@ Show target of a link (readlink)
 
 **Synopsis**. Show the target of the soft link at the path
 ``<link>``.
-
-.. _cmdreboot:
 
 Reboot the system (reboot)
 **************************
@@ -1303,8 +1198,6 @@ a reboot mode to board-specific reboot logic.
 NOTE: Supporting both the ``reboot`` and ``shutdown`` commands is
 redundant.
 
-.. _cmdrm:
-
 Remove a File (rm)
 ******************
 
@@ -1313,11 +1206,11 @@ Remove a File (rm)
   rm <file-path>
 
 **Synopsis**. Remove the specified ``<file-path>`` name from the
-mounted file system. Recall that NuttX uses a
-:ref:`pseudo file system <file_system_overview>` for its root
+mounted file system. Recall that NuttX uses a `pseudo file
+system <NuttXUserGuide.html#FileSystemOverview>`__ for its root
 file system. The ``rm`` command can only be used to remove
 (unlink) files in volumes set up with the
-:ref:`mount <cmdmount>` command; it cannot be used to remove
+```mount`` <#cmdmount>`__ command; it cannot be used to remove
 names in the *pseudo* file system.
 
 **Example**::
@@ -1332,8 +1225,6 @@ names in the *pseudo* file system.
    TESTFILE.TXT
   nsh>
 
-.. _cmdrmdir:
-
 Remove a Directory (rmdir)
 **************************
 
@@ -1342,11 +1233,11 @@ Remove a Directory (rmdir)
   rmdir <dir-path>
 
 **Synopsis**. Remove the specified ``<dir-path>`` directory from
-the mounted file system. Recall that NuttX uses a
-:ref:`pseudo file system <file_system_overview>` for its root
+the mounted file system. Recall that NuttX uses a `pseudo file
+system <NuttXUserGuide.html#FileSystemOverview>`__ for its root
 file system. The ``rmdir`` command can only be used to remove
-directories from volumes set up with the :ref:`mount <cmdmount>`
-command it cannot be used to remove directories from the *pseudo*
+directories from volumes set up with the ```mount`` <#cmdmount>`__
+command; it cannot be used to remove directories from the *pseudo*
 file system.
 
 **Example**::
@@ -1361,8 +1252,6 @@ file system.
   /mnt/fs:
    drw-rw-rw-       0 TESTDIR/
   nsh>
-
-.. _cmdrmmod:
 
 Remove on OS Module (rmmod)
 ***************************
@@ -1385,8 +1274,6 @@ busy.
   NAME                 INIT   UNINIT      ARG     TEXT     SIZE     DATA     SIZE
   nsh>
 
-.. _cmdroute:
-
 Show routing table (route)
 **************************
 
@@ -1400,8 +1287,6 @@ If only IPv4 or IPv6 is enabled, then the argument is optional
 but, if provided, must match the enabled internet protocol
 version.
 
-.. _cmdrptun:
-
 Start/Stop the OpenAMP RPC Tunnel (rptun)
 *****************************************
 
@@ -1410,8 +1295,6 @@ Start/Stop the OpenAMP RPC Tunnel (rptun)
   rptun start|stop <dev-path>
 
 **Synopsis**. Start or stop the OpenAMP RPC tunnel device at <dev-path>.
-
-.. _cmdset:
 
 Set a Variable (set)
 ********************
@@ -1437,7 +1320,7 @@ is to set the local NSH variable. Otherwise, the group-wide environment
 variable will be set.
 
 If the local NSH variable has already been *promoted* to an environment
-variable via the :ref:`export <cmdexport>`, then the ``set`` command
+variable via the ```export`` <#cmdexport>`__, then the ``set`` command
 will set the value of the environment variable rather than the local NSH
 variable.
 
@@ -1489,8 +1372,6 @@ script commands and set foobar to foovalue::
   nsh> echo $foobar
   foovalue
 
-.. _cmdsh:
-
 Execute an NSH Script (sh)
 **************************
 
@@ -1500,8 +1381,6 @@ Execute an NSH Script (sh)
 
 **Synopsis**. Execute the sequence of NSH commands in the file referred
 to by ``<script-path>``.
-
-.. _cmdshutdown:
 
 Shut the system down (shutdown)
 *******************************
@@ -1518,8 +1397,6 @@ behavior may be supported.
 NOTE: The ``shutdown`` command duplicates the behavior of the
 ``poweroff`` and ``eboot`` commands.
 
-.. _cmdsleep:
-
 Wait for Seconds (sleep)
 ************************
 
@@ -1528,8 +1405,6 @@ Wait for Seconds (sleep)
   sleep <sec>
 
 **Synopsis**. Pause execution (sleep) for ``<sec>`` seconds.
-
-.. _cmdtelnetd:
 
 Time Start the Telnet Daemon (telnetd)
 **************************************
@@ -1553,8 +1428,6 @@ command line or via other applications.
 
 In that case, when ``nsh_telnetstart()`` is called before the the
 network is initialized, it will fail.
-
-.. _cmdtime:
 
 Time execution of another command (time)
 ****************************************
@@ -1610,8 +1483,6 @@ command is run in background with the sleep command::
   nsh>
   2.0100 sec
 
-.. _cmdtruncate:
-
 Set the Size of a File (truncate)
 *********************************
 
@@ -1629,8 +1500,6 @@ If a <file-path> is larger than the specified size, the extra data is
 lost. If a <file-path> is shorter, it is extended and the extended part
 reads as zero bytes.
 
-.. _cmdumount:
-
 Unmount a File System (umount)
 ******************************
 
@@ -1640,7 +1509,7 @@ Unmount a File System (umount)
 
 **Synopsis**. Un-mount the file system at mount point ``<dir-path>``.
 The ``umount`` command can only be used to un-mount volumes previously
-mounted using :ref:`mount <cmdmount>` command.
+mounted using ```mount`` <#cmdmount>`__ command.
 
 **Example**::
 
@@ -1652,8 +1521,6 @@ mounted using :ref:`mount <cmdmount>` command.
   /mnt/fs:
   nsh: ls: no such directory: /mnt/fs
   nsh>
-
-.. _cmduname:
 
 Print system information (uname)
 ********************************
@@ -1677,8 +1544,6 @@ output is the same as -s.
 ``-p``      Print "unknown"
 ==========  ========================================
 
-.. _cmdunset:
-
 Unset an Environment Variable (unset)
 *************************************
 
@@ -1697,8 +1562,6 @@ and the group-wide environment variables. For example::
 
   nsh>
 
-.. _cmdurldecode:
-
 URL Decode (urldecode)
 **********************
 
@@ -1707,8 +1570,6 @@ URL Decode (urldecode)
   urldecode [-f] <string or filepath>
 
 **Synopsis**. *To be provided.*
-
-.. _cmdurlencode:
 
 URL Encode (urlencode)
 **********************
@@ -1719,8 +1580,6 @@ URL Encode (urlencode)
 
 **Synopsis**. *To be provided.*
 
-.. _cmduseradd:
-
 Add a New User (useradd)
 ************************
 
@@ -1729,8 +1588,6 @@ Add a New User (useradd)
   useradd <username> <password>
 
 **Synopsis**. Add a new user with <username> and <password>.
-
-.. _cmduserdel:
 
 Delete a user (userdel)
 ***********************
@@ -1741,8 +1598,6 @@ Delete a user (userdel)
 
 **Synopsis**. Delete the user with the name <username>.
 
-.. _cmdusleep:
-
 Wait for Microseconds (usleep)
 ******************************
 
@@ -1751,8 +1606,6 @@ Wait for Microseconds (usleep)
   usleep <usec>
 
 **Synopsis**. Pause execution (sleep) of ``<usec>`` microseconds.
-
-.. _cmdwget:
 
 Get File Via HTTP (wget)
 ************************
@@ -1771,8 +1624,6 @@ directory.
                      directory and with the same name as on the HTTP server
                      unless <local-path> is provided.
 ===================  =================================================
-
-.. _cmdxd:
 
 Hexadecimal Dump of Memory (xd)
 *******************************
@@ -1809,8 +1660,6 @@ help about using the built-in applications.
 There are several built-in applications in the ``apps/`` repository. No
 attempt is made here to enumerate all of them. But a few of the more
 common, useful built-in applications are listed below.
-
-.. _cmdping:
 
 Check Network Peer (ping/ping6)
 *******************************

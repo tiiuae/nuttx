@@ -1,5 +1,3 @@
-.. _usbtrace:
-
 ================
 USB Device Trace
 ================
