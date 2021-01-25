@@ -90,7 +90,15 @@ void stm32_mpuinitialize(void)
   mpu_user_flash(USERSPACE->us_textstart,
                  USERSPACE->us_textend - USERSPACE->us_textstart);
 
-  mpu_user_intsram(datastart, dataend - datastart);
+  /* TODO: Find out what is wrong with MPU_RASR_S bit */
+  mpu_configure_region(datastart, dataend - datastart,
+                       MPU_RASR_TEX_SO   | /* Ordered            */
+                       MPU_RASR_C        | /* Cacheable          */
+                                           /* Not Bufferable     */
+                       /* MPU_RASR_S     |    Shareable    */
+                       MPU_RASR_AP_RWRW    /* P:RW   U:RW        */
+                                           /* Instruction access */
+                       );
 
   /* Then enable the MPU */
 
@@ -109,7 +117,15 @@ void stm32_mpuinitialize(void)
 
 void stm32_mpu_uheap(uintptr_t start, size_t size)
 {
-  mpu_user_intsram(start, size);
+  /* TODO: Find out what is wrong with MPU_RASR_S bit */
+  mpu_configure_region(start, size,
+                       MPU_RASR_TEX_SO   | /* Ordered            */
+                       MPU_RASR_C        | /* Cacheable          */
+                                           /* Not Bufferable     */
+                       /* MPU_RASR_S     |    Shareable          */
+                       MPU_RASR_AP_RWRW    /* P:RW   U:RW        */
+                                           /* Instruction access */
+                       );
 }
 
 #endif /* CONFIG_BUILD_PROTECTED && CONFIG_ARM_MPU */
