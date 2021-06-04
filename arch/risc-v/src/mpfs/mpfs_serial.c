@@ -35,17 +35,21 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/fs/ioctl.h>
 #include <nuttx/serial/serial.h>
 
-#include <arch/board/board.h>
+#ifdef CONFIG_SERIAL_TERMIOS
+#  include <termios.h>
+#endif
 
-#include "riscv_arch.h"
-#include "riscv_internal.h"
+#include <arch/board/board.h>
 
 #include "chip.h"
 #include "mpfs.h"
 #include "mpfs_config.h"
 #include "mpfs_clockconfig.h"
+#include "riscv_arch.h"
+#include "riscv_internal.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -465,45 +469,20 @@ static void up_config_baud_divisors(struct up_dev_s *priv, uint32_t baudrate)
 }
 
 /****************************************************************************
- * Name: up_setup
+ * Name: up_set_format
  *
  * Description:
- *   Configure the UART baud, bits, parity, etc. This method is called the
- *   first time that the serial port is opened.
+ *   Set the serial line format and speed.
  *
  ****************************************************************************/
 
-static int up_setup(struct uart_dev_s *dev)
-{
 #ifndef CONFIG_SUPPRESS_UART_CONFIG
+static void up_set_format(struct uart_dev_s *dev)
+{
   struct up_dev_s *priv = (struct up_dev_s *)dev->priv;
-  uint32_t lcr;
-
-  /* Clear fifos */
-
-  up_serialout(priv, MPFS_UART_FCR_OFFSET,
-              (UART_FCR_RFIFOR | UART_FCR_XFIFOR));
-
-  /* set filter to minimum value */
-
-  up_serialout(priv, MPFS_UART_GFR_OFFSET, 0);
-
-  /* set default TX time guard */
-
-  up_serialout(priv, MPFS_UART_TTG_OFFSET, 0);
-
-  /* Set trigger */
-
-  up_serialout(priv, MPFS_UART_FCR_OFFSET,
-              (UART_FCR_FIFOE | UART_FCR_RT_HALF));
-
-  /* Set up the IER */
-
-  priv->ier = up_serialin(priv, MPFS_UART_IER_OFFSET);
+  uint32_t lcr = 0;
 
   /* Set up the LCR */
-
-  lcr = 0;
 
   switch (priv->bits)
     {
@@ -550,6 +529,50 @@ static int up_setup(struct uart_dev_s *dev)
   /* Clear DLAB */
 
   up_serialout(priv, MPFS_UART_LCR_OFFSET, lcr);
+
+
+
+}
+#endif
+
+/****************************************************************************
+ * Name: up_setup
+ *
+ * Description:
+ *   Configure the UART baud, bits, parity, etc. This method is called the
+ *   first time that the serial port is opened.
+ *
+ ****************************************************************************/
+
+static int up_setup(struct uart_dev_s *dev)
+{
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  struct up_dev_s *priv = (struct up_dev_s *)dev->priv;
+
+  /* Disable interrupts */
+
+  priv->ier = 0;
+  up_serialout(priv, MPFS_UART_IER_OFFSET, 0);
+  up_serialout(priv, MPFS_UART_IEM_OFFSET, 0);
+
+  /* Clear fifos */
+
+  up_serialout(priv, MPFS_UART_FCR_OFFSET,
+              (UART_FCR_RFIFOR | UART_FCR_XFIFOR));
+
+
+
+  /* set filter to minimum value */
+
+  up_serialout(priv, MPFS_UART_GFR_OFFSET, 0);
+
+  /* set default TX time guard */
+
+  up_serialout(priv, MPFS_UART_TTG_OFFSET, 0);
+
+  /* Configure the UART line format and speed. */
+
+  up_set_format(dev);
 
   /* Configure the FIFOs */
 
@@ -749,7 +772,111 @@ static int uart_interrupt(int irq, void *context, void *arg)
 
 static int up_ioctl(struct file *filep, int cmd, unsigned long arg)
 {
-  return -ENOTTY;
+#if defined(CONFIG_SERIAL_TERMIOS) || defined(CONFIG_SERIAL_TIOCSERGSTRUCT)
+  struct inode      *inode = filep->f_inode;
+  struct uart_dev_s *dev   = inode->i_private;
+
+  struct up_dev_s   *priv  = (struct up_dev_s *)dev->priv;
+#endif
+
+  int                ret   = OK;
+
+  switch (cmd)
+    {
+#ifdef CONFIG_SERIAL_TIOCSERGSTRUCT
+    case TIOCSERGSTRUCT:
+      {
+        struct up_dev_s *user = (struct up_dev_s *)arg;
+        if (!user)
+          {
+            ret = -EINVAL;
+          }
+        else
+          {
+            memcpy(user, dev, sizeof(struct up_dev_s));
+          }
+      }
+      break;
+#endif
+
+#ifdef CONFIG_SERIAL_TERMIOS
+    case TCGETS:
+      {
+        struct termios *termiosp = (struct termios *)arg;
+
+        if (!termiosp)
+          {
+            ret = -EINVAL;
+            break;
+          }
+
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+#endif
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+#endif
+        termiosp->c_cflag =
+          ((priv->parity != 0) ? PARENB : 0) |
+          ((priv->parity == 1) ? PARODD : 0) |
+          ((priv->stopbits2) ? CSTOPB : 0) |
+          ((priv->bits == 5) ? CS5 : 0) |
+          ((priv->bits == 6) ? CS6 : 0) |
+          ((priv->bits == 7) ? CS7 : 0) |
+          ((priv->bits == 8) ? CS8 : 0);
+
+        cfsetispeed(termiosp, priv->baud);
+
+      }
+      break;
+
+    case TCSETS:
+      {
+        struct termios *termiosp = (struct termios *)arg;
+
+        if (!termiosp)
+          {
+            ret = -EINVAL;
+            break;
+          }
+
+        if (termiosp->c_cflag & PARENB)
+          {
+            priv->parity = (termiosp->c_cflag & PARODD) ? 1 : 2;
+          }
+        else
+          {
+            priv->parity = 0;
+          }
+
+        priv->stopbits2 = (termiosp->c_cflag & CSTOPB) != 0;
+
+        priv->bits = (termiosp->c_cflag & CS5) ? 5 : 0;
+        priv->bits = (termiosp->c_cflag & CS6) ? 6 : 0;
+        priv->bits = (termiosp->c_cflag & CS7) ? 7 : 0;
+        priv->bits = (termiosp->c_cflag & CS8) ? 8 : 0;
+
+        /* Note that only cfgetispeed is used because we have knowledge
+         * that only one speed is supported.
+         */
+
+        priv->baud = cfgetispeed(termiosp);
+
+        /* Effect the changes immediately - note that we do not implement
+         * TCSADRAIN / TCSAFLUSH
+         */
+
+        up_set_format(dev);
+      }
+      break;
+#endif /* CONFIG_SERIAL_TERMIOS */
+
+
+
+      default:
+        ret = -ENOTTY;
+        break;
+    }
+
+    return ret;
 }
 
 /****************************************************************************
@@ -869,7 +996,7 @@ static void up_txint(struct uart_dev_s *dev, bool enable)
  * Name: up_txready
  *
  * Description:
- *   Return true if the tranmsit data register is not full
+ *   Return true if the transmit data register is not full
  *
  ****************************************************************************/
 
@@ -883,7 +1010,7 @@ static bool up_txready(struct uart_dev_s *dev)
  * Name: up_txempty
  *
  * Description:
- *   Return true if the tranmsit data register is empty
+ *   Return true if the transmit data register is empty
  *
  ****************************************************************************/
 
@@ -906,7 +1033,7 @@ static bool up_txempty(struct uart_dev_s *dev)
  *   Performs the low level UART initialization early in debug so that the
  *   serial console will be available during bootup.  This must be called
  *   before riscv_serialinit.  NOTE:  This function depends on GPIO pin
- *   configuration performed in up_consoleinit() and main clock iniialization
+ *   configuration performed in up_consoleinit() and main clock initialization
  *   performed in up_clkinitialize().
  *
  ****************************************************************************/
