@@ -341,7 +341,7 @@ static uart_dev_t g_uart4port =
   },
   .xmit      =
   {
-    .size    = CONFIG_UART3_TXBUFSIZE,
+    .size    = CONFIG_UART4_TXBUFSIZE,
     .buffer  = g_uart4txbuffer,
   },
   .ops       = &g_uart_ops,
