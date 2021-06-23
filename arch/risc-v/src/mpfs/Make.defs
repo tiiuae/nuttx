@@ -72,3 +72,8 @@ endif
 ifeq ($(CONFIG_I2C),y)
 CHIP_CSRCS += mpfs_i2c.c
 endif
+
+# Compile mpfs_corepwm.c only if pwm block is configured to FPGA
+ifeq (${CONFIG_MPFS_HAVE_COREPWM},y)
+CHIP_CSRCS += mpfs_corepwm.c
+endif
