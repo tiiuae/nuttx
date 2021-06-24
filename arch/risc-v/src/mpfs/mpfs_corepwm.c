@@ -89,7 +89,7 @@ struct mpfs_pwmtimer_s
   uint8_t pwmid;                       /* PWM ID {1,...} */
   struct mpfs_pwmchan_s channels[MPFS_MAX_PWM_CHANNELS];
   uint32_t frequency;                  /* Current frequency setting */
-  uint32_t base;                       /* The base address of the timer */
+  uintptr_t base;                      /* The base address of the pwm block */
   uint32_t pwmclk;                     /* The frequency of the pwm clock */
 };
 
@@ -199,6 +199,7 @@ static struct mpfs_pwmtimer_s g_pwm2dev =
 static uint32_t pwm_getreg(struct mpfs_pwmtimer_s *priv, int offset)
 {
   return getreg32(priv->base + offset);
+
 }
 
 /****************************************************************************
@@ -238,12 +239,12 @@ static void pwm_putreg(struct mpfs_pwmtimer_s *priv, int offset,
  * Returned Value:
  *   None
  *
- * TODO: Add TACH* register if tachometer feature is taken in use 
- * TODO: Add DAC* register if DA feature is taken in use 
+ * TODO: Add TACH* register if tachometer feature is taken in use
+ * TODO: Add DAC* register if DA feature is taken in use
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_PWM_INFO
-static void pwm_dumpregs(struct stm32_pwmtimer_s *priv, FAR const char *msg)
+static void pwm_dumpregs(struct mpfs_pwmtimer_s *priv, FAR const char *msg)
 {
   pwminfo("%s:\n", msg);
   pwminfo("  PRESCALE: %08x PERIOD: %08x\n",
@@ -254,14 +255,14 @@ static void pwm_dumpregs(struct stm32_pwmtimer_s *priv, FAR const char *msg)
   pwminfo("  PWM_ENABLE_0_7: %02x PWM_ENABLE_8_15: %02x\n",
           pwm_getreg(priv, MPFS_COREPWM_PWM_ENABLE_0_7_OFFSET),
           pwm_getreg(priv, MPFS_COREPWM_PWM_ENABLE_8_15_OFFSET));
-  
+
   for (int i = 0; i < 16; i++)
   {
     pwminfo("  PWM%d_POSEDGE: %08x PWM%d_NEGEDGE: %08x\n",
           i + 1,
           pwm_getreg(priv, MPFS_COREPWM_PWM1_POS_EDGE_OFFSET + (i * 4)),
           i + 1,
-          pwm_getreg(priv, MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET + (i * 4)))
+          pwm_getreg(priv, MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET + (i * 4)));
   }
 }
 #endif
@@ -301,26 +302,26 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
 
   /* CorePWM FPGA block can be configured to be with either 8, 16, or 32 bit
    * registers width. Minimally PWM functionality is set up by two registers:
-   * PRESCALE and PERIOD which are common to all channels. Up to 16 channels 
+   * PRESCALE and PERIOD which are common to all channels. Up to 16 channels
    * may be configured in use. Clock used by the block may be selected in design
    * phase an on Icicle Kit reference design version 21.04 has at least the
-   * following clock signals to choose from the Clocks_and_Resets block: 
+   * following clock signals to choose from the Clocks_and_Resets block:
    * 125MHz, 100MHz, 75MHz, 62.5MHz, 50MHz, and 25MHz.
-   * 
+   *
    * For now only 32 the bit configuration is supported.
    * TODO: Add 8 and 16 bit width support
-   * 
+   *
    * There are many combinations of prescaler and period registers, but the best
    * will be the one that has the smallest prescaler value. That is the solution
    * that should give us the most accuracy in the pwm control.
-   * 
+   *
    * Example for clk = 25MHz and using 32 bit wide registers:
-   *   PWM period granularity PWM_PG = (PRESCALE + 1) / pwmclk = 
+   *   PWM period granularity PWM_PG = (PRESCALE + 1) / pwmclk =
    *   40 ns × 1 = 40 ns, so the smallest step with PRESCALE = 0 is 40ns
    *   pwmclk = clk / (PRESCALE + 1) = 25,000,000 / (PRESCALE + 1)
-   *  
+   *
    *    For desired output frequency of 50Hz and using PRESCALE = 0
-   *    PERIOD = pwmclk / frequency = 25,000,000 / 50 = 500,000 
+   *    PERIOD = pwmclk / frequency = 25,000,000 / 50 = 500,000
    */
 
   pwminfo("PWM%u frequency: %u PWMCLK: %u prescaler: %u\n",
@@ -342,7 +343,7 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
     uint32_t  neg_edge;
 
     channel   = info->channels[i].channel;
-    
+
     /* Duty defined as fraction of 65536, i.e. a value of 1 to 65535
      * corresponding to a duty cycle of 0.000015 - 0.999984
      */
@@ -360,13 +361,13 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
       return -EINVAL;
     }
 
-    pwminfo("duty: %u, neg_edge: %u\n", 
+    pwminfo("duty: %u, neg_edge: %u\n",
       info->channels[i].duty, neg_edge);
 
     /* Set the channels duty cycle by writing to the NEG_EDGE register
       * for this channel
       */
-    const int neg_edge_reg_offset = 
+    const int neg_edge_reg_offset =
       MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET +
       (MPFS_COREPWM_PWM2_NEG_EDGE_OFFSET -
         MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET) * (channel - 1);
@@ -378,7 +379,7 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
     if (channel <= 8)
     {
       uint32_t reg = pwm_getreg(priv, MPFS_COREPWM_PWM_ENABLE_0_7_OFFSET);
-      pwm_putreg(priv, MPFS_COREPWM_PWM_ENABLE_0_7_OFFSET, 
+      pwm_putreg(priv, MPFS_COREPWM_PWM_ENABLE_0_7_OFFSET,
                  reg | (1 << (channel - 1)));
     }
     else
@@ -411,12 +412,12 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
  ****************************************************************************/
 
 static int pwm_update_duty(FAR struct mpfs_pwmtimer_s *priv,
-				    uint8_t channel, ub16_t duty16) 
+				    uint8_t channel, ub16_t duty16)
 {
   uint32_t              period;
   uint32_t              neg_edge;
   ub32_t                duty = ub16toub32(duty16);
-  
+
   DEBUGASSERT(priv != NULL);
 
   if (channel == 0 || channel > priv->nchannels)
@@ -435,7 +436,7 @@ static int pwm_update_duty(FAR struct mpfs_pwmtimer_s *priv,
   /* Set the channels duty cycle by writing to the NEG_EDGE register
     * for this channel
     */
-  const uint8_t neg_edge_reg_offset = 
+  const uint8_t neg_edge_reg_offset =
     MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET +
     (MPFS_COREPWM_PWM2_NEG_EDGE_OFFSET -
      MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET) * (channel - 1);
@@ -461,7 +462,7 @@ static int pwm_update_duty(FAR struct mpfs_pwmtimer_s *priv,
  *   Zero on success; a negated errno value on failure
  *
  * Assumptions:
- * 
+ *
  * Note:
  *   On a MPFS CorePWM block no setting up is needed
  *
@@ -601,7 +602,7 @@ static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
 
   priv->frequency = 0;
 
-  /* No resetting on CorePWM block so just stop the output and 
+  /* No resetting on CorePWM block so just stop the output and
    * it into a state where pwm_start() can be called.
    */
 
