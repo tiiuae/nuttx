@@ -61,9 +61,17 @@ int mpfs_pwm_setup(void)
    * available for each timer device, so we don't have to do anything
    * special here.
    */
+  int config_npwm = 0;
+  #ifdef CONFIG_MPFS_COREPWM1
+  config_npwm++;
+  #endif
+  #ifdef CONFIG_MPFS_COREPWM2
+  config_npwm++;
+  #endif
 
-  for (npwm = 1; npwm <= 2; npwm++)
-  {
+	for (npwm = 0; npwm < config_npwm; npwm++)
+	{
+
     pwm = mpfs_corepwminitialize(npwm);
 
     /* If we can't get the lower-half handle, skip and keep going. */
@@ -77,12 +85,12 @@ int mpfs_pwm_setup(void)
 
     switch (npwm)
     {
-      case 1:
-        ppwm = "/dev/pwm1";
+      case 0:
+        ppwm = "/dev/corepwm0";
         break;
 
-      case 2:
-        ppwm = "/dev/pwm2";
+      case 1:
+        ppwm = "/dev/corepwm1";
         break;
 
       /* Skip missing names. */
