@@ -63,14 +63,6 @@
 #error This should not be compiled as CorePWM block is not defined/configured
 #endif
 
-/* Debug ********************************************************************/
-
-#ifdef CONFIG_DEBUG_PWM_INFO
-#  define pwm_dumpgpio(p,m) mpfs_dumpgpio(p,m)
-#else
-#  define pwm_dumpgpio(p,m)
-#endif
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -147,7 +139,7 @@ static struct mpfs_pwmtimer_s g_pwm1dev =
 {
   .ops         = &g_pwmops,
   .nchannels   = CONFIG_MPFS_COREPWM0_NCHANNELS,
-  .pwmid       = 1,
+  .pwmid       = 0,
   .channels    =
   {
     {
@@ -164,7 +156,7 @@ static struct mpfs_pwmtimer_s g_pwm2dev =
 {
   .ops         = &g_pwmops,
   .nchannels   = CONFIG_MPFS_COREPWM1_NCHANNELS,
-  .pwmid       = 2,
+  .pwmid       = 1,
   .channels    =
   {
     {
@@ -198,8 +190,11 @@ static struct mpfs_pwmtimer_s g_pwm2dev =
 
 static uint32_t pwm_getreg(struct mpfs_pwmtimer_s *priv, int offset)
 {
+  pwminfo("pwm_getreg: %p, %d\n", priv->base, offset);
+  uint32_t uu;
+  uu = *((volatile uint32_t *)(0x44000000));
+  pwminfo("uu=0x%x\n", uu);
   return getreg32(priv->base + offset);
-
 }
 
 /****************************************************************************
@@ -673,12 +668,12 @@ FAR struct pwm_lowerhalf_s *mpfs_corepwminitialize(int pwmid)
   switch (pwmid)
   {
 #ifdef CONFIG_MPFS_COREPWM0
-    case 1:
+    case 0:
       lower = &g_pwm1dev;
       break;
 #endif
 #ifdef CONFIG_MPFS_COREPWM1
-    case 2:
+    case 1:
       lower = &g_pwm2dev;
       break;
 #endif
