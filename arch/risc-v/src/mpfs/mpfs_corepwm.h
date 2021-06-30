@@ -42,6 +42,7 @@
  ****************************************************************************/
 
 #include <arch/board/board.h>
+#include "mpfs_hal/mss_hal.h"
 #include "hardware/mpfs_corepwm.h"
 
 /****************************************************************************
@@ -82,7 +83,7 @@ extern "C"
  *   Initialize a CorePWM block.
  *
  * Input Parameters:
- *   pwmid - A number identifying the pwm block. The number of valid 
+ *   pwmid - A number identifying the pwm block. The number of valid
  *     IDs varies depending on the configuration of the FPGA.
  *
  * Returned Value:

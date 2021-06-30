@@ -140,11 +140,11 @@ static struct mpfs_pwmtimer_s g_pwm1dev =
   .ops         = &g_pwmops,
   .nchannels   = CONFIG_MPFS_COREPWM0_NCHANNELS,
   .pwmid       = 0,
-  .channels    =
-  {
-    {
-      .channel = 1,
-    }
+  .channels    =  {
+     { .channel = 1}, { .channel = 2}, { .channel = 3}, { .channel = 4},
+     { .channel = 5}, { .channel = 6}, { .channel = 7}, { .channel = 8},
+     { .channel = 9}, { .channel = 10},{ .channel = 11},{ .channel = 12},
+     { .channel = 13},{ .channel = 14},{ .channel = 15},{ .channel = 16}
   },
   .base        = CONFIG_MPFS_COREPWM0_BASE,
   .pwmclk      = CONFIG_MPFS_COREPWM0_PWMCLK,
@@ -157,11 +157,11 @@ static struct mpfs_pwmtimer_s g_pwm2dev =
   .ops         = &g_pwmops,
   .nchannels   = CONFIG_MPFS_COREPWM1_NCHANNELS,
   .pwmid       = 1,
-  .channels    =
-  {
-    {
-      .channel = 1,
-    }
+  .channels    =  {
+     { .channel = 1}, { .channel = 2}, { .channel = 3}, { .channel = 4},
+     { .channel = 5}, { .channel = 6}, { .channel = 7}, { .channel = 8},
+     { .channel = 9}, { .channel = 10},{ .channel = 11},{ .channel = 12},
+     { .channel = 13},{ .channel = 14},{ .channel = 15},{ .channel = 16}
   },
   .base        = CONFIG_MPFS_COREPWM1_BASE,
   .pwmclk      = CONFIG_MPFS_COREPWM1_PWMCLK,
@@ -190,10 +190,6 @@ static struct mpfs_pwmtimer_s g_pwm2dev =
 
 static uint32_t pwm_getreg(struct mpfs_pwmtimer_s *priv, int offset)
 {
-  pwminfo("pwm_getreg: %p, %d\n", priv->base, offset);
-  uint32_t uu;
-  uu = *((volatile uint32_t *)(0x44000000));
-  pwminfo("uu=0x%x\n", uu);
   return getreg32(priv->base + offset);
 }
 
@@ -216,9 +212,8 @@ static void pwm_putreg(struct mpfs_pwmtimer_s *priv, int offset,
                        uint32_t value)
 {
   /* TODO: 8,16 & 32 bit reg width consideration
-    * a 32 bit access is required for a 32 bit register
+    * 32 bit access is required for a 32 bit register
     */
-
   putreg32(value, priv->base + offset);
 }
 
@@ -239,6 +234,8 @@ static void pwm_putreg(struct mpfs_pwmtimer_s *priv, int offset,
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_PWM_INFO
+#define MPFS_PWMREG_STEP (MPFS_COREPWM_PWM2_POS_EDGE_OFFSET -  MPFS_COREPWM_PWM1_POS_EDGE_OFFSET)
+
 static void pwm_dumpregs(struct mpfs_pwmtimer_s *priv, FAR const char *msg)
 {
   pwminfo("%s:\n", msg);
@@ -251,13 +248,15 @@ static void pwm_dumpregs(struct mpfs_pwmtimer_s *priv, FAR const char *msg)
           pwm_getreg(priv, MPFS_COREPWM_PWM_ENABLE_0_7_OFFSET),
           pwm_getreg(priv, MPFS_COREPWM_PWM_ENABLE_8_15_OFFSET));
 
-  for (int i = 0; i < 16; i++)
+  for (int i = 0; i < priv->nchannels; i++)
   {
-    pwminfo("  PWM%d_POSEDGE: %08x PWM%d_NEGEDGE: %08x\n",
-          i + 1,
-          pwm_getreg(priv, MPFS_COREPWM_PWM1_POS_EDGE_OFFSET + (i * 4)),
-          i + 1,
-          pwm_getreg(priv, MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET + (i * 4)));
+    pwminfo("  PWM%d_POSEDGE: %s%08x PWM%d_NEGEDGE: %s%08x\n",
+          i + 1, (i < 9) ? " " : "",
+          pwm_getreg(priv, MPFS_COREPWM_PWM1_POS_EDGE_OFFSET +
+                     i * MPFS_PWMREG_STEP),
+          i + 1, (i < 9) ? " " : "",
+          pwm_getreg(priv, MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET +
+                     i * MPFS_PWMREG_STEP));
   }
 }
 #endif
@@ -310,12 +309,12 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
    * will be the one that has the smallest prescaler value. That is the solution
    * that should give us the most accuracy in the pwm control.
    *
-   * Example for clk = 25MHz and using 32 bit wide registers:
+   * Example for clk = 25MHz, prescale 0 and 32 bit wide registers:
    *   PWM period granularity PWM_PG = (PRESCALE + 1) / pwmclk =
-   *   40 ns × 1 = 40 ns, so the smallest step with PRESCALE = 0 is 40ns
-   *   pwmclk = clk / (PRESCALE + 1) = 25,000,000 / (PRESCALE + 1)
+   *   40 ns × 1 = 40 ns, so the smallest step is 40ns
+   *   pwmclk = clk / (PRESCALE + 1) = 25,000,000 / (PRESCALE + 1) = 25,000,000
    *
-   *    For desired output frequency of 50Hz and using PRESCALE = 0
+   *    For desired output frequency of 50Hz and using PRESCALE of 0:
    *    PERIOD = pwmclk / frequency = 25,000,000 / 50 = 500,000
    */
 
@@ -356,16 +355,13 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
       return -EINVAL;
     }
 
-    pwminfo("duty: %u, neg_edge: %u\n",
-      info->channels[i].duty, neg_edge);
-
     /* Set the channels duty cycle by writing to the NEG_EDGE register
       * for this channel
       */
     const int neg_edge_reg_offset =
       MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET +
       (MPFS_COREPWM_PWM2_NEG_EDGE_OFFSET -
-        MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET) * (channel - 1);
+       MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET) * (channel - 1);
 
     pwm_putreg(priv, neg_edge_reg_offset, neg_edge);
 
@@ -394,12 +390,12 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
  * Name: pwm_update_duty
  *
  * Description:
- *   Try to change only channel duty.
+ *   Change the channel duty cycle.
  *
  * Input Parameters:
  *   priv    - A reference to the lower half PWM driver state structure
  *   channel - Channel to by updated
- *   duty    - New duty.
+ *   duty    - New duty cycle
  *
  * Returned Value:
  *   Zero on success; a negated errno value on failure
@@ -407,7 +403,7 @@ static int pwm_timer(FAR struct mpfs_pwmtimer_s *priv,
  ****************************************************************************/
 
 static int pwm_update_duty(FAR struct mpfs_pwmtimer_s *priv,
-				    uint8_t channel, ub16_t duty16)
+                           uint8_t channel, ub16_t duty16)
 {
   uint32_t              period;
   uint32_t              neg_edge;
@@ -415,23 +411,22 @@ static int pwm_update_duty(FAR struct mpfs_pwmtimer_s *priv,
 
   DEBUGASSERT(priv != NULL);
 
-  if (channel == 0 || channel > priv->nchannels)
+  if (channel == 0 || channel > priv->nchannels ||
+      channel > MPFS_MAX_PWM_CHANNELS)
   {
     pwmerr("ERROR: PWM%d has no such channel: %u\n", priv->pwmid, channel);
     return -EINVAL;
   }
 
-  pwminfo("PWM%u channel: %u duty: %08x\n", priv->pwmid, channel, duty16);
+  pwminfo("PWM%u channel %u, duty %08x\n", priv->pwmid, channel, duty16);
 
   period = pwm_getreg(priv, MPFS_COREPWM_PERIOD_OFFSET);
   neg_edge = b32toi(duty * period + b32HALF);
 
-  pwminfo("duty: %u, period: %u neg_edge: %u\n", duty16, period, neg_edge);
-
   /* Set the channels duty cycle by writing to the NEG_EDGE register
     * for this channel
     */
-  const uint8_t neg_edge_reg_offset =
+  const int neg_edge_reg_offset =
     MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET +
     (MPFS_COREPWM_PWM2_NEG_EDGE_OFFSET -
      MPFS_COREPWM_PWM1_NEG_EDGE_OFFSET) * (channel - 1);
@@ -528,27 +523,33 @@ static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
   {
     int i;
 
-    for (i = 0; ret == OK && i < MPFS_MAX_PWM_CHANNELS; i++)
+    pwminfo("PWM%u, no change in frequency\n", priv->pwmid);
+
+    for (i = 0; ret == OK && i < MPFS_MAX_PWM_CHANNELS && i < priv->nchannels; i++)
     {
       /* Set output if channel configured */
 
-      if (info->channels[i].channel != 0)
+      uint8_t chan = info->channels[i].channel;
+
+      if (chan != 0 && chan <= priv->nchannels)
       {
-        ret = pwm_update_duty(priv, info->channels[i].channel,
-                              info->channels[i].duty);
+        pwminfo("  channel %d, duty %d\n");
+        ret = pwm_update_duty(priv, chan, info->channels[i].duty);
       }
     }
   }
   else
   {
+    pwminfo("PWM%u, change frequency and duty cycle\n", priv->pwmid);
+
     ret = pwm_timer(priv, info);
 
     /* Save current frequency */
 
     if (ret == OK)
-      {
+    {
         priv->frequency = info->frequency;
-      }
+    }
   }
 
   return ret;
@@ -575,30 +576,30 @@ static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
 {
   FAR struct mpfs_pwmtimer_s *priv = (FAR struct mpfs_pwmtimer_s *)dev;
 
-  pwminfo("PWM%u\n", priv->pwmid);
+  pwminfo("PWM%u pwm_stop\n", priv->pwmid);
 
-  /* Determine which timer to reset */
+  /* Check that timer number is valid */
 
   switch (priv->pwmid)
   {
 #ifdef CONFIG_MPFS_COREPWM0
-    case 1:
+    case 0:
       break;
 #endif
 #ifdef CONFIG_MPFS_COREPWM1
-    case 2:
+    case 1:
       break;
 #endif
     default:
       return -EINVAL;
   }
 
-  /* Stopped so frequency is zero */
+  /* Stopped so set frequency to zero */
 
   priv->frequency = 0;
 
-  /* No resetting on CorePWM block so just stop the output and
-   * it into a state where pwm_start() can be called.
+  /* No resetting on CorePWM block so just disable the channels and
+   * it is in a state where pwm_start() can be called.
    */
 
   pwm_putreg(priv, MPFS_COREPWM_PWM_ENABLE_0_7_OFFSET,  0x00);
