@@ -645,22 +645,22 @@ static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev, int cmd,
  ****************************************************************************/
 
 /****************************************************************************
- * Name: mpfs_corepwminitialize
+ * Name: mpfs_corepwm_init
  *
  * Description:
- *   Initialize one timer for use with the upper_level PWM driver.
+ *   Initialize a CorePWM block.
  *
  * Input Parameters:
- *   pwmid - A number identifying the timer use.  The number of valid timer
- *     IDs varies with the FPGA design.
+ *   pwmid - A number identifying the pwm block. The number of valid
+ *           IDs varies depending on the configuration of the FPGA.
  *
  * Returned Value:
- *   On success, a pointer to the mpfs lower half PWM driver is returned.
- *   NULL is returned on any failure.
+ *   On success, a pointer to the MPFS CorePWM lower half PWM driver is
+ *   returned. NULL is returned on any failure.
  *
  ****************************************************************************/
 
-FAR struct pwm_lowerhalf_s *mpfs_corepwminitialize(int pwmid)
+FAR struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid)
 {
   FAR struct mpfs_pwmtimer_s *lower;
 

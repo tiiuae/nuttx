@@ -77,22 +77,22 @@ extern "C"
  ****************************************************************************/
 
 /****************************************************************************
- * Name: mpfs_corepwminitialize
+ * Name: mpfs_corepwm_init
  *
  * Description:
  *   Initialize a CorePWM block.
  *
  * Input Parameters:
  *   pwmid - A number identifying the pwm block. The number of valid
- *     IDs varies depending on the configuration of the FPGA.
+ *           IDs varies depending on the configuration of the FPGA.
  *
  * Returned Value:
- *   On success, a pointer to the MPFS lower half PWM driver is returned.
- *   NULL is returned on any failure.
+ *   On success, a pointer to the MPFS CorePWM lower half PWM driver is
+ *   returned. NULL is returned on any failure.
  *
  ****************************************************************************/
 
-FAR struct pwm_lowerhalf_s *mpfs_corepwminitialize(int pwmid);
+FAR struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid);
 
 #undef EXTERN
 #if defined(__cplusplus)
