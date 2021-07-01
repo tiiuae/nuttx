@@ -386,6 +386,7 @@ void mpfs_clockconfig(void)
                                   SUBBLK_CLOCK_CR_MMUART2_MASK |
                                   SUBBLK_CLOCK_CR_MMUART3_MASK |
                                   SUBBLK_CLOCK_CR_MMUART4_MASK |
+                                  SUBBLK_CLOCK_CR_I2C0_MASK |
                                   SUBBLK_CLOCK_CR_I2C1_MASK |
                                   SUBBLK_CLOCK_CR_CFM_MASK);
 
@@ -399,6 +400,7 @@ void mpfs_clockconfig(void)
                                  SOFT_RESET_CR_MMUART2_MASK |
                                  SOFT_RESET_CR_MMUART3_MASK |
                                  SOFT_RESET_CR_MMUART4_MASK |
+                                 SOFT_RESET_CR_I2C0_MASK |
                                  SOFT_RESET_CR_I2C1_MASK |
                                  SOFT_RESET_CR_CFM_MASK);
 
