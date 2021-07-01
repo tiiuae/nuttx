@@ -75,6 +75,28 @@ struct spi_dev_s *mpfs_spibus_initialize(int port);
 
 int mpfs_spibus_uninitialize(FAR struct spi_dev_s *dev);
 
+/****************************************************************************
+ * Name:  mpfs_spi0/1/..._select
+ *
+ * Description:
+ *   The external function, mpfs_spi0/1/..._select,
+ *   must be provided by board-specific logic.  This is implementation of the
+ *   select of the SPI interface defined by
+ *   struct spi_ops_s (see include/nuttx/spi/spi.h).
+ *   All other methods (including mpfs_spibus_initialize())
+ *   are provided by common MPFS logic.
+ ****************************************************************************/
+
+#ifdef CONFIG_MPFS_SPI0
+void mpfs_spi0_select(FAR struct spi_dev_s *dev,
+                        uint32_t devid, bool selected);
+#endif
+
+#ifdef CONFIG_MPFS_SPI1
+void mpfs_spi1_select(FAR struct spi_dev_s *dev,
+                        uint32_t devid, bool selected);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
