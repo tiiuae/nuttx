@@ -181,6 +181,9 @@
 #define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_SRS14_ECT_IE | \
                                    MPFS_EMMCSD_SRS14_BRR_IE)
 
+#define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_SRS14_ECT_IE | \
+                                   MPFS_EMMCSD_SRS14_BWR_IE)
+
 /* Let's wait until we have both SDIO transfer complete and DMA complete. */
 
 #define SDMMC_XFRDONE_FLAG  (1)
@@ -346,13 +349,6 @@ struct mpfs_dev_s
   bool               widebus;         /* Required for DMA support */
   bool               onebit;          /* true: Only 1-bit transfers are supported */
 
-#if defined(HAVE_SDMMC_SDIO_MODE)
-  uint32_t           sdiointmask;            /* STM32 SDIO register mask */
-  int               (*do_sdio_card)(void *); /* SDIO card ISR */
-  void               *do_sdio_arg;           /* arg for SDIO card ISR */
-  bool               sdiomode;               /* True: in SDIO mode */
-#endif
-
   /* Misc */
 
   uint32_t           blocksize;       /* Current block size */
@@ -382,7 +378,6 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask);
 
 /* Data Transfer Helpers ****************************************************/
 
-static void mpfs_datadisable(struct mpfs_dev_s *priv);
 #ifndef CONFIG_MPFS_EMMCSD_DMA
 static void mpfs_sendfifo(struct mpfs_dev_s *priv);
 static void mpfs_recvfifo(struct mpfs_dev_s *priv);
@@ -398,9 +393,6 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
 /* Interrupt Handling *******************************************************/
 
 static int  mpfs_emmcsd_interrupt(int irq, void *context, void *arg);
-#if defined(CONFIG_MMCSD_SDIOWAIT_WRCOMPLETE)
-static int  mpfs_sdmmc_rdyinterrupt(int irq, void *context, void *arg);
-#endif
 
 /* SDIO interface methods ***************************************************/
 
@@ -528,9 +520,6 @@ struct mpfs_dev_s g_emmcsd_dev =
   .bus_speed         = MPFS_EMMCSD_MODE_DDR,
   .blocksize         = 512,
   .onebit            = false,
-#if defined(HAVE_SDMMC_SDIO_MODE) && defined(CONFIG_SDMMC1_SDIO_MODE)
-  .sdiomode          = true,
-#endif
 };
 
 /* Input dma buffer for unaligned transfers */
@@ -579,6 +568,7 @@ static int mpfs_takesem(struct mpfs_dev_s *priv)
  *
  ****************************************************************************/
 
+#ifdef MPFS_USE_PHY_TRAINING
 static uint8_t mpfs_get_phy_addr(mpfs_mmc_phydelay phydelaytype)
 {
   if (phydelaytype > MPFS_MMC_PHY_DELAY_DLL_DAT_STROBE)
@@ -887,6 +877,7 @@ static uint8_t mpfs_phy_training_mmc(FAR struct sdio_dev_s *dev,
 
   return ret_status;
 }
+#endif
 
 /****************************************************************************
  * Name: mpfs_setclkrate
@@ -1000,9 +991,6 @@ static void mpfs_configwaitints(struct mpfs_dev_s *priv, uint32_t waitmask,
                                  sdio_eventset_t wkupevent)
 {
   irqstate_t flags;
-#if defined(CONFIG_MMCSD_SDIOWAIT_WRCOMPLETE)
-  int pinset;
-#endif
 
   /* Save all of the data and set the new interrupt mask in one, atomic
    * operation.
@@ -1013,17 +1001,6 @@ static void mpfs_configwaitints(struct mpfs_dev_s *priv, uint32_t waitmask,
   priv->waitevents = waitevents;
   priv->wkupevent  = wkupevent;
   priv->waitmask   = waitmask;
-
-#if defined(HAVE_SDMMC_SDIO_MODE)
-  if (priv->sdiomode == true)
-    {
-      // TBD
-    }
-  else
-#endif
-    {
-      // TBD
-    }
 
   leave_critical_section(flags);
 }
@@ -1055,30 +1032,6 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask)
   putreg32(priv->xfrmask | priv->waitmask, MPFS_EMMCSD_SRS14);
 
   leave_critical_section(flags);
-}
-
-/****************************************************************************
- * Name: mpfs_datadisable
- *
- * Description:
- *   Disable the SDIO data path setup by mpfs_dataconfig() and
- *   disable DMA.
- *
- ****************************************************************************/
-
-static void mpfs_datadisable(struct mpfs_dev_s *priv)
-{
-  /* Disable the DMA */
-
-  modifyreg32(MPFS_EMMCSD_SRS03, MPFS_EMMCSD_SRS03_DMAE, 0);
-
-  /* Reset TBLOCKSIZE */
-
-  modifyreg32(MPFS_EMMCSD_SRS01, MPFS_EMMCSD_SRS01_TBS, 0);
-
-  up_disable_irq(priv->plic_irq);
-
-  mcinfo("SRS01 now: %08" PRIx32 "\n", getreg32(MPFS_EMMCSD_SRS01));
 }
 
 /****************************************************************************
@@ -1137,19 +1090,17 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
           priv->remaining = 0;
         }
 
-      /* Wait for buffer write ready */
-
-      while ((getreg32(MPFS_EMMCSD_SRS12) & (MPFS_EMMCSD_SRS12_BWR |
-             MPFS_EMMCSD_SRS12_EINT)) == 0);
-
       /* Put the word in the FIFO */
 
       putreg32(data.w, MPFS_EMMCSD_SRS08);
-
-      /* Wait for the write to complete */
-
-      while ((getreg32(MPFS_EMMCSD_SRS12) & MPFS_EMMCSD_SRS12_TC) == 0);
     }
+
+  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
+
+  /* Wait for buffer write ready */
+
+  while ((getreg32(MPFS_EMMCSD_SRS12) & (MPFS_EMMCSD_SRS12_BWR |
+         MPFS_EMMCSD_SRS12_EINT)) == 0);
 }
 #endif
 
@@ -1409,9 +1360,10 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
       // TBD
     }
 
-  /* Clear Buffer Read Ready (BRR) interrupt */
+  /* Clear Buffer Read Ready (BRR) and BWR interrupts */
 
-  putreg32(MPFS_EMMCSD_SRS12, MPFS_EMMCSD_SRS12_BRR);
+  putreg32(MPFS_EMMCSD_SRS12, MPFS_EMMCSD_SRS12_BRR |
+           MPFS_EMMCSD_SRS12_BWR);
 
   /* Mark the transfer finished */
 
@@ -1446,10 +1398,6 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)arg;
   uint32_t enabled;
   uint32_t pending;
-#if defined(HAVE_SDMMC_SDIO_MODE)
-  uint32_t mask;
-#endif
-
   uint32_t status;
   uintptr_t address;
   uintptr_t highaddr;
@@ -1528,7 +1476,11 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         {
           mpfs_recvfifo(priv);
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
-          putreg32(MPFS_EMMCSD_SRS12_BRR, MPFS_EMMCSD_SRS12);
+        }
+      else if (status & MPFS_EMMCSD_SRS12_BWR)
+        {
+          mpfs_sendfifo(priv);
+          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
         {
@@ -1849,6 +1801,11 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
 
   if (!priv->emmc)
     {
+      if (!(srs09 & MPFS_EMMCSD_SRS09_CI))
+        {
+          mcerr("Please insert the SD card!\n");
+        }
+
       DEBUGASSERT(srs09 & MPFS_EMMCSD_SRS09_CI);
     }
 
@@ -2251,10 +2208,14 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
       if ((cmd & MMCSD_DATAXFR_MASK) == MMCSD_RDDATAXFR)
         {
           command_information |= MPFS_EMMCSD_SRS03_DTDS;
-          mcinfo("cmd & MMCSD_RDDATAXFR \n");
+          mcinfo("cmd & MMCSD_RDDATAXFR\n");
+        }
+      else if ((cmd & MMCSD_DATAXFR_MASK) == MMCSD_WRDATAXFR)
+        {
+          mcinfo("cmd & MMCSD_WRDATAXFR\n");
         }
 
-      mcinfo("cmd & MMCSD_DATAXFR_MASK \n");
+      mcinfo("cmd & MMCSD_DATAXFR_MASK\n");
     }
 #endif
 
@@ -2385,22 +2346,22 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
   DEBUGASSERT(priv != NULL && buffer != NULL && nbytes > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
 
-  /* Reset the DPSM configuration */
-
-  mpfs_datadisable(priv);
-
   /* Save the source buffer information for use by the interrupt handler */
 
   priv->buffer     = (uint32_t *)buffer;
   priv->remaining  = nbytes;
   priv->receivecnt = 0;
 
-  modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
-              MPFS_EMMCSD_SRS11_SRCMD);
-
-  nxsig_usleep(1000);
-
   putreg32(priv->blocksize | (1 << 16), MPFS_EMMCSD_SRS01);
+
+  /* Enable interrupts */
+
+  putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
+  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
+
+  mpfs_configxfrints(priv, MPFS_EMMCSD_SEND_MASK);
+
+  up_enable_irq(priv->plic_irq);
 
   return OK;
 }
@@ -2574,7 +2535,7 @@ static int mpfs_check_recverror(struct mpfs_dev_s *priv)
   else if (!(regval & MPFS_EMMCSD_SRS12_CC))
     {
       mcerr("ERROR: Command not completed: %08" PRIx32 "\n", status);
-       ret = -EIO;
+      ret = -EIO;
     }
 
   return ret;
@@ -2604,7 +2565,7 @@ static int mpfs_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
 
   /* Check if a timeout or CRC error occurred */
 
-  if (!(cmd & MMCSD_DATAXFR_MASK))
+  if (!(cmd & MMCSD_DATAXFR_MASK)) /* TBD: Fix this bypass! */
     {
       ret = mpfs_check_recverror(priv);
     }
@@ -2757,7 +2718,7 @@ static void mpfs_waitenable(FAR struct sdio_dev_s *dev,
 
   if ((eventset & SDIOWAIT_TRANSFERDONE) != 0)
     {
-  //    waitmask |= MPFS_EMMCSD_XFRDONE_MASK;
+      // blank!
     }
 
   /* Enable event-related interrupts */
@@ -3044,8 +3005,7 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 #if defined(CONFIG_RISCV_DCACHE)
   if (priv->unaligned_rx)
     {
-      sdmmc_putreg32(priv, (uintptr_t)sdmmc_rxbuffer,
-                     STM32_SDMMC_IDMABASE0R_OFFSET);
+      // TBD
     }
   else
 #endif

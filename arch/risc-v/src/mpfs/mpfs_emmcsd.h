@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/arm/src/stm32h7/stm32_sdmmc.h
+ * arch/risc-v/src/mpfs/mpfs_emmcsd.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -110,4 +110,4 @@ void sdio_wrprotect(FAR struct sdio_dev_s *dev, bool wrprotect);
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __ARCH_ARM_SRC_STM32H7_STM32_SDMMC_H */
+#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_EMMCSD_H */
