@@ -116,6 +116,10 @@ config MPFS_I2C1
         select ARCH_HAVE_I2CRESET
         default n
 
+config MPFS_EMMCSD
+        bool "EMMCSD"
+        default n
+
 comment "CorePWM Options"
 
 config MPFS_HAVE_COREPWM

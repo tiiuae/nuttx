@@ -41,9 +41,13 @@
                                  GPIO_IRQ_ENABLE | GPIO_IRQ_EDGE_POS)
 #define ICICLE_GPIO_BUTTON3_ALT (GPIO_BANK2 | GPIO_PIN27 | GPIO_OUTPUT)
 
+#define SDIO_SLOTNO 0
+#define SDIO_MINOR  0
+
 int mpfs_bringup(void);
 int mpfs_board_spi_init(void);
 int mpfs_board_i2c_init(void);
 int mpfs_pwm_setup(void);
+int mpfs_board_emmcsd_init(void);
 
 #endif /* __BOARDS_RISCV_ICICLE_MPFS_SRC_MPFSICICLE_H */
