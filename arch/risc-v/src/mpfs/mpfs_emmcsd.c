@@ -142,12 +142,12 @@
 
 /* Timing */
 
-#define SDMMC_CMDTIMEOUT         (100000)
-#define SDMMC_LONGTIMEOUT        (100000000)
+#define EMMCSD_CMDTIMEOUT         (100000)
+#define EMMCSD_LONGTIMEOUT        (100000000)
 
 /* Block size for multi-block transfers */
 
-#define SDMMC_MAX_BLOCK_SIZE          (512)
+#define EMMCSD_MAX_BLOCK_SIZE     (512)
 
 /* Event waiting interrupt mask bits */
 
@@ -186,9 +186,9 @@
 
 /* Let's wait until we have both SDIO transfer complete and DMA complete. */
 
-#define SDMMC_XFRDONE_FLAG  (1)
-#define SDMMC_DMADONE_FLAG  (2)
-#define SDMMC_ALLDONE       (3)
+#define EMMCSD_XFRDONE_FLAG  (1)
+#define EMMCSD_DMADONE_FLAG  (2)
+#define EMMCSD_ALLDONE       (3)
 
 /* PHY configuration delay type */
 
@@ -278,6 +278,8 @@ typedef enum
 #define LIBERO_SETTING_MSSIO_BANK4_IO_CFG_10_11_CR_SD   0x08290829UL
 #define LIBERO_SETTING_MSSIO_BANK4_IO_CFG_12_13_CR_SD   0x08290829UL
 
+/* eMMC / SD switch address */
+
 #define SDIO_REGISTER_ADDRESS                           0x4f000000
 
 #define MPFS_SYSREG_IOMUX1   (MPFS_SYSREG_BASE + \
@@ -321,6 +323,7 @@ struct mpfs_dev_s
   int                bus_voltage;     /* Bus voltage */
   int                bus_speed;       /* Bus speed */
   int                status;          /* Status after initialization */
+  int                jumpers_3v3;     /* Jumper settings */
 
   /* Event support */
 
@@ -353,13 +356,10 @@ struct mpfs_dev_s
 
   uint32_t           blocksize;       /* Current block size */
   uint32_t           receivecnt;      /* Real count to receive */
-#if !defined(CONFIG_MPFS_EMMCSD_DMA)
-  struct work_s      cbfifo;          /* Monitor for Lame FIFO */
-#endif
-  uint8_t            rxfifo[FIFO_SIZE_IN_BYTES] /* To offload with IDMA */
+  uint8_t            rxfifo[FIFO_SIZE_IN_BYTES] /* To offload with DMA */
                      __attribute__((aligned(RISCV_DCACHE_LINESIZE)));
 #if defined(CONFIG_RISCV_DCACHE) && defined(CONFIG_MPFS_EMMCSD_DMA)
-  bool               unaligned_rx; /* read buffer is not cache-line aligned */
+  bool               unaligned_rx;    /* read buffer is not cache-line aligned */
 #endif
 };
 
@@ -372,8 +372,8 @@ struct mpfs_dev_s
 static int  mpfs_takesem(struct mpfs_dev_s *priv);
 #define     mpfs_givesem(priv) (nxsem_post(&priv->waitsem))
 static void mpfs_configwaitints(struct mpfs_dev_s *priv, uint32_t waitmask,
-                                 sdio_eventset_t waitevents,
-                                 sdio_eventset_t wkupevents);
+                                sdio_eventset_t waitevents,
+                                sdio_eventset_t wkupevents);
 static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask);
 
 /* Data Transfer Helpers ****************************************************/
@@ -386,9 +386,9 @@ static void mpfs_recvdma(struct mpfs_dev_s *priv);
 #endif
 static void mpfs_eventtimeout(wdparm_t arg);
 static void mpfs_endwait(struct mpfs_dev_s *priv,
-                          sdio_eventset_t wkupevent);
+                         sdio_eventset_t wkupevent);
 static void mpfs_endtransfer(struct mpfs_dev_s *priv,
-                              sdio_eventset_t wkupevent);
+                             sdio_eventset_t wkupevent);
 
 /* Interrupt Handling *******************************************************/
 
@@ -409,54 +409,54 @@ static sdio_capset_t mpfs_capabilities(FAR struct sdio_dev_s *dev);
 static sdio_statset_t mpfs_status(FAR struct sdio_dev_s *dev);
 static void mpfs_widebus(FAR struct sdio_dev_s *dev, bool enable);
 static void mpfs_clock(FAR struct sdio_dev_s *dev,
-                        enum sdio_clock_e rate);
+                       enum sdio_clock_e rate);
 static int  mpfs_attach(FAR struct sdio_dev_s *dev);
 
 /* Command/Status/Data Transfer */
 
 static int  mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
-                          uint32_t arg);
+                         uint32_t arg);
 #ifdef CONFIG_SDIO_BLOCKSETUP
 static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
               unsigned int blocksize, unsigned int nblocks);
 #endif
 #ifndef CONFIG_MPFS_EMMCSD_DMA
 static int  mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
-                            size_t nbytes);
+                           size_t nbytes);
 static int  mpfs_sendsetup(FAR struct sdio_dev_s *dev,
-                            FAR const uint8_t *buffer, size_t nbytes);
+                           FAR const uint8_t *buffer, size_t nbytes);
 #endif
 static int  mpfs_cancel(FAR struct sdio_dev_s *dev);
 
 static int  mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd);
 static int  mpfs_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
-                               uint32_t *rshort);
+                              uint32_t *rshort);
 static int  mpfs_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
-                           uint32_t rlong[4]);
+                          uint32_t rlong[4]);
 static int  mpfs_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
-                            uint32_t *rshort);
+                           uint32_t *rshort);
 
 /* EVENT handler */
 
 static void mpfs_waitenable(FAR struct sdio_dev_s *dev,
-                             sdio_eventset_t eventset, uint32_t timeout);
+                            sdio_eventset_t eventset, uint32_t timeout);
 static sdio_eventset_t mpfs_eventwait(FAR struct sdio_dev_s *dev);
 static void mpfs_callbackenable(FAR struct sdio_dev_s *dev,
-                                 sdio_eventset_t eventset);
+                                sdio_eventset_t eventset);
 static int  mpfs_registercallback(FAR struct sdio_dev_s *dev,
-                                   worker_t callback, void *arg);
+                                  worker_t callback, void *arg);
 
 /* DMA */
 
 #if defined(CONFIG_MPFS_EMMCSD_DMA)
 #  if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
 static int  mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
-                               FAR const uint8_t *buffer, size_t buflen);
+                              FAR const uint8_t *buffer, size_t buflen);
 #  endif
 static int  mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
-                               FAR uint8_t *buffer, size_t buflen);
+                              FAR uint8_t *buffer, size_t buflen);
 static int  mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
-                               FAR const uint8_t *buffer, size_t buflen);
+                              FAR const uint8_t *buffer, size_t buflen);
 #endif
 
 /* Initialization/uninitialization/reset ************************************/
@@ -516,15 +516,16 @@ struct mpfs_dev_s g_emmcsd_dev =
   .plic_irq          = MPFS_IRQ_MMC_MAIN,
   .emmc              = false,
   .bus_voltage       = MPFS_EMMCSD_3_3V_BUS_VOLTAGE,
-  .status            = MPFS_EMMCSD_INITIALIZED,
   .bus_speed         = MPFS_EMMCSD_MODE_DDR,
+  .status            = MPFS_EMMCSD_INITIALIZED,
+  .jumpers_3v3       = 1,
   .blocksize         = 512,
   .onebit            = false,
 };
 
 /* Input dma buffer for unaligned transfers */
 #if defined(CONFIG_RISCV_DCACHE) && defined(CONFIG_MPFS_EMMCSD_DMA)
-static uint8_t sdmmc_rxbuffer[SDMMC_MAX_BLOCK_SIZE]
+static uint8_t sdmmc_rxbuffer[EMMCSD_MAX_BLOCK_SIZE]
 __attribute__((aligned(RISCV_DCACHE_LINESIZE)));
 #endif
 
@@ -540,7 +541,7 @@ __attribute__((aligned(RISCV_DCACHE_LINESIZE)));
  *   of signals).
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *
  * Returned Value:
  *   Normally OK, but may return -ECANCELED in the rare event that the task
@@ -591,7 +592,7 @@ static uint8_t mpfs_get_phy_addr(mpfs_mmc_phydelay phydelaytype)
  *   Reads the read tuning sequence.
  *
  * Input Parameters:
- *   priv      - Instance of the SDMMC private state structure.
+ *   priv      - Instance of the EMMCSD private state structure.
  *   read_data - Data block for the tuning sequence
  *   cmd       - Command used during tuning
  *
@@ -609,7 +610,7 @@ static int mpfs_read_tune_block(struct mpfs_dev_s *priv, uint32_t *read_data,
   uint32_t srs09;
   uint16_t word_cnt = (priv->blocksize / sizeof(uint32_t));
   uint32_t idx_cnt = 0;
-  uint32_t retries = SDMMC_CMDTIMEOUT;
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
   uint32_t size = priv->blocksize;
   int ret_status = OK;
 
@@ -652,7 +653,7 @@ static int mpfs_read_tune_block(struct mpfs_dev_s *priv, uint32_t *read_data,
 
   idx_cnt = 0;
 
-  retries = SDMMC_CMDTIMEOUT;
+  retries = EMMCSD_CMDTIMEOUT;
   do
     {
       blk_read = getreg32(MPFS_EMMCSD_SRS12);
@@ -693,7 +694,7 @@ static int mpfs_read_tune_block(struct mpfs_dev_s *priv, uint32_t *read_data,
  *   Performs the PHY write.
  *
  * Input Parameters:
- *   priv        - Instance of the SDMMC private state structure.
+ *   priv        - Instance of the EMMCSD private state structure.
  *   delay_type  - Data block for the tuning sequence
  *   delay_value - Counter value
  *
@@ -707,7 +708,7 @@ static void mpfs_phy_write_set(struct mpfs_dev_s *priv, uint8_t delay_type,
 {
   uint32_t reg = 0;
   uint32_t phycfg;
-  uint32_t retries = SDMMC_CMDTIMEOUT;
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
   uint8_t phyaddr = 0;
 
   phyaddr = mpfs_get_phy_addr(delay_type);
@@ -736,7 +737,7 @@ static void mpfs_phy_write_set(struct mpfs_dev_s *priv, uint8_t delay_type,
 
   /* Wait for acknowledge */
 
-  retries = SDMMC_CMDTIMEOUT;
+  retries = EMMCSD_CMDTIMEOUT;
   do
     {
       reg = getreg32(MPFS_EMMCSD_HRS04);
@@ -887,7 +888,7 @@ static uint8_t mpfs_phy_training_mmc(FAR struct sdio_dev_s *dev,
  *   settings, if already enabled.
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *   clkcr - New clock rate.
  *
  * Returned Value:
@@ -901,7 +902,7 @@ static void mpfs_setclkrate(struct mpfs_dev_s *priv, uint32_t clkrate)
   uint32_t settings;
   uint32_t divider;
   uint32_t clkstable;
-  uint32_t retries = SDMMC_CMDTIMEOUT;
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
   int i;
 
   mcinfo("clkrate: %08" PRIx32 "\n", clkrate);
@@ -960,7 +961,7 @@ static void mpfs_setclkrate(struct mpfs_dev_s *priv, uint32_t clkrate)
   if (retries == 0)
     {
       mcwarn("Clock didn't get stable!\n");
-      DEBUGASSERT(retries > 0);
+      DEBUGPANIC();
     }
 
   priv->clk_enabled = true;
@@ -976,7 +977,7 @@ static void mpfs_setclkrate(struct mpfs_dev_s *priv, uint32_t clkrate)
  *   Enable/disable SDIO interrupts needed to support the wait function
  *
  * Input Parameters:
- *   priv       - Instance of the SDMMC private state structure.
+ *   priv       - Instance of the EMMCSD private state structure.
  *   waitmask   - The set of bits in the SDIO MASK register to set
  *   waitevents - Waited for events
  *   wkupevent  - Wake-up events
@@ -1012,7 +1013,7 @@ static void mpfs_configwaitints(struct mpfs_dev_s *priv, uint32_t waitmask,
  *   Enable SDIO interrupts needed to support the data transfer event
  *
  * Input Parameters:
- *   priv    - Instance of the SDMMC private state structure.
+ *   priv    - Instance of the EMMCSD private state structure.
  *   xfrmask - The set of bits in the SDIO MASK register to set
  *
  * Returned Value:
@@ -1041,7 +1042,7 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask)
  *   Send SDIO data in interrupt mode
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *
  * Returned Value:
  *   None
@@ -1056,6 +1057,11 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
     uint32_t w;
     uint8_t  b[4];
   } data;
+
+  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
+  putreg32(MPFS_EMMCSD_SRS12_BWR, MPFS_EMMCSD_SRS12);
+
+  DEBUGASSERT(priv->remaining != 0);
 
   /* Loop while there is more data to be sent and the RX FIFO is not full */
 
@@ -1094,13 +1100,6 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 
       putreg32(data.w, MPFS_EMMCSD_SRS08);
     }
-
-  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
-
-  /* Wait for buffer write ready */
-
-  while ((getreg32(MPFS_EMMCSD_SRS12) & (MPFS_EMMCSD_SRS12_BWR |
-         MPFS_EMMCSD_SRS12_EINT)) == 0);
 }
 #endif
 
@@ -1111,7 +1110,7 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
  *   Receive SDIO data in interrupt mode
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *
  * Returned Value:
  *   None
@@ -1129,19 +1128,14 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 
   mcinfo("Reading: %lu bytes\n", priv->remaining);
 
+  DEBUGASSERT(priv->remaining > 0);
+
   /* Loop while there is space to store the data and there is more
    * data available in the RX FIFO.
    */
 
   while (priv->remaining > 0)
     {
-      /* Wait for buffer read ready */
-
-      /* while ((getreg32(MPFS_EMMCSD_SRS12) & (MPFS_EMMCSD_SRS12_BRR |
-       *      MPFS_EMMCSD_SRS12_EINT)) == 0);
-       * TBD: most likely unnecessary!
-       */
-
       /* Read the next word from the RX FIFO */
 
       data.w = getreg32(MPFS_EMMCSD_SRS08);
@@ -1185,7 +1179,7 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
  *   Receive SDIO data in dma mode
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *
  * Returned Value:
  *   None
@@ -1293,7 +1287,7 @@ static void mpfs_eventtimeout(wdparm_t arg)
  *   Wake up a waiting thread if the waited-for event has occurred.
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *   wkupevent - The event that caused the wait to end
  *
  * Returned Value:
@@ -1331,7 +1325,7 @@ static void mpfs_endwait(struct mpfs_dev_s *priv,
  *   are detected.
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the EMMCSD private state structure.
  *   wkupevent - The event that caused the transfer to end
  *
  * Returned Value:
@@ -1377,16 +1371,18 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
 
       mpfs_endwait(priv, wkupevent);
     }
+
+  //up_disable_irq(priv->plic_irq);
 }
 
 /****************************************************************************
  * Name: mpfs_emmcsd_interrupt
  *
  * Description:
- *   SDMMC interrupt handler
+ *   eMMCSD interrupt handler
  *
  * Input Parameters:
- *   priv  - Instance of the SDMMC private state structure.
+ *   priv  - Instance of the eMMCSD private state structure.
  *
  * Returned Value:
  *   None
@@ -1396,12 +1392,12 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
 static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)arg;
-  uint32_t enabled;
-  uint32_t pending;
-  uint32_t status;
   uintptr_t address;
   uintptr_t highaddr;
   uint64_t address64;
+  uint32_t enabled;
+  uint32_t pending;
+  uint32_t status;
 
   DEBUGASSERT(priv != NULL);
 
@@ -1433,6 +1429,8 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_EADMA)
         {
+          /* Handle DMA error */
+
           mcerr("ERROR: DMA error: %08" PRIx32 " SRS21: %08" PRIx32 "\n",
                 status, getreg32(MPFS_EMMCSD_SRS21));
 
@@ -1441,6 +1439,8 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else
         {
+          /* Generic error, not specified above */
+
           mcerr("ERROR: %08" PRIx32 "\n", status);
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE |
                                  SDIOWAIT_ERROR);
@@ -1484,7 +1484,7 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
         {
-          putreg32(MPFS_EMMCSD_SRS12_TC, MPFS_EMMCSD_SRS12);
+          //putreg32(MPFS_EMMCSD_SRS12_TC, MPFS_EMMCSD_SRS12);
         }
       else if (status & MPFS_EMMCSD_SRS12_CC)
         {
@@ -1532,6 +1532,7 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
     }
 
   mcinfo("done\n");
+
   return OK;
 }
 
@@ -1557,9 +1558,25 @@ static int mpfs_lock(FAR struct sdio_dev_s *dev, bool lock)
   /* The multiplex bus is part of board support package. */
 
   mpfs_muxbus_sdio_lock(dev, lock);
+
   return OK;
 }
 #endif
+
+/****************************************************************************
+ * Name: mpfs_set_data_timeout
+ *
+ * Description:
+ *   Sets the cycles for determining the data line timeout.
+ *
+ * Input Parameters:
+ *   priv        - Instance of the eMMCSD private state structure.
+ *   timeout_us  - Requested timeout in microseconds
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
 
 static void mpfs_set_data_timeout(struct mpfs_dev_s *priv,
                                   uint32_t timeout_us)
@@ -1622,6 +1639,21 @@ static void mpfs_set_data_timeout(struct mpfs_dev_s *priv,
   modifyreg32(MPFS_EMMCSD_SRS11, MPFS_EMMCSD_SRS11_DTCV, timeout_interval);
 }
 
+/****************************************************************************
+ * Name: mpfs_set_sdhost_power
+ *
+ * Description:
+ *   Sets the requested SD bus voltage.
+ *
+ * Input Parameters:
+ *   priv     - Instance of the eMMCSD private state structure.
+ *   voltage  - Requested voltage: 0v, 3v3, 3v0 or 1v8
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
 static void mpfs_set_sdhost_power(struct mpfs_dev_s *priv, uint32_t voltage)
 {
   uint32_t srs16;
@@ -1671,7 +1703,24 @@ static void mpfs_set_sdhost_power(struct mpfs_dev_s *priv, uint32_t voltage)
   nxsig_usleep(1000);
 }
 
-static void mpfs_sdcard_init(void)
+/****************************************************************************
+ * Name: mpfs_sdcard_init
+ *
+ * Description:
+ *   Switches to use to SD-card instead of eMMC. Call only if the SD-card
+ *   is used, not eMMC. SDIO_REGISTER_ADDRESS is the switch itself: 0
+ *   means eMMC and 1 is for SD. Also the IOMUX settings are applied
+ *   properly.
+ *
+ * Input Parameters:
+ *   priv     - Instance of the eMMCSD private state structure.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static void mpfs_sdcard_init(struct mpfs_dev_s *priv)
 {
   mcinfo("Init SD-card. Old FPGA will crash here!\n");
 
@@ -1681,11 +1730,11 @@ static void mpfs_sdcard_init(void)
 
   /* With 3.3v we exit from here */
 
-#define MPFS_SDCARD_JUMPERS_3_3V /* Use configuration parameter instead */
-#ifdef MPFS_SDCARD_JUMPERS_3_3V
-  putreg32(1, SDIO_REGISTER_ADDRESS);
-  return;
-#endif
+  if (priv->jumpers_3v3)
+    {
+      putreg32(1, SDIO_REGISTER_ADDRESS);
+      return;
+    }
 
   putreg32(LIBERO_SETTING_MSSIO_BANK4_CFG_CR_SD, MPFS_SYSREG_B4_CFG);
   putreg32(LIBERO_SETTING_MSSIO_BANK4_IO_CFG_0_1_CR_SD, MPFS_SYSREG_B4_0_1);
@@ -1729,6 +1778,10 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
 
   if (!priv->emmc)
     {
+      /* SD card needs FPGA out of reset and FIC3 clks for the eMMC / SD
+       * switch
+       */
+
       modifyreg32(MPFS_SYSREG_SOFT_RESET_CR,
                   (1 << SYSREG_SOFT_RESET_CR_FPGA) |
                   (1 << SYSREG_SOFT_RESET_CR_FIC3), 0);
@@ -1736,10 +1789,12 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
       modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0,
                   (1 << SYSREG_SUBBLK_CLOCK_CR_FIC3));
 
-      mpfs_sdcard_init();
+      mpfs_sdcard_init(priv);
     }
 
   up_disable_irq(priv->plic_irq);
+
+  /* Perform system-level reset */
 
   modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0,
               (1 << SYSREG_SUBBLK_CLOCK_CR_MMC));
@@ -1751,6 +1806,8 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
               (1 << SYSREG_SOFT_RESET_CR_MMC), 0);
 
   nxsig_sleep(1);
+
+  /* Perform module-level reset */
 
   modifyreg32(MPFS_EMMCSD_HRS00, 0, MPFS_EMMCSD_HRS00_SWR);
 
@@ -1784,6 +1841,8 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
       modifyreg32(MPFS_EMMCSD_SRS15, 0, MPFS_EMMCSD_SRS15_A64B |
                   MPFS_EMMCSD_SRS15_HV4E);
     }
+
+  /* Clear interrupt status and disable interrupts */
 
   putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
   putreg32(0, MPFS_EMMCSD_SRS14);
@@ -1844,6 +1903,8 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
     }
   else
     {
+      /* SD-card support currently only 3.3v */
+
        mpfs_set_sdhost_power(priv, MPFS_EMMCSD_SRS10_3_3V_BUS_VOLTAGE);
     }
 
@@ -1909,6 +1970,11 @@ static sdio_capset_t mpfs_capabilities(FAR struct sdio_dev_s *dev)
     {
       caps |= SDIO_CAPS_1BIT_ONLY;
     }
+
+  /* This reverses the logic for mmcsd_writesingle(): setup first, then
+   * the command is sent. Normally the command is sent first and the setup
+   * via SDIO_SENDSETUP().
+   */
 
   caps |= SDIO_CAPS_DMABEFOREWRITE;
 
@@ -2073,11 +2139,11 @@ static int mpfs_attach(FAR struct sdio_dev_s *dev)
                                      MPFS_EMMCSD_SRS12_CIN,
                                      0);
 
-      /* Enable SDIO interrupts at the NVIC.  They can now be enabled at
-       * the SDIO controller as needed.
+      /* Enable SDIO interrupts. They can now be enabled at the
+       * SDIO controller as needed.
        */
 
-      // up_enable_irq(priv->plic_irq);
+      up_enable_irq(priv->plic_irq);
     }
 
   mcinfo("attach: %d\n", ret);
@@ -2108,7 +2174,7 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
   uint32_t command_information;
   uint32_t cmdidx;
   uint32_t srs9;
-  uint32_t retries = SDMMC_CMDTIMEOUT;
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
 
   /* Clear most status interrupts; used when card inserted etc
    * is functioning.
@@ -2122,23 +2188,24 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
                                  0);
 #endif
 
-  /* Clear all status interrupts */
-
-  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
-
   /* Check if command line is busy */
 
   do
     {
       srs9 = getreg32(MPFS_EMMCSD_SRS09);
     }
-  while (srs9 & MPFS_EMMCSD_SRS09_CICMD && --retries);
+  while (srs9 & (MPFS_EMMCSD_SRS09_CICMD | MPFS_EMMCSD_SRS09_CIDAT) &&
+         --retries);
 
   if (retries == 0)
     {
       mcerr("Busy!\n");
       return -EBUSY;
     }
+
+  /* Clear all status interrupts */
+
+  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
 
   /* Check response type */
 
@@ -2196,12 +2263,12 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
   if (cmd & MMCSD_DATAXFR_MASK)
     {
 #ifdef MPFS_BCE_ENABLED
-      /* Will likely used with DMA */
+      /* Will likely be used with DMA */
 
       command_information |= MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_BCE |
                              MPFS_EMMCSD_SRS03_RECE | MPFS_EMMCSD_SRS03_RID;
 #endif
-      command_information |= MPFS_EMMCSD_SRS03_DPS |
+      command_information |= MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_BCE |
                              MPFS_EMMCSD_SRS03_RECE |
                              MPFS_EMMCSD_SRS03_RID;
 
@@ -2222,8 +2289,9 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
   putreg32((((cmdidx << 24) & MPFS_EMMCSD_SRS03_CIDX) | command_information),
            MPFS_EMMCSD_SRS03);
 
-  mcinfo("sendcmd: %08" PRIx32 " cmd: %08" PRIx32 " arg: %08" PRIx32 "\n",
-         command_information, cmd, arg);
+  mcinfo("sendcmd: %08" PRIx32 " cmd: %08" PRIx32 " arg: %08" PRIx32
+         " cmdidx: %08" PRIx32 "\n",
+         command_information, cmd, arg, cmdidx);
 
   return OK;
 }
@@ -2251,6 +2319,8 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
 
   priv->blocksize = blocksize;
+
+  putreg32(priv->blocksize | (nblocks << 16), MPFS_EMMCSD_SRS01);
 }
 #endif
 
@@ -2263,7 +2333,7 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
  *   is necessary.  This would be called for SD memory just BEFORE sending
  *   CMD13 (SEND_STATUS), CMD17 (READ_SINGLE_BLOCK), CMD18
  *   (READ_MULTIPLE_BLOCKS), ACMD51 (SEND_SCR), etc.  Normally,
- *   SDMMC_WAITEVENT will be called to receive the indication that the
+ *   EMMCSD_WAITEVENT will be called to receive the indication that the
  *   transfer is complete.
  *
  * Input Parameters:
@@ -2292,7 +2362,7 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
   priv->remaining  = nbytes;
   priv->receivecnt = nbytes;
 
-  /* Then set up the SDIO data path, reset DAT and CMD lines */
+  /* Set up the SDIO data path, reset DAT and CMD lines */
 
   modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
               MPFS_EMMCSD_SRS11_SRCMD);
@@ -2303,16 +2373,16 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
     }
   while (state & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
 
+#ifndef CONFIG_SDIO_BLOCKSETUP
   putreg32(priv->blocksize | (1 << 16), MPFS_EMMCSD_SRS01);
-
-  /* Enable interrupts */
+#endif
 
   putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
   putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
 
-  mpfs_configxfrints(priv, MPFS_EMMCSD_RECV_MASK);
+  /* Enable interrupts */
 
-  up_enable_irq(priv->plic_irq);
+  mpfs_configxfrints(priv, MPFS_EMMCSD_RECV_MASK);
 
   return OK;
 }
@@ -2325,7 +2395,7 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
  *   Setup hardware in preparation for data transfer from the card.  This
  *   method will do whatever controller setup is necessary.  This would be
  *   called for SD memory just AFTER sending CMD24 (WRITE_BLOCK), CMD25
- *   (WRITE_MULTIPLE_BLOCK), ... and before SDMMC_SENDDATA is called.
+ *   (WRITE_MULTIPLE_BLOCK), ... and before EMMCSD_SENDDATA is called.
  *
  * Input Parameters:
  *   dev    - An instance of the SDIO device interface
@@ -2352,16 +2422,16 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
   priv->remaining  = nbytes;
   priv->receivecnt = 0;
 
+#ifndef CONFIG_SDIO_BLOCKSETUP
   putreg32(priv->blocksize | (1 << 16), MPFS_EMMCSD_SRS01);
+#endif
+
+  putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
+  putreg32(~(MPFS_EMMCSD_SRS12_BWR), MPFS_EMMCSD_SRS12);
 
   /* Enable interrupts */
 
-  putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
-  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
-
   mpfs_configxfrints(priv, MPFS_EMMCSD_SEND_MASK);
-
-  up_enable_irq(priv->plic_irq);
 
   return OK;
 }
@@ -2371,10 +2441,10 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
  * Name: mpfs_cancel
  *
  * Description:
- *   Cancel the data transfer setup of SDMMC_RECVSETUP, SDMMC_SENDSETUP,
- *   SDMMC_DMARECVSETUP or SDMMC_DMASENDSETUP.  This must be called to cancel
- *   the data transfer setup if, for some reason, you cannot perform the
- *   transfer.
+ *   Cancel the data transfer setup of EMMCSD_RECVSETUP, EMMCSD_SENDSETUP,
+ *   EMMCSD_DMARECVSETUP or EMMCSD_DMASENDSETUP.  This must be called to
+ *   cancel the data transfer setup if, for some reason, you cannot perform
+ *   the transfer.
  *
  * Input Parameters:
  *   dev  - An instance of the SDIO device interface
@@ -2440,7 +2510,7 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
   switch (cmd & MMCSD_RESPONSE_MASK)
     {
       case MMCSD_NO_RESPONSE:
-        timeout = SDMMC_CMDTIMEOUT;
+        timeout = EMMCSD_CMDTIMEOUT;
         break;
 
       case MMCSD_R1_RESPONSE:
@@ -2449,12 +2519,12 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
       case MMCSD_R4_RESPONSE:
       case MMCSD_R5_RESPONSE:
       case MMCSD_R6_RESPONSE:
-        timeout = SDMMC_LONGTIMEOUT;
+        timeout = EMMCSD_LONGTIMEOUT;
         break;
 
       case MMCSD_R3_RESPONSE:
       case MMCSD_R7_RESPONSE:
-        timeout = SDMMC_CMDTIMEOUT;
+        timeout = EMMCSD_CMDTIMEOUT;
         break;
 
       default:
@@ -2499,7 +2569,7 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
  *   Receive response to SDIO command.
  *
  * Input Parameters:
- *   priv    - Instance of the SDMMC private state structure.
+ *   priv    - Instance of the EMMCSD private state structure.
  *
  * Returned Value:
  *   OK on success; a negated errno if error detected.
@@ -2534,8 +2604,24 @@ static int mpfs_check_recverror(struct mpfs_dev_s *priv)
     }
   else if (!(regval & MPFS_EMMCSD_SRS12_CC))
     {
-      mcerr("ERROR: Command not completed: %08" PRIx32 "\n", status);
+      mcerr("ERROR: Command not completed: %08" PRIx32 "\n", regval);
       ret = -EIO;
+    }
+
+  if (ret)
+    {
+      /* With an error, reset DAT and CMD lines. Otherwise the next command
+       * will fail as well.
+       */
+
+      modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
+                  MPFS_EMMCSD_SRS11_SRCMD);
+
+      do
+        {
+          status = getreg32(MPFS_EMMCSD_SRS11);
+        }
+      while (status & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
     }
 
   return ret;
@@ -2561,17 +2647,13 @@ static int mpfs_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
                               uint32_t *rshort)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  int ret;
+  int ret = OK;
 
   /* Check if a timeout or CRC error occurred */
 
   if (!(cmd & MMCSD_DATAXFR_MASK)) /* TBD: Fix this bypass! */
     {
       ret = mpfs_check_recverror(priv);
-    }
-  else
-    {
-      ret = OK;
     }
 
   if (rshort)
@@ -2603,15 +2685,11 @@ static int mpfs_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
                            uint32_t *rshort)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  int ret;
+  int ret = OK;
 
   if (!(cmd & MMCSD_DATAXFR_MASK))
     {
       ret = mpfs_check_recverror(priv);
-    }
-  else
-    {
-      ret = OK;
     }
 
   if (rshort)
@@ -2651,6 +2729,11 @@ static int mpfs_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
 
   if (rlong)
     {
+      /* Last 8-bits are missing, see SRS04 documemntation, RESP3[23:0]
+       * has only 24 bits unlike RESP2, RESP1 and RESP0 that have 32 bits.
+       * We have to shift left 8 bits to match the proper long response.
+       */
+
       rlong[3] = getreg32(MPFS_EMMCSD_SRS04) << 8;
       rlong[2] = getreg32(MPFS_EMMCSD_SRS05) << 8;
       rlong[1] = getreg32(MPFS_EMMCSD_SRS06) << 8;
@@ -2668,13 +2751,13 @@ static int mpfs_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
  *
  * Description:
  *   Enable/disable of a set of SDIO wait events.  This is part of the
- *   the SDMMC_WAITEVENT sequence.  The set of to-be-waited-for events is
+ *   the EMMCSD_WAITEVENT sequence.  The set of to-be-waited-for events is
  *   configured before calling mpfs_eventwait.  This is done in this way
  *   to help the driver to eliminate race conditions between the command
  *   setup and the subsequent events.
  *
- *   The enabled events persist until either (1) SDMMC_WAITENABLE is called
- *   again specifying a different set of wait events, or (2) SDMMC_EVENTWAIT
+ *   The enabled events persist until either (1) EMMCSD_WAITENABLE is called
+ *   again specifying a different set of wait events, or (2) EMMCSD_EVENTWAIT
  *   returns.
  *
  * Input Parameters:
@@ -2689,7 +2772,7 @@ static int mpfs_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
  ****************************************************************************/
 
 static void mpfs_waitenable(FAR struct sdio_dev_s *dev,
-                             sdio_eventset_t eventset, uint32_t timeout)
+                            sdio_eventset_t eventset, uint32_t timeout)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
   uint32_t waitmask = 0;
@@ -2761,8 +2844,8 @@ static void mpfs_waitenable(FAR struct sdio_dev_s *dev,
  *
  * Description:
  *   Wait for one of the enabled events to occur (or a timeout).  Note that
- *   all events enabled by SDMMC_WAITEVENTS are disabled when mpfs_eventwait
- *   returns.  SDMMC_WAITEVENTS must be called again before mpfs_eventwait
+ *   all events enabled by EMMCSD_WAITEVENTS are disabled when mpfs_eventwait
+ *   returns.  EMMCSD_WAITEVENTS must be called again before mpfs_eventwait
  *   can be used again.
  *
  * Input Parameters:
@@ -2889,12 +2972,12 @@ static void mpfs_callbackenable(FAR struct sdio_dev_s *dev,
  *   thread.
  *
  *   When this method is called, all callbacks should be disabled until they
- *   are enabled via a call to SDMMC_CALLBACKENABLE
+ *   are enabled via a call to EMMCSD_CALLBACKENABLE
  *
  * Input Parameters:
- *   dev -      Device-specific state data
+ *   dev      - Device-specific state data
  *   callback - The function to call on the media change
- *   arg -      A caller provided value to return with the callback
+ *   arg      - A caller provided value to return with the callback
  *
  * Returned Value:
  *   0 on success; negated errno on failure.
@@ -2988,7 +3071,7 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
   uint32_t blockcount;
-  uint32_t retries = SDMMC_CMDTIMEOUT;
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
   uint32_t srs9;
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
@@ -3080,7 +3163,7 @@ static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
   uint32_t blockcount;
   uint32_t srs9;
-  uint32_t retries = SDMMC_CMDTIMEOUT;
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
 #if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
