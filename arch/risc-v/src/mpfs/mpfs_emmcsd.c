@@ -1484,7 +1484,8 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
         {
-          //putreg32(MPFS_EMMCSD_SRS12_TC, MPFS_EMMCSD_SRS12);
+          putreg32(MPFS_EMMCSD_SRS12_TC, MPFS_EMMCSD_SRS12);
+          mcerr("Unexpected Transfer Complete!\n");
         }
       else if (status & MPFS_EMMCSD_SRS12_CC)
         {
@@ -1772,9 +1773,9 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
   uint32_t cap;
   uint32_t srs09;
 
-  /* Disable clocking */
-
   flags = enter_critical_section();
+
+  up_disable_irq(priv->plic_irq);
 
   if (!priv->emmc)
     {
@@ -1791,8 +1792,6 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
 
       mpfs_sdcard_init(priv);
     }
-
-  up_disable_irq(priv->plic_irq);
 
   /* Perform system-level reset */
 
@@ -2622,6 +2621,10 @@ static int mpfs_check_recverror(struct mpfs_dev_s *priv)
           status = getreg32(MPFS_EMMCSD_SRS11);
         }
       while (status & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
+
+      /* Clear all status interrupts */
+
+      putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
     }
 
   return ret;
@@ -3357,6 +3360,7 @@ FAR struct sdio_dev_s *sdio_initialize(int slotno)
    */
 
   mpfs_reset(&priv->dev);
+
   return &priv->dev;
 }
 
