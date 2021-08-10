@@ -118,6 +118,7 @@ config MPFS_I2C1
 
 config MPFS_EMMCSD
         bool "EMMCSD"
+        select SDIO_DMA
         default n
 
 comment "CorePWM Options"
