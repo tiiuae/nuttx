@@ -52,7 +52,6 @@
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
 #define MPFS_EMMCSD_HRS00      (priv->hw_base + MPFS_EMMCSD_HRS00_OFFSET)
 #define MPFS_EMMCSD_HRS01      (priv->hw_base + MPFS_EMMCSD_HRS01_OFFSET)
 #define MPFS_EMMCSD_HRS04      (priv->hw_base + MPFS_EMMCSD_HRS04_OFFSET)
@@ -151,38 +150,67 @@
 
 /* Event waiting interrupt mask bits */
 
+#define MPFS_EMMCSD_CARD_INTS     (MPFS_EMMCSD_SRS14_CINT_IE   | \
+                                   MPFS_EMMCSD_SRS14_CIN_IE    | \
+                                   MPFS_EMMCSD_SRS14_CR_IE)
+
 #define MPFS_EMMCSD_CMDDONE_STA   (MPFS_EMMCSD_SRS12_CC)
 
-#define MPFS_EMMCSD_RESPDONE_STA  (MPFS_EMMCSD_SRS12_ECT    |    \
+#define MPFS_EMMCSD_RESPDONE_STA  (MPFS_EMMCSD_SRS12_ECT       | \
                                    MPFS_EMMCSD_SRS12_ECCRC)
 
 #define MPFS_EMMCSD_XFRDONE_STA   (MPFS_EMMCSD_SRS12_TC)
 
-#define MPFS_EMMCSD_CMDDONE_MASK  (MPFS_EMMCSD_SRS14_CC_IE)
+#define MPFS_EMMCSD_CMDDONE_MASK  (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_CC_IE)
 
-#define MPFS_EMMCSD_RESPDONE_MASK (MPFS_EMMCSD_SRS14_ECCRC_IE  | \
+#define MPFS_EMMCSD_RESPDONE_MASK (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_ECCRC_IE  | \
                                    MPFS_EMMCSD_SRS14_ECT_IE)
 
-#define MPFS_EMMCSD_XFRDONE_MASK  (MPFS_EMMCSD_SRS14_TC_IE)
+#define MPFS_EMMCSD_XFRDONE_MASK  (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_TC_IE)
 
 #define MPFS_EMMCSD_CMDDONE_ICR   (MPFS_EMMCSD_SRS12_CC)
 
-#define MPFS_EMMCSD_RESPDONE_ICR  (MPFS_EMMCSD_SRS12_ECT |       \
+#define MPFS_EMMCSD_RESPDONE_ICR  (MPFS_EMMCSD_SRS12_ECT       | \
                                    MPFS_EMMCSD_SRS12_ECCRC)
 
-#define MPFS_EMMCSD_XFRDONE_ICR   (MPFS_EMMCSD_SRS12_EDCRC |     \
-                                   MPFS_EMMCSD_SRS12_EDT |       \
+#define MPFS_EMMCSD_XFRDONE_ICR   (MPFS_EMMCSD_SRS12_EDCRC     | \
+                                   MPFS_EMMCSD_SRS12_EDT       | \
                                    MPFS_EMMCSD_SRS12_TC)
 
-#define MPFS_EMMCSD_WAITALL_ICR   (MPFS_EMMCSD_CMDDONE_ICR   |   \
-                                   MPFS_EMMCSD_RESPDONE_ICR  |   \
+#define MPFS_EMMCSD_WAITALL_ICR   (MPFS_EMMCSD_CMDDONE_ICR     | \
+                                   MPFS_EMMCSD_RESPDONE_ICR    | \
                                    MPFS_EMMCSD_XFRDONE_ICR)
 
-#define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_SRS14_ECT_IE | \
+#ifdef CONFIG_SDIO_DMA
+#define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_EADMA_IE  | \
+                                   MPFS_EMMCSD_SRS14_DMAINT_IE | \
+                                   MPFS_EMMCSD_SRS14_EDT_IE    | \
+                                   MPFS_EMMCSD_SRS14_ECT_IE    | \
+                                   MPFS_EMMCSD_SRS14_BRR_IE    | \
+                                   MPFS_EMMCSD_SRS14_TC_IE     | \
+                                   MPFS_EMMCSD_SRS14_CC_IE)
+#else
+#define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_EDT_IE    | \
+                                   MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BRR_IE)
+#endif
 
-#define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_SRS14_ECT_IE | \
+#ifdef CONFIG_SDIO_DMA
+#define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_ECT_IE    | \
+                                   MPFS_EMMCSD_SRS14_BWR_IE    | \
+                                   MPFS_EMMCSD_SRS14_TC_IE     | \
+                                   MPFS_EMMCSD_SRS14_CC_IE)
+#else
+#define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE)
+#endif
 
 /* Let's wait until we have both SDIO transfer complete and DMA complete. */
 
@@ -358,9 +386,6 @@ struct mpfs_dev_s
   uint32_t           receivecnt;      /* Real count to receive */
   uint8_t            rxfifo[FIFO_SIZE_IN_BYTES] /* To offload with DMA */
                      __attribute__((aligned(RISCV_DCACHE_LINESIZE)));
-#if defined(CONFIG_RISCV_DCACHE) && defined(CONFIG_MPFS_EMMCSD_DMA)
-  bool               unaligned_rx;    /* read buffer is not cache-line aligned */
-#endif
 };
 
 /****************************************************************************
@@ -378,11 +403,9 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask);
 
 /* Data Transfer Helpers ****************************************************/
 
-#ifndef CONFIG_MPFS_EMMCSD_DMA
+#ifndef CONFIG_SDIO_DMA
 static void mpfs_sendfifo(struct mpfs_dev_s *priv);
 static void mpfs_recvfifo(struct mpfs_dev_s *priv);
-#elif defined(CONFIG_RISCV_DCACHE)
-static void mpfs_recvdma(struct mpfs_dev_s *priv);
 #endif
 static void mpfs_eventtimeout(wdparm_t arg);
 static void mpfs_endwait(struct mpfs_dev_s *priv,
@@ -420,7 +443,7 @@ static int  mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
 static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
               unsigned int blocksize, unsigned int nblocks);
 #endif
-#ifndef CONFIG_MPFS_EMMCSD_DMA
+#ifndef CONFIG_SDIO_DMA
 static int  mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
                            size_t nbytes);
 static int  mpfs_sendsetup(FAR struct sdio_dev_s *dev,
@@ -448,7 +471,7 @@ static int  mpfs_registercallback(FAR struct sdio_dev_s *dev,
 
 /* DMA */
 
-#if defined(CONFIG_MPFS_EMMCSD_DMA)
+#if defined(CONFIG_SDIO_DMA)
 #  if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
 static int  mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
                               FAR const uint8_t *buffer, size_t buflen);
@@ -484,12 +507,12 @@ struct mpfs_dev_s g_emmcsd_dev =
 #ifdef CONFIG_SDIO_BLOCKSETUP
     .blocksetup       = mpfs_blocksetup,
 #endif
-#if defined(CONFIG_MPFS_EMMCSD_DMA)
-    .recvsetup        = mpfs_dmarecvsetup,
-    .sendsetup        = mpfs_dmasendsetup,
-#else
+#ifndef CONFIG_SDIO_DMA
     .recvsetup        = mpfs_recvsetup,
     .sendsetup        = mpfs_sendsetup,
+#else
+    .recvsetup        = mpfs_dmarecvsetup,
+    .sendsetup        = mpfs_dmasendsetup,
 #endif
     .cancel           = mpfs_cancel,
     .waitresponse     = mpfs_waitresponse,
@@ -504,7 +527,8 @@ struct mpfs_dev_s g_emmcsd_dev =
     .eventwait        = mpfs_eventwait,
     .callbackenable   = mpfs_callbackenable,
     .registercallback = mpfs_registercallback,
-#if defined(CONFIG_MPFS_EMMCSD_DMA)
+
+#if defined(CONFIG_SDIO_DMA)
 #  if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
     .dmapreflight     = mpfs_dmapreflight,
 #  endif
@@ -522,12 +546,6 @@ struct mpfs_dev_s g_emmcsd_dev =
   .blocksize         = 512,
   .onebit            = false,
 };
-
-/* Input dma buffer for unaligned transfers */
-#if defined(CONFIG_RISCV_DCACHE) && defined(CONFIG_MPFS_EMMCSD_DMA)
-static uint8_t sdmmc_rxbuffer[EMMCSD_MAX_BLOCK_SIZE]
-__attribute__((aligned(RISCV_DCACHE_LINESIZE)));
-#endif
 
 /****************************************************************************
  * Private Functions
@@ -1049,7 +1067,7 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask)
  *
  ****************************************************************************/
 
-#if !defined(CONFIG_MPFS_EMMCSD_DMA)
+#if !defined(CONFIG_SDIO_DMA)
 static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 {
   union
@@ -1117,7 +1135,7 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
  *
  ****************************************************************************/
 
-#if !defined(CONFIG_MPFS_EMMCSD_DMA)
+#if !defined(CONFIG_SDIO_DMA)
 static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 {
   union
@@ -1186,7 +1204,7 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
  *
  ****************************************************************************/
 
-#if defined (CONFIG_MPFS_EMMCSD_DMA) && defined(CONFIG_RISCV_DCACHE)
+#if defined (CONFIG_SDIO_DMA) && defined(CONFIG_RISCV_DCACHE)
 static void mpfs_recvdma(struct mpfs_dev_s *priv)
 {
   uint32_t dctrl;
@@ -1354,10 +1372,10 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
       // TBD
     }
 
-  /* Clear Buffer Read Ready (BRR) and BWR interrupts */
+  /* Clear Buffer Read Ready (BRR), BWR and DMA interrupts */
 
   putreg32(MPFS_EMMCSD_SRS12, MPFS_EMMCSD_SRS12_BRR |
-           MPFS_EMMCSD_SRS12_BWR);
+           MPFS_EMMCSD_SRS12_BWR | MPFS_EMMCSD_SRS12_DMAINT);
 
   /* Mark the transfer finished */
 
@@ -1403,6 +1421,7 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 
   status = getreg32(MPFS_EMMCSD_SRS12);
   enabled = getreg32(MPFS_EMMCSD_SRS14);
+
   mcinfo("status: %08" PRIx32 "\n", status);
 
   if (status & MPFS_EMMCSD_SRS12_EINT)
@@ -1460,9 +1479,9 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 
           address64 = address | ((uint64_t)highaddr << 32);
 
-          /* Increase address(512kb) and re-write new address in DMA buffer */
-
-          // TBD: Increase needed really?
+          /* Increase address(4kb) and re-write new address in DMA buffer,
+           * see SRS01 / SDMABB. This functionality has not been tested!
+           */
 
           address = (uint32_t)address64;
           highaddr = (uint32_t)(address64 >> 32);
@@ -1471,15 +1490,21 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
           putreg32(highaddr, MPFS_EMMCSD_SRS23);
 
           putreg32(MPFS_EMMCSD_SRS12_DMAINT, MPFS_EMMCSD_SRS12);
+
+          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_BRR)
         {
+#ifndef CONFIG_SDIO_DMA
           mpfs_recvfifo(priv);
+#endif
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_BWR)
         {
+#ifndef CONFIG_SDIO_DMA
           mpfs_sendfifo(priv);
+#endif
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
@@ -1489,9 +1514,33 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_CC)
         {
+#ifndef CONFIG_SDIO_DMA
           /* We don't handle Command Completes here! */
 
           DEBUGPANIC();
+#else
+          /* MPFS_EMMCSD_SRS12_CC at MPFS_EMMCSD_SRS12 is cleared later! */
+
+          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+#endif
+        }
+      else if (status & MPFS_EMMCSD_SRS12_CIN)
+        {
+          mcerr("Card inserted!\n");
+
+          sdio_mediachange((struct sdio_dev_s *)priv, true);
+          putreg32(MPFS_EMMCSD_SRS12_CIN, MPFS_EMMCSD_SRS12);
+        }
+      else if (status & MPFS_EMMCSD_SRS12_CR)
+        {
+          mcerr("Card removed!\n");
+
+          sdio_mediachange((struct sdio_dev_s *)priv, false);
+          putreg32(MPFS_EMMCSD_SRS12_CR, MPFS_EMMCSD_SRS12);
+        }
+      else
+        {
+          mcerr("Status not handled: %08" PRIx32 "\n", status);
         }
 
       /* TBD: no if(0), if (pending)? */
@@ -1841,6 +1890,16 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
                   MPFS_EMMCSD_SRS15_HV4E);
     }
 
+#ifdef CONFIG_SDIO_DMA
+  /* Check if SDMA is supported */
+
+  if (!(cap & MPFS_EMMCSD_SRS16_DMAS))
+    {
+      mcerr("DMA not supported!\n");
+      DEBUGPANIC();
+    }
+#endif
+
   /* Clear interrupt status and disable interrupts */
 
   putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
@@ -1977,7 +2036,7 @@ static sdio_capset_t mpfs_capabilities(FAR struct sdio_dev_s *dev)
 
   caps |= SDIO_CAPS_DMABEFOREWRITE;
 
-#if defined(CONFIG_MPFS_EMMCSD_IDMA)
+#ifdef CONFIG_SDIO_DMA
   caps |= SDIO_CAPS_DMASUPPORTED;
 #endif
 
@@ -2143,6 +2202,10 @@ static int mpfs_attach(FAR struct sdio_dev_s *dev)
        */
 
       up_enable_irq(priv->plic_irq);
+
+      /* Enable card insertion and removal interrupts */
+
+      putreg32(MPFS_EMMCSD_CARD_INTS, MPFS_EMMCSD_SRS14);
     }
 
   mcinfo("attach: %d\n", ret);
@@ -2242,11 +2305,11 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
 
   cmdidx = (cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT;
 
-#ifdef CONFIG_MPFS_EMMCSD_DMA
+#ifdef CONFIG_SDIO_DMA
   if (cmd & MMCSD_DATAXFR_MASK)
     {
       command_information |= MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_BCE |
-                             MPFS_EMMCSD_SRS03_DMAE;
+                             MPFS_EMMCSD_SRS03_RECE | MPFS_EMMCSD_SRS03_DMAE;
 
       if ((cmd & MMCSD_DATAXFR_MASK) == MMCSD_RDDATAXFR)
         {
@@ -2345,7 +2408,7 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-#ifndef CONFIG_MPFS_EMMCSD_DMA
+#ifndef CONFIG_SDIO_DMA
 static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
                            size_t nbytes)
 {
@@ -2406,7 +2469,7 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
  *
  ****************************************************************************/
 
-#ifndef CONFIG_MPFS_EMMCSD_DMA
+#ifndef CONFIG_SDIO_DMA
 static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
                            uint8_t *buffer, size_t nbytes)
 {
@@ -2429,6 +2492,184 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
   putreg32(~(MPFS_EMMCSD_SRS12_BWR), MPFS_EMMCSD_SRS12);
 
   /* Enable interrupts */
+
+  mpfs_configxfrints(priv, MPFS_EMMCSD_SEND_MASK);
+
+  return OK;
+}
+#endif
+
+/****************************************************************************
+ * Name: mpfs_dmapreflight
+ *
+ * Description:
+ *   Preflight an SDIO DMA operation.  If the buffer is not well-formed for
+ *   SDIO DMA transfer (alignment, size, etc.) returns an error.
+ *
+ * Input Parameters:
+ *   dev    - An instance of the SDIO device interface
+ *   buffer - The memory to DMA to/from
+ *   buflen - The size of the DMA transfer in bytes
+ *
+ * Returned Value:
+ *   OK on success; a negated errno on failure
+ ****************************************************************************/
+
+#if defined(CONFIG_SDIO_DMA) && defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
+static int mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
+                              FAR const uint8_t *buffer, size_t buflen)
+{
+  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
+  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
+
+#if defined(CONFIG_RISCV_DCACHE) && !defined(CONFIG_RISCV_DCACHE_WRITETHROUGH)
+  /* buffer alignment is required for DMA transfers with dcache in buffered
+   * mode (not write-through) because a) arch_invalidate_dcache could lose
+   * buffered writes and b) arch_flush_dcache could corrupt adjacent memory
+   * if the maddr and the mend+1, the next next address are not on
+   * RISCV_DCACHE_LINESIZE boundaries.
+   */
+
+  if (buffer != priv->rxfifo &&
+      (((uintptr_t)buffer & (RISCV_DCACHE_LINESIZE - 1)) != 0 ||
+      ((uintptr_t)(buffer + buflen) & (RISCV_DCACHE_LINESIZE - 1)) != 0))
+    {
+      mcerr("dcache unaligned "
+            "buffer:%p end:%p\n",
+            buffer, buffer + buflen - 1);
+      return -EFAULT;
+    }
+#endif
+
+  return 0;
+}
+#endif
+
+/****************************************************************************
+ * Name: mpfs_dmarecvsetup
+ *
+ * Description:
+ *   Setup to perform a read DMA.  If the processor supports a data cache,
+ *   then this method will also make sure that the contents of the DMA memory
+ *   and the data cache are coherent.  For read transfers this may mean
+ *   invalidating the data cache.
+ *
+ * Input Parameters:
+ *   dev    - An instance of the SDIO device interface
+ *   buffer - The memory to DMA from
+ *   buflen - The size of the DMA transfer in bytes
+ *
+ * Returned Value:
+ *   OK on success; a negated errno on failure
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_SDIO_DMA)
+static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
+                              FAR uint8_t *buffer, size_t buflen)
+{
+  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
+#ifndef CONFIG_SDIO_BLOCKSETUP
+  uint32_t blockcount;
+#endif
+  uint32_t state;
+
+  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
+  DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
+#if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
+  DEBUGASSERT(mpfs_dmapreflight(dev, buffer, buflen) == 0);
+#endif
+
+  priv->buffer     = (uint32_t *)buffer;
+  priv->remaining  = buflen;
+  priv->receivecnt = buflen;
+
+  /* Set up the SDIO data path, reset DAT and CMD lines */
+
+  modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
+              MPFS_EMMCSD_SRS11_SRCMD);
+
+  do
+    {
+      state = getreg32(MPFS_EMMCSD_SRS11);
+    }
+  while (state & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
+
+  modifyreg32(MPFS_EMMCSD_SRS10, MPFS_EMMCSD_SRS10_DMASEL, 0);
+
+  putreg32((uintptr_t)buffer, MPFS_EMMCSD_SRS22);
+  putreg32((uintptr_t)((uint64_t)buffer >> 32), MPFS_EMMCSD_SRS23);
+
+#ifndef CONFIG_SDIO_BLOCKSETUP
+  blockcount = ((buflen - 1) / priv->blocksize) + 1;
+
+  putreg32((priv->blocksize | (blockcount << 16) |
+           MPFS_EMMCSD_SRS01_DMA_SZ_512KB), MPFS_EMMCSD_SRS01);
+#endif
+
+  /* Clear interrupt status */
+
+  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
+
+  mpfs_configxfrints(priv, MPFS_EMMCSD_RECV_MASK);
+
+  return OK;
+}
+#endif
+
+/****************************************************************************
+ * Name: mpfs_dmasendsetup
+ *
+ * Description:
+ *   Setup to perform a write DMA.  If the processor supports a data cache,
+ *   then this method will also make sure that the contents of the DMA memory
+ *   and the data cache are coherent.  For write transfers, this may mean
+ *   flushing the data cache.
+ *
+ * Input Parameters:
+ *   dev    - An instance of the SDIO device interface
+ *   buffer - The memory to DMA into
+ *   buflen - The size of the DMA transfer in bytes
+ *
+ * Returned Value:
+ *   OK on success; a negated errno on failure
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_SDIO_DMA)
+static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
+                              FAR const uint8_t *buffer, size_t buflen)
+{
+  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
+#ifndef CONFIG_SDIO_BLOCKSETUP
+  uint32_t blockcount;
+#endif
+
+  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
+  DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
+
+  /* Save the source buffer information for use by the interrupt handler */
+
+  priv->buffer     = (uint32_t *)buffer;
+  priv->remaining  = buflen;
+  priv->receivecnt = 0;
+
+  modifyreg32(MPFS_EMMCSD_SRS10, MPFS_EMMCSD_SRS10_DMASEL, 0);
+
+  putreg32((uintptr_t)buffer, MPFS_EMMCSD_SRS22);
+  putreg32((uintptr_t)((uint64_t)buffer >> 32), MPFS_EMMCSD_SRS23);
+
+#ifndef CONFIG_SDIO_BLOCKSETUP
+  blockcount = ((buflen - 1) / priv->blocksize) + 1;
+
+  putreg32((priv->blocksize | (blockcount << 16) |
+            MPFS_EMMCSD_SRS01_DMA_SZ_512KB),
+            MPFS_EMMCSD_SRS01);
+#endif
+
+  /* Clear interrupt status */
+
+  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
 
   mpfs_configxfrints(priv, MPFS_EMMCSD_SEND_MASK);
 
@@ -3002,242 +3243,6 @@ static int mpfs_registercallback(FAR struct sdio_dev_s *dev,
   priv->callback = callback;
   return OK;
 }
-
-/****************************************************************************
- * Name: mpfs_dmapreflight
- *
- * Description:
- *   Preflight an SDIO DMA operation.  If the buffer is not well-formed for
- *   SDIO DMA transfer (alignment, size, etc.) returns an error.
- *
- * Input Parameters:
- *   dev    - An instance of the SDIO device interface
- *   buffer - The memory to DMA to/from
- *   buflen - The size of the DMA transfer in bytes
- *
- * Returned Value:
- *   OK on success; a negated errno on failure
- ****************************************************************************/
-
-#if defined(CONFIG_MPFS_EMMCSD_DMA) && defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-static int mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen)
-{
-  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
-
-#if defined(CONFIG_RISCV_DCACHE) && !defined(CONFIG_RISCV_DCACHE_WRITETHROUGH)
-  /* buffer alignment is required for DMA transfers with dcache in buffered
-   * mode (not write-through) because a) arch_invalidate_dcache could lose
-   * buffered writes and b) arch_flush_dcache could corrupt adjacent memory
-   * if the maddr and the mend+1, the next next address are not on
-   * RISCV_DCACHE_LINESIZE boundaries.
-   */
-
-  if (buffer != priv->rxfifo &&
-      (((uintptr_t)buffer & (RISCV_DCACHE_LINESIZE - 1)) != 0 ||
-      ((uintptr_t)(buffer + buflen) & (RISCV_DCACHE_LINESIZE - 1)) != 0))
-    {
-      mcerr("dcache unaligned "
-            "buffer:%p end:%p\n",
-            buffer, buffer + buflen - 1);
-      return -EFAULT;
-    }
-#endif
-
-  return 0;
-}
-#endif
-
-/****************************************************************************
- * Name: mpfs_dmarecvsetup
- *
- * Description:
- *   Setup to perform a read DMA.  If the processor supports a data cache,
- *   then this method will also make sure that the contents of the DMA memory
- *   and the data cache are coherent.  For read transfers this may mean
- *   invalidating the data cache.
- *
- * Input Parameters:
- *   dev    - An instance of the SDIO device interface
- *   buffer - The memory to DMA from
- *   buflen - The size of the DMA transfer in bytes
- *
- * Returned Value:
- *   OK on success; a negated errno on failure
- *
- ****************************************************************************/
-
-#if defined(CONFIG_MPFS_EMMCSD_DMA)
-static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
-                              FAR uint8_t *buffer, size_t buflen)
-{
-  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  uint32_t blockcount;
-  uint32_t retries = EMMCSD_CMDTIMEOUT;
-  uint32_t srs9;
-
-  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
-#if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-  DEBUGASSERT(mpfs_dmapreflight(dev, buffer, buflen) == 0);
-#endif
-
-  priv->buffer      = (uint32_t *)buffer;
-  priv->remaining  = buflen;
-  priv->receivecnt = buflen;
-
-  /* Configure the RX DMA */
-
-#if defined(CONFIG_RISCV_DCACHE)
-  if (priv->unaligned_rx)
-    {
-      // TBD
-    }
-  else
-#endif
-
-  up_disable_irq(priv->plic_irq);
-
-  /* Disable error interrupts */
-
-  putreg32(0, MPFS_EMMCSD_SRS14);
-
-  putreg32(MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD,
-           MPFS_EMMCSD_SRS11);
-
-  nxsig_usleep(1000);
-
-  blockcount = ((buflen - 1) / priv->blocksize) + 1;
-
-  modifyreg32(MPFS_EMMCSD_SRS10, MPFS_EMMCSD_SRS10_DMASEL, 0);
-
-  putreg32((uintptr_t)buffer, MPFS_EMMCSD_SRS22);
-  putreg32((uintptr_t)((uint64_t)buffer >> 32), MPFS_EMMCSD_SRS23);
-
-  putreg32((priv->blocksize | (blockcount << 16) |
-           MPFS_EMMCSD_SRS01_DMA_SZ_512KB), MPFS_EMMCSD_SRS01);
-
-  /* Enable interrupts */
-
-  putreg32(MPFS_EMMCSD_SRS14_CC_IE | MPFS_EMMCSD_SRS14_TC_IE |
-           MPFS_EMMCSD_SRS14_DMAINT_IE | MPFS_EMMCSD_SRS14_EDT_IE,
-           MPFS_EMMCSD_SRS14);
-
-  up_enable_irq(priv->plic_irq);
-
-  /* Check if command line is busy */
-
-  srs9 = getreg32(MPFS_EMMCSD_SRS09);
-  while (srs9 & (MPFS_EMMCSD_SRS09_CICMD | MPFS_EMMCSD_SRS09_CIDAT) &&
-         --retries)
-    {
-      srs9 = getreg32(MPFS_EMMCSD_SRS09);
-    }
-
-  DEBUGASSERT(retries > 0);
-
-  return OK;
-}
-#endif
-
-/****************************************************************************
- * Name: mpfs_dmasendsetup
- *
- * Description:
- *   Setup to perform a write DMA.  If the processor supports a data cache,
- *   then this method will also make sure that the contents of the DMA memory
- *   and the data cache are coherent.  For write transfers, this may mean
- *   flushing the data cache.
- *
- * Input Parameters:
- *   dev    - An instance of the SDIO device interface
- *   buffer - The memory to DMA into
- *   buflen - The size of the DMA transfer in bytes
- *
- * Returned Value:
- *   OK on success; a negated errno on failure
- *
- ****************************************************************************/
-
-#if defined(CONFIG_MPFS_EMMCSD_DMA)
-static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen)
-{
-  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  uint32_t blockcount;
-  uint32_t srs9;
-  uint32_t retries = EMMCSD_CMDTIMEOUT;
-
-  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
-#if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-  DEBUGASSERT(mpfs_dmapreflight(dev, buffer, buflen) == 0);
-#endif
-
-#if defined(CONFIG_RISCV_DCACHE)
-  priv->unaligned_rx = false;
-#endif
-
-  /* Flush cache to physical memory when not in DTCM memory */
-
-#if defined(CONFIG_RISCV_DCACHE) && \
-      !defined(CONFIG_RISCV_DCACHE_WRITETHROUGH)
-  if ((uintptr_t)buffer < DTCM_START ||
-      (uintptr_t)buffer + buflen > DTCM_END)
-    {
-      up_clean_dcache((uintptr_t)buffer, (uintptr_t)buffer + buflen);
-    }
-#endif
-
-  /* Save the source buffer information for use by the interrupt handler */
-
-  priv->buffer     = (uint32_t *)buffer;
-  priv->remaining  = buflen;
-  priv->receivecnt = 0;
-
-  up_disable_irq(priv->plic_irq);
-
-  /* Disable error interrupts */
-
-  putreg32(0, MPFS_EMMCSD_SRS14);
-
-  putreg32(MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD,
-           MPFS_EMMCSD_SRS11);
-
-  nxsig_usleep(1000);
-
-  blockcount = ((buflen - 1) / priv->blocksize) + 1;
-
-  modifyreg32(MPFS_EMMCSD_SRS10, MPFS_EMMCSD_SRS10_DMASEL, 0);
-
-  putreg32((uintptr_t)buffer, MPFS_EMMCSD_SRS22);
-  putreg32((uintptr_t)((uint64_t)buffer >> 32), MPFS_EMMCSD_SRS23);
-
-  putreg32((priv->blocksize | (blockcount << 16) |
-            MPFS_EMMCSD_SRS01_DMA_SZ_512KB),
-            MPFS_EMMCSD_SRS01);
-
-  /* Enable interrupts */
-
-  putreg32(MPFS_EMMCSD_SRS14_CC_IE | MPFS_EMMCSD_SRS14_TC_IE |
-           MPFS_EMMCSD_SRS14_DMAINT_IE | MPFS_EMMCSD_SRS14_EDT_IE,
-           MPFS_EMMCSD_SRS14);
-
-  up_enable_irq(priv->plic_irq);
-
-  /* Check if command line is busy */
-
-  srs9 = getreg32(MPFS_EMMCSD_SRS09);
-  while (srs9 & (MPFS_EMMCSD_SRS09_CICMD | MPFS_EMMCSD_SRS09_CIDAT) &&
-         --retries)
-    {
-      srs9 = getreg32(MPFS_EMMCSD_SRS09);
-    }
-
-  DEBUGASSERT(retries > 0);
-
-  return OK;
-}
-#endif
 
 /****************************************************************************
  * Name: mpfs_callback
