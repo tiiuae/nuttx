@@ -218,78 +218,6 @@
 #define EMMCSD_DMADONE_FLAG  (2)
 #define EMMCSD_ALLDONE       (3)
 
-/* PHY configuration delay type */
-
-typedef enum
-{
-  /* Delay in the input path for High Speed work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_HIGH_SPEED = 0u,
-
-  /* Delay in the input path for Default Speed work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_DEFAULT_SPEED = 1u,
-
-  /* Delay in the input path for SDR12 work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_SDR12 = 2u,
-
-  /* Delay in the input path for SDR25 work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_SDR25 = 3u,
-
-  /* Delay in the input path for SDR50 work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_SDR50 = 4u,
-
-  /* Delay in the input path for DDR50 work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_DDR50 = 5u,
-
-  /* Delay in the input path for eMMC legacy work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_MMC_LEGACY = 6u,
-
-  /* Delay in the input path for eMMC SDR work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_MMC_SDR = 7u,
-
-  /* Delay in the input path for eMMC DDR work mode */
-
-  MPFS_MMC_PHY_DELAY_INPUT_MMC_DDR = 8u,
-
-  /* Value of the delay introduced on the sdclk output for all modes except
-   * HS200, HS400 and HS400_ES
-   */
-
-  MPFS_MMC_PHY_DELAY_DLL_SDCLK = 11u,
-  /* Value of the delay introduced on the sdclk output for HS200, HS400 and
-   * HS400_ES speed mode
-   */
-
-  MPFS_MMC_PHY_DELAY_DLL_HS_SDCLK = 12u,
-  /* Value of the delay introduced on the dat_strobe input used in
-   * HS400 / HS400_ES speed mode.
-   */
-
-  MPFS_MMC_PHY_DELAY_DLL_DAT_STROBE = 13u,
-} mpfs_mmc_phydelay;
-
-/* PHY register addresses */
-
-#define UIS_ADDR_HIGH_SPEED       0x00u
-#define UIS_ADDR_DEFAULT_SPEED    0x01u
-#define UIS_ADDR_UHSI_SDR12       0x02u
-#define UIS_ADDR_UHSI_SDR25       0x03u
-#define UIS_ADDR_UHSI_SDR50       0x04u
-#define UIS_ADDR_UHSI_DDR50       0x05u
-#define UIS_ADDR_MMC_LEGACY       0x06u
-#define UIS_ADDR_MMC_SDR          0x07u
-#define UIS_ADDR_MMC_DDR          0x08u
-#define UIS_ADDR_SDCLK            0x0Bu
-#define UIS_ADDR_HS_SDCLK         0x0Cu
-#define UIS_ADDR_DAT_STROBE       0x0Du
-
 #define RISCV_DCACHE_LINESIZE 32 // TBD
 
 /* SD-Card IOMUX */
@@ -384,7 +312,7 @@ struct mpfs_dev_s
 
   uint32_t           blocksize;       /* Current block size */
   uint32_t           receivecnt;      /* Real count to receive */
-  uint8_t            rxfifo[FIFO_SIZE_IN_BYTES] /* To offload with DMA */
+  uint8_t            rxfifo[FIFO_SIZE_IN_BYTES]
                      __attribute__((aligned(RISCV_DCACHE_LINESIZE)));
 };
 
@@ -403,10 +331,6 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask);
 
 /* Data Transfer Helpers ****************************************************/
 
-#ifndef CONFIG_SDIO_DMA
-static void mpfs_sendfifo(struct mpfs_dev_s *priv);
-static void mpfs_recvfifo(struct mpfs_dev_s *priv);
-#endif
 static void mpfs_eventtimeout(wdparm_t arg);
 static void mpfs_endwait(struct mpfs_dev_s *priv,
                          sdio_eventset_t wkupevent);
@@ -573,330 +497,34 @@ static int mpfs_takesem(struct mpfs_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: mpfs_get_phy_addr
+ * Name: mpfs_reset_lines
  *
  * Description:
- *   Gets the phy address accoring to the type. Returns the UIS_ADDR_*
- *   of the corresponding PHY delay type.
+ *   Resets the DAT and CMD lines and waits until they are cleared.
  *
  * Input Parameters:
- *   phydelaytype  - enumerated phydelaytype
- *
- * Returned Value:
- *   The corresponding PHY address
- *
- ****************************************************************************/
-
-#ifdef MPFS_USE_PHY_TRAINING
-static uint8_t mpfs_get_phy_addr(mpfs_mmc_phydelay phydelaytype)
-{
-  if (phydelaytype > MPFS_MMC_PHY_DELAY_DLL_DAT_STROBE)
-    {
-      DEBUGPANIC();
-    }
-  else if (phydelaytype > MPFS_MMC_PHY_DELAY_INPUT_MMC_DDR &&
-           phydelaytype < MPFS_MMC_PHY_DELAY_DLL_SDCLK)
-    {
-      DEBUGPANIC();
-    }
-
-  return (uint8_t)phydelaytype;
-}
-
-/****************************************************************************
- * Name: mpfs_read_tune_block
- *
- * Description:
- *   Reads the read tuning sequence.
- *
- * Input Parameters:
- *   priv      - Instance of the EMMCSD private state structure.
- *   read_data - Data block for the tuning sequence
- *   cmd       - Command used during tuning
- *
- * Returned Value:
- *   OK on success, 1 with failure
- *
- ****************************************************************************/
-
-static int mpfs_read_tune_block(struct mpfs_dev_s *priv, uint32_t *read_data,
-                                uint8_t cmd)
-{
-  uint32_t isr_errors;
-  uint32_t blk_read;
-  uint32_t srs03_data;
-  uint32_t srs09;
-  uint16_t word_cnt = (priv->blocksize / sizeof(uint32_t));
-  uint32_t idx_cnt = 0;
-  uint32_t retries = EMMCSD_CMDTIMEOUT;
-  uint32_t size = priv->blocksize;
-  int ret_status = OK;
-
-  /* Clear all status interrupts */
-
-  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
-
-  /* Block length and count */
-
-  putreg32((size | (1 << 16)), MPFS_EMMCSD_SRS01);
-
-  /* DPS, Data transfer direction - read */
-
-  srs03_data = MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_DTDS |
-               MPFS_EMMCSD_SRS03_BCE | MPFS_EMMCSD_SRS03_RECE |
-               MPFS_EMMCSD_SRS03_RID | (MPFS_EMMCSD_SRS03_RTS &
-               MPFS_EMMCSD_SRS03_RESP_L48) | MPFS_EMMCSD_SRS03_CRCCE |
-               MPFS_EMMCSD_SRS03_CICE;
-
-  /* Check cmd and data line busy */
-
-  srs09 = getreg32(MPFS_EMMCSD_SRS09);
-  while (srs09 & (MPFS_EMMCSD_SRS09_CICMD | MPFS_EMMCSD_SRS09_CIDAT) &&
-         --retries)
-    {
-      srs09 = getreg32(MPFS_EMMCSD_SRS09);
-    }
-
-  DEBUGASSERT(retries > 0);
-
-  word_cnt = size / sizeof(uint32_t);
-
-  /* Command argument */
-
-  putreg32(0, MPFS_EMMCSD_SRS02);
-
-  /* Execute command */
-
-  putreg32((cmd << 24) | srs03_data, MPFS_EMMCSD_SRS03);
-
-  idx_cnt = 0;
-
-  retries = EMMCSD_CMDTIMEOUT;
-  do
-    {
-      blk_read = getreg32(MPFS_EMMCSD_SRS12);
-    }
-  while (!(blk_read & (MPFS_EMMCSD_SRS12_BRR | MPFS_EMMCSD_SRS12_EINT)) &&
-         --retries);
-  DEBUGASSERT(retries > 0);
-
-  /* Read in the contents of the Buffer */
-
-  while (word_cnt > 0)
-    {
-      read_data[idx_cnt] = getreg32(MPFS_EMMCSD_SRS08);
-      idx_cnt++;
-      word_cnt--;
-    }
-
-  isr_errors = getreg32(MPFS_EMMCSD_SRS12);
-
-  /* Abort if any errors */
-
-  if (MPFS_EMMCSD_SRS12_ESTAT_MASK & isr_errors)
-    {
-      ret_status = 1;
-    }
-
-  /* Clear all status interrupts */
-
-  putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
-
-  return ret_status;
-}
-
-/****************************************************************************
- * Name: mpfs_phy_write_set
- *
- * Description:
- *   Performs the PHY write.
- *
- * Input Parameters:
- *   priv        - Instance of the EMMCSD private state structure.
- *   delay_type  - Data block for the tuning sequence
- *   delay_value - Counter value
+ *   priv  - Instance of the EMMCSD private state structure.
  *
  * Returned Value:
  *   None
  *
  ****************************************************************************/
 
-static void mpfs_phy_write_set(struct mpfs_dev_s *priv, uint8_t delay_type,
-                               uint8_t delay_value)
+static void mpfs_reset_lines(struct mpfs_dev_s *priv)
 {
-  uint32_t reg = 0;
-  uint32_t phycfg;
-  uint32_t retries = EMMCSD_CMDTIMEOUT;
-  uint8_t phyaddr = 0;
+  uint32_t status;
 
-  phyaddr = mpfs_get_phy_addr(delay_type);
-
-  do
-    {
-      reg = getreg32(MPFS_EMMCSD_HRS04);
-    }
-  while ((reg & MPFS_EMMCSD_HRS04_UIS_ACK) & --retries);
-
-  if (!retries)
-    {
-      mcerr("HRS04 timeout!\n");
-      DEBUGPANIC();
-    }
-
-  phycfg = ((uint32_t)phyaddr | (delay_value << 8));
-
-  /* Set data and address */
-
-  putreg32(phycfg, MPFS_EMMCSD_HRS04);
-
-  /* Send write request */
-
-  modifyreg32(MPFS_EMMCSD_HRS04, 0, MPFS_EMMCSD_HRS04_UIS_WR);
-
-  /* Wait for acknowledge */
-
-  retries = EMMCSD_CMDTIMEOUT;
-  do
-    {
-      reg = getreg32(MPFS_EMMCSD_HRS04);
-    }
-  while (!(reg & MPFS_EMMCSD_HRS04_UIS_ACK) && retries);
-
-  phycfg &= ~(uint32_t)MPFS_EMMCSD_HRS04_UIS_WR;
-
-  /* Clear write request */
-
-  putreg32(phycfg, MPFS_EMMCSD_HRS04);
-
-  putreg32(0, MPFS_EMMCSD_HRS04);
-
-  mcinfo("HRS04 now: %08" PRIx32 "\n", getreg32(MPFS_EMMCSD_HRS04));
-}
-
-/****************************************************************************
- * Name: mpfs_phy_training_mmc
- *
- * Description:
- *   Performs the complete PHY training sequence and updates the PHY values
- *   accordingly.
- *
- * Input Parameters:
- *   dev        - An instance of the SDIO device interface
- *   delay_type - Delay type used
- *   clk_rate   - Clock rate used
- *
- * Returned Value:
- *   OK on success, non-zero with failure
- *
- ****************************************************************************/
-
-static uint8_t mpfs_phy_training_mmc(FAR struct sdio_dev_s *dev,
-                                     uint8_t delay_type,
-                                     uint32_t clk_rate)
-{
-  FAR struct mpfs_dev_s *priv = (FAR struct mpfs_dev_s *)dev;
-  uint8_t delay;
-  uint8_t max_delay;
-  uint8_t new_delay;
-  uint8_t pos = 0;
-  uint8_t length = 0;
-  uint8_t curr_length = 0;
-  uint8_t rx_buff[priv->blocksize];
-  uint32_t read_srs11;
-  uint32_t cmd_response;
-  uint8_t ret_status = OK;
-  uint32_t trans_status_isr;
-  uint8_t response_status = 1;
-
-  if (clk_rate <= MPFS_MMC_CLOCK_12_5MHZ)
-    {
-      max_delay = 20;
-    }
-  else
-    {
-      max_delay = (MPFS_MMC_CLOCK_200MHZ / clk_rate) * 2;
-    }
-
-  /* Reset Data and cmd line */
+  /* Software Reset For DAT Line and CMD Line */
 
   modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
               MPFS_EMMCSD_SRS11_SRCMD);
 
-  for (delay = 0; delay < max_delay; delay++)
+  do
     {
-      mpfs_phy_write_set(priv, delay_type, delay);
-
-      ret_status = mpfs_read_tune_block(priv, (uint32_t *)rx_buff,
-                                        MMCSD_CMDIDX17);
-
-      if (!ret_status)
-        {
-          curr_length++;
-          if (curr_length > length)
-            {
-              pos = delay - length;
-              length++;
-
-              /* Reset Data and cmd line */
-
-              modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
-                          MPFS_EMMCSD_SRS11_SRCMD);
-            }
-        }
-      else
-        {
-          do
-            {
-              if (response_status)
-                {
-                  /* Reset Data and cmd line */
-
-                  modifyreg32(MPFS_EMMCSD_SRS11, 0,
-                              MPFS_EMMCSD_SRS11_SRDAT |
-                              MPFS_EMMCSD_SRS11_SRCMD);
-
-                  do
-                    {
-                      read_srs11 = getreg32(MPFS_EMMCSD_SRS11);
-                    }
-                  while (read_srs11 & (MPFS_EMMCSD_SRS11_SRDAT |
-                          MPFS_EMMCSD_SRS11_SRCMD));
-                }
-
-              response_status = mpfs_sendcmd(dev, MMCSD_CMDIDX13,
-                                               (1 << 16));
-
-              do
-                {
-                  trans_status_isr = getreg32(MPFS_EMMCSD_SRS12);
-                }
-              while (!((MPFS_EMMCSD_SRS12_CC | MPFS_EMMCSD_SRS12_EINT) &
-                     trans_status_isr));
-
-              cmd_response = getreg32(MPFS_EMMCSD_SRS04);
-            }
-          while ((response_status) || ((cmd_response & 0xf00) != 0x900));
-
-          curr_length = 0;
-          response_status = 1;
-        }
+      status = getreg32(MPFS_EMMCSD_SRS11);
     }
-
-  new_delay = pos + (length / 2);
-  mpfs_phy_write_set(priv, delay_type, new_delay);
-  mcinfo("New delay: %02" PRIx8 "\n", new_delay);
-
-  ret_status = mpfs_read_tune_block(priv, (uint32_t *)rx_buff,
-                                    MMCSD_CMDIDX17);
-
-  /* Reset Data and cmd line */
-
-  modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
-              MPFS_EMMCSD_SRS11_SRCMD);
-
-  return ret_status;
+  while (status & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
 }
-#endif
 
 /****************************************************************************
  * Name: mpfs_setclkrate
@@ -1077,11 +705,10 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
   } data;
 
   modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
-  putreg32(MPFS_EMMCSD_SRS12_BWR, MPFS_EMMCSD_SRS12);
 
   DEBUGASSERT(priv->remaining != 0);
 
-  /* Loop while there is more data to be sent and the RX FIFO is not full */
+  /* Loop while there is more data to be sent and the TX FIFO is not full */
 
   while (priv->remaining > 0)
     {
@@ -1118,6 +745,8 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 
       putreg32(data.w, MPFS_EMMCSD_SRS08);
     }
+
+  putreg32(MPFS_EMMCSD_SRS12_BWR, MPFS_EMMCSD_SRS12);
 }
 #endif
 
@@ -1361,15 +990,11 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
 
   mpfs_configxfrints(priv, 0);
 
-  /* If there were errors, send a stop command to DPSM */
+  /* If there were errors, reset lines */
 
   if ((wkupevent & (~SDIOWAIT_TRANSFERDONE)) != 0)
     {
-      // TBD
-    }
-  else
-    {
-      // TBD
+      mpfs_reset_lines(priv);
     }
 
   /* Clear Buffer Read Ready (BRR), BWR and DMA interrupts */
@@ -1498,7 +1123,17 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 #ifndef CONFIG_SDIO_DMA
           mpfs_recvfifo(priv);
 #endif
-          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+          //if (!priv->remaining)
+            {
+              mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+            }
+            /*
+          else
+            {
+              mcinfo("status: %08" PRIx32 "\n", status);
+              putreg32(MPFS_EMMCSD_SRS12_BRR, MPFS_EMMCSD_SRS12);
+            }
+            */
         }
       else if (status & MPFS_EMMCSD_SRS12_BWR)
         {
@@ -2344,6 +1979,11 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
           mcinfo("cmd & MMCSD_WRDATAXFR\n");
         }
 
+      if (cmd & MMCSD_MULTIBLOCK)
+        {
+          command_information |= MPFS_EMMCSD_SRS03_MSBS;
+        }
+
       mcinfo("cmd & MMCSD_DATAXFR_MASK\n");
     }
 #endif
@@ -2382,7 +2022,13 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
 
   priv->blocksize = blocksize;
 
+#ifdef CONFIG_SDIO_DMA
+  putreg32(priv->blocksize | (nblocks << 16) |
+           MPFS_EMMCSD_SRS01_DMA_SZ_512KB, MPFS_EMMCSD_SRS01);
+#else
   putreg32(priv->blocksize | (nblocks << 16), MPFS_EMMCSD_SRS01);
+#endif
+
 }
 #endif
 
@@ -2413,7 +2059,6 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
                            size_t nbytes)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  uint32_t state;
 
   mcinfo("Receive: %lu bytes\n", nbytes);
 
@@ -2426,17 +2071,11 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
 
   /* Set up the SDIO data path, reset DAT and CMD lines */
 
-  modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
-              MPFS_EMMCSD_SRS11_SRCMD);
-
-  do
-    {
-      state = getreg32(MPFS_EMMCSD_SRS11);
-    }
-  while (state & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
+  mpfs_reset_lines(priv);
 
 #ifndef CONFIG_SDIO_BLOCKSETUP
-  putreg32(priv->blocksize | (1 << 16), MPFS_EMMCSD_SRS01);
+  uint32_t blockcount = ((nbytes - 1) / priv->blocksize) + 1;
+  putreg32(priv->blocksize | (blockcount << 16), MPFS_EMMCSD_SRS01);
 #endif
 
   putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
@@ -2485,7 +2124,8 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
   priv->receivecnt = 0;
 
 #ifndef CONFIG_SDIO_BLOCKSETUP
-  putreg32(priv->blocksize | (1 << 16), MPFS_EMMCSD_SRS01);
+  uint32_t blockcount = ((nbytes - 1) / priv->blocksize) + 1;
+  putreg32(priv->blocksize | (blockcount << 16), MPFS_EMMCSD_SRS01);
 #endif
 
   putreg32(MPFS_EMMCSD_SRS13_STATUS_EN, MPFS_EMMCSD_SRS13);
@@ -2572,7 +2212,6 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 #ifndef CONFIG_SDIO_BLOCKSETUP
   uint32_t blockcount;
 #endif
-  uint32_t state;
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
@@ -2586,14 +2225,7 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 
   /* Set up the SDIO data path, reset DAT and CMD lines */
 
-  modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
-              MPFS_EMMCSD_SRS11_SRCMD);
-
-  do
-    {
-      state = getreg32(MPFS_EMMCSD_SRS11);
-    }
-  while (state & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
+  mpfs_reset_lines(priv);
 
   modifyreg32(MPFS_EMMCSD_SRS10, MPFS_EMMCSD_SRS10_DMASEL, 0);
 
@@ -2819,7 +2451,6 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
 static int mpfs_check_recverror(struct mpfs_dev_s *priv)
 {
   uint32_t regval;
-  uint32_t status;
   int ret = OK;
 
   regval = getreg32(MPFS_EMMCSD_SRS12);
@@ -2854,14 +2485,7 @@ static int mpfs_check_recverror(struct mpfs_dev_s *priv)
        * will fail as well.
        */
 
-      modifyreg32(MPFS_EMMCSD_SRS11, 0, MPFS_EMMCSD_SRS11_SRDAT |
-                  MPFS_EMMCSD_SRS11_SRCMD);
-
-      do
-        {
-          status = getreg32(MPFS_EMMCSD_SRS11);
-        }
-      while (status & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
+      mpfs_reset_lines(priv);
 
       /* Clear all status interrupts */
 
