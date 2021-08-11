@@ -182,8 +182,7 @@
                                    MPFS_EMMCSD_RESPDONE_ICR    | \
                                    MPFS_EMMCSD_XFRDONE_ICR)
 
-#ifdef CONFIG_SDIO_DMA
-#define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+#define MPFS_EMMCSD_RECV_MASKDMA  (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_EADMA_IE  | \
                                    MPFS_EMMCSD_SRS14_DMAINT_IE | \
                                    MPFS_EMMCSD_SRS14_EDT_IE    | \
@@ -191,24 +190,21 @@
                                    MPFS_EMMCSD_SRS14_BRR_IE    | \
                                    MPFS_EMMCSD_SRS14_TC_IE     | \
                                    MPFS_EMMCSD_SRS14_CC_IE)
-#else
+
 #define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_EDT_IE    | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BRR_IE)
-#endif
 
-#ifdef CONFIG_SDIO_DMA
-#define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+#define MPFS_EMMCSD_SEND_MASKDMA  (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE    | \
                                    MPFS_EMMCSD_SRS14_TC_IE     | \
                                    MPFS_EMMCSD_SRS14_CC_IE)
-#else
+
 #define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE)
-#endif
 
 /* SD-Card IOMUX */
 
@@ -293,10 +289,12 @@ struct mpfs_dev_s
   size_t             remaining;       /* Number of bytes remaining in the transfer */
   uint32_t           xfrmask;         /* Interrupt enables for data transfer */
 
-  /* DMA data transfer support */
-
   bool               widebus;         /* Required for DMA support */
   bool               onebit;          /* true: Only 1-bit transfers are supported */
+
+  /* DMA data transfer support */
+
+  bool               polltransfer;    /* Indicate a poll transfer */
 
   /* Misc */
 
@@ -355,12 +353,10 @@ static int  mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
 static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
               unsigned int blocksize, unsigned int nblocks);
 #endif
-#ifndef CONFIG_SDIO_DMA
 static int  mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
                            size_t nbytes);
 static int  mpfs_sendsetup(FAR struct sdio_dev_s *dev,
                            FAR const uint8_t *buffer, size_t nbytes);
-#endif
 static int  mpfs_cancel(FAR struct sdio_dev_s *dev);
 
 static int  mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd);
@@ -419,13 +415,8 @@ struct mpfs_dev_s g_emmcsd_dev =
 #ifdef CONFIG_SDIO_BLOCKSETUP
     .blocksetup       = mpfs_blocksetup,
 #endif
-#ifndef CONFIG_SDIO_DMA
     .recvsetup        = mpfs_recvsetup,
     .sendsetup        = mpfs_sendsetup,
-#else
-    .recvsetup        = mpfs_dmarecvsetup,
-    .sendsetup        = mpfs_dmasendsetup,
-#endif
     .cancel           = mpfs_cancel,
     .waitresponse     = mpfs_waitresponse,
     .recv_r1          = mpfs_recvshortcrc,
@@ -457,6 +448,7 @@ struct mpfs_dev_s g_emmcsd_dev =
   .jumpers_3v3       = 1,
   .blocksize         = 512,
   .onebit            = false,
+  .polltransfer      = false,
 };
 
 /****************************************************************************
@@ -683,7 +675,6 @@ static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask)
  *
  ****************************************************************************/
 
-#if !defined(CONFIG_SDIO_DMA)
 static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 {
   union
@@ -736,7 +727,6 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 
   putreg32(MPFS_EMMCSD_SRS12_BWR, MPFS_EMMCSD_SRS12);
 }
-#endif
 
 /****************************************************************************
  * Name: mpfs_recvfifo
@@ -752,7 +742,6 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
  *
  ****************************************************************************/
 
-#if !defined(CONFIG_SDIO_DMA)
 static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 {
   union
@@ -805,7 +794,6 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 
   modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BRR_IE, 0);
 }
-#endif
 
 /****************************************************************************
  * Name: mpfs_recvdma
@@ -1003,7 +991,7 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
       mpfs_endwait(priv, wkupevent);
     }
 
-  //up_disable_irq(priv->plic_irq);
+    priv->polltransfer = false;
 }
 
 /****************************************************************************
@@ -1108,16 +1096,20 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_BRR)
         {
-#ifndef CONFIG_SDIO_DMA
-          mpfs_recvfifo(priv);
-#endif
+          if (priv->polltransfer)
+            {
+              mpfs_recvfifo(priv);
+            }
+
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_BWR)
         {
-#ifndef CONFIG_SDIO_DMA
-          mpfs_sendfifo(priv);
-#endif
+          if (priv->polltransfer)
+          {
+            mpfs_sendfifo(priv);
+          }
+
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
@@ -1127,15 +1119,16 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_CC)
         {
-#ifndef CONFIG_SDIO_DMA
-          /* We don't handle Command Completes here! */
+          if (priv->polltransfer)
+          {
+            /* We don't handle Command Completes here! */
 
-          DEBUGPANIC();
-#else
+            DEBUGPANIC();
+          }
+
           /* MPFS_EMMCSD_SRS12_CC at MPFS_EMMCSD_SRS12 is cleared later! */
 
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
-#endif
         }
       else if (status & MPFS_EMMCSD_SRS12_CIN)
         {
@@ -1900,34 +1893,22 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
 
   cmdidx = (cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT;
 
+  if (cmd & MMCSD_DATAXFR_MASK)
+    {
+      command_information |= MPFS_EMMCSD_SRS03_DPS |
+                             MPFS_EMMCSD_SRS03_BCE |
+                             MPFS_EMMCSD_SRS03_RECE;
+
+      if (priv->polltransfer)
+        {
+          command_information |= MPFS_EMMCSD_SRS03_RID;
+        }
 #ifdef CONFIG_SDIO_DMA
-  if (cmd & MMCSD_DATAXFR_MASK)
-    {
-      command_information |= MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_BCE |
-                             MPFS_EMMCSD_SRS03_RECE | MPFS_EMMCSD_SRS03_DMAE;
-
-      if ((cmd & MMCSD_DATAXFR_MASK) == MMCSD_RDDATAXFR)
+      else
         {
-          command_information |= MPFS_EMMCSD_SRS03_DTDS;
+          command_information |= MPFS_EMMCSD_SRS03_DMAE;
         }
-
-      if (cmd & MMCSD_MULTIBLOCK)
-        {
-          command_information |= MPFS_EMMCSD_SRS03_MSBS;
-        }
-    }
-#else
-  if (cmd & MMCSD_DATAXFR_MASK)
-    {
-#ifdef MPFS_BCE_ENABLED
-      /* Will likely be used with DMA */
-
-      command_information |= MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_BCE |
-                             MPFS_EMMCSD_SRS03_RECE | MPFS_EMMCSD_SRS03_RID;
 #endif
-      command_information |= MPFS_EMMCSD_SRS03_DPS | MPFS_EMMCSD_SRS03_BCE |
-                             MPFS_EMMCSD_SRS03_RECE |
-                             MPFS_EMMCSD_SRS03_RID;
 
       if ((cmd & MMCSD_DATAXFR_MASK) == MMCSD_RDDATAXFR)
         {
@@ -1946,7 +1927,6 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
 
       mcinfo("cmd & MMCSD_DATAXFR_MASK\n");
     }
-#endif
 
   putreg32((((cmdidx << 24) & MPFS_EMMCSD_SRS03_CIDX) | command_information),
            MPFS_EMMCSD_SRS03);
@@ -2013,20 +1993,20 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-#ifndef CONFIG_SDIO_DMA
 static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
                            size_t nbytes)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
 
-  mcinfo("Receive: %lu bytes\n", nbytes);
+  mcinfo("Receive: %zu bytes\n", nbytes);
 
   DEBUGASSERT(priv != NULL && buffer != NULL && nbytes > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
 
-  priv->buffer     = (uint32_t *)buffer;
-  priv->remaining  = nbytes;
-  priv->receivecnt = nbytes;
+  priv->buffer       = (uint32_t *)buffer;
+  priv->remaining    = nbytes;
+  priv->receivecnt   = nbytes;
+  priv->polltransfer = true;
 
   /* Set up the SDIO data path, reset DAT and CMD lines */
 
@@ -2046,7 +2026,6 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
 
   return OK;
 }
-#endif
 
 /****************************************************************************
  * Name: mpfs_sendsetup
@@ -2067,20 +2046,22 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
  *
  ****************************************************************************/
 
-#ifndef CONFIG_SDIO_DMA
 static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
                            uint8_t *buffer, size_t nbytes)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
+
+  mcinfo("Send: %zu bytes\n", nbytes);
 
   DEBUGASSERT(priv != NULL && buffer != NULL && nbytes > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
 
   /* Save the source buffer information for use by the interrupt handler */
 
-  priv->buffer     = (uint32_t *)buffer;
-  priv->remaining  = nbytes;
-  priv->receivecnt = 0;
+  priv->buffer       = (uint32_t *)buffer;
+  priv->remaining    = nbytes;
+  priv->receivecnt   = 0;
+  priv->polltransfer = true;
 
 #ifndef CONFIG_SDIO_BLOCKSETUP
   uint32_t blockcount = ((nbytes - 1) / priv->blocksize) + 1;
@@ -2096,7 +2077,6 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
 
   return OK;
 }
-#endif
 
 /****************************************************************************
  * Name: mpfs_dmapreflight
@@ -2163,7 +2143,7 @@ static int mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SDIO_DMA)
+#ifdef CONFIG_SDIO_DMA
 static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
                               FAR uint8_t *buffer, size_t buflen)
 {
@@ -2171,6 +2151,8 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 #ifndef CONFIG_SDIO_BLOCKSETUP
   uint32_t blockcount;
 #endif
+
+  mcinfo("Receive: %zu bytes\n", buflen);
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
@@ -2180,9 +2162,10 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 
   DEBUGASSERT(buflen >= priv->blocksize);
 
-  priv->buffer     = (uint32_t *)buffer;
-  priv->remaining  = buflen;
-  priv->receivecnt = buflen;
+  priv->buffer       = (uint32_t *)buffer;
+  priv->remaining    = buflen;
+  priv->receivecnt   = buflen;
+  priv->polltransfer = false;
 
   /* Set up the SDIO data path, reset DAT and CMD lines */
 
@@ -2204,7 +2187,7 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 
   putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
 
-  mpfs_configxfrints(priv, MPFS_EMMCSD_RECV_MASK);
+  mpfs_configxfrints(priv, MPFS_EMMCSD_RECV_MASKDMA);
 
   return OK;
 }
@@ -2229,7 +2212,7 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SDIO_DMA)
+#ifdef CONFIG_SDIO_DMA
 static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
                               FAR const uint8_t *buffer, size_t buflen)
 {
@@ -2238,15 +2221,18 @@ static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
   uint32_t blockcount;
 #endif
 
+  mcinfo("Send: %zu bytes\n", buflen);
+
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
   DEBUGASSERT(buflen >= priv->blocksize);
 
   /* Save the source buffer information for use by the interrupt handler */
 
-  priv->buffer     = (uint32_t *)buffer;
-  priv->remaining  = buflen;
-  priv->receivecnt = 0;
+  priv->buffer       = (uint32_t *)buffer;
+  priv->remaining    = buflen;
+  priv->receivecnt   = 0;
+  priv->polltransfer = false;
 
   modifyreg32(MPFS_EMMCSD_SRS10, MPFS_EMMCSD_SRS10_DMASEL, 0);
 
@@ -2265,7 +2251,7 @@ static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
 
   putreg32(MPFS_EMMCSD_SRS12_STAT_CLEAR, MPFS_EMMCSD_SRS12);
 
-  mpfs_configxfrints(priv, MPFS_EMMCSD_SEND_MASK);
+  mpfs_configxfrints(priv, MPFS_EMMCSD_SEND_MASKDMA);
 
   return OK;
 }
