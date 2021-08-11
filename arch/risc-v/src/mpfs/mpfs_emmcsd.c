@@ -82,28 +82,28 @@
 #define MPFS_SYSREG_SUBBLK_CLOCK_CR   (MPFS_SYSREG_BASE + \
                                        MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET)
 
-#define MPFS_MMC_CLOCK_400KHZ         400u
-#define MPFS_MMC_CLOCK_12_5MHZ        12500u
-#define MPFS_MMC_CLOCK_25MHZ          25000u
-#define MPFS_MMC_CLOCK_26MHZ          26000u
-#define MPFS_MMC_CLOCK_50MHZ          50000u
-#define MPFS_MMC_CLOCK_100MHZ         100000u
-#define MPFS_MMC_CLOCK_200MHZ         200000u
+#define MPFS_MMC_CLOCK_400KHZ              400u
+#define MPFS_MMC_CLOCK_12_5MHZ             12500u
+#define MPFS_MMC_CLOCK_25MHZ               25000u
+#define MPFS_MMC_CLOCK_26MHZ               26000u
+#define MPFS_MMC_CLOCK_50MHZ               50000u
+#define MPFS_MMC_CLOCK_100MHZ              100000u
+#define MPFS_MMC_CLOCK_200MHZ              200000u
 
-#define MPFS_EMMCSD_DEBOUNCE_TIME     0x300000u
-#define MPFS_EMMCSD_MODE_LEGACY       0x7u
+#define MPFS_EMMCSD_DEBOUNCE_TIME          0x300000u
+#define MPFS_EMMCSD_MODE_LEGACY            0x7u
 
-#define MPFS_EMMCSD_DATA_TIMEOUT      500000
+#define MPFS_EMMCSD_DATA_TIMEOUT           500000
 
 #define MPFS_EMMCSD_SRS10_3_3V_BUS_VOLTAGE (0x7 << 9)
 #define MPFS_EMMCSD_SRS10_3_0V_BUS_VOLTAGE (0x6 << 9)
 #define MPFS_EMMCSD_SRS10_1_8V_BUS_VOLTAGE (0x5 << 9)
 
-#define MPFS_EMMCSD_1_8V_BUS_VOLTAGE 18
-#define MPFS_EMMCSD_3_3V_BUS_VOLTAGE 33
+#define MPFS_EMMCSD_1_8V_BUS_VOLTAGE       18
+#define MPFS_EMMCSD_3_3V_BUS_VOLTAGE       33
 
-#define MPFS_EMMCSD_INITIALIZED      0x00
-#define MPFS_EMMCSD_NOT_INITIALIZED  0x01
+#define MPFS_EMMCSD_INITIALIZED            0x00
+#define MPFS_EMMCSD_NOT_INITIALIZED        0x01
 
 #ifndef CONFIG_SCHED_WORKQUEUE
 #  error "Callback support requires CONFIG_SCHED_WORKQUEUE"
@@ -112,41 +112,39 @@
 /* High-speed single data rate supports clock frequency up to 52 MHz and data
  * bus width of 1 bit, 4 bits, and 8 bits.
  */
-#define MPFS_EMMCSD_MODE_SDR         0x2u
+
+#define MPFS_EMMCSD_MODE_SDR               0x2u
 
 /* High speed double data rate supports clock frequency up to 52 MHz and data
  * bus width of 4 bits and 8 bits.
  */
-#define MPFS_EMMCSD_MODE_DDR         0x3u
+
+#define MPFS_EMMCSD_MODE_DDR               0x3u
 
 /* SDR data sampling supports clock frequency up to 200 MHz and data bus
  * width of 4 bits and 8 bits.
  */
 
-#define MPFS_EMMCSD_MODE_HS200       0x4u
+#define MPFS_EMMCSD_MODE_HS200             0x4u
 
 /* DDR data sampling supports clock frequency up to 200 MHz and data bus
  * width of 8 bits.
  */
 
-#define MPFS_EMMCSD_MODE_HS400              0x5u
+#define MPFS_EMMCSD_MODE_HS400             0x5u
 
-/* HS400 mode with Enhanced Strobe. */
+/* HS400 mode with Enhanced Strobe */
 
-#define MPFS_EMMCSD_MODE_HS400_ES           0x6u
+#define MPFS_EMMCSD_MODE_HS400_ES          0x6u
 
 /* Define the Hardware FIFO size */
 
-#define FIFO_SIZE_IN_BYTES        64
+#define FIFO_SIZE_IN_BYTES                 64
 
 /* Timing */
 
-#define EMMCSD_CMDTIMEOUT         (100000)
-#define EMMCSD_LONGTIMEOUT        (100000000)
-
-/* Block size for multi-block transfers */
-
-#define EMMCSD_MAX_BLOCK_SIZE     (512)
+#define EMMCSD_CMDTIMEOUT                  (100000)
+#define EMMCSD_LONGTIMEOUT                 (100000000)
 
 /* Event waiting interrupt mask bits */
 
@@ -211,14 +209,6 @@
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE)
 #endif
-
-/* Let's wait until we have both SDIO transfer complete and DMA complete. */
-
-#define EMMCSD_XFRDONE_FLAG  (1)
-#define EMMCSD_DMADONE_FLAG  (2)
-#define EMMCSD_ALLDONE       (3)
-
-#define RISCV_DCACHE_LINESIZE 32 // TBD
 
 /* SD-Card IOMUX */
 
@@ -312,8 +302,6 @@ struct mpfs_dev_s
 
   uint32_t           blocksize;       /* Current block size */
   uint32_t           receivecnt;      /* Real count to receive */
-  uint8_t            rxfifo[FIFO_SIZE_IN_BYTES]
-                     __attribute__((aligned(RISCV_DCACHE_LINESIZE)));
 };
 
 /****************************************************************************
@@ -1624,19 +1612,6 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
 
   priv->widebus    = false;
 
-#ifdef MPFS_USE_PHY_TRAINING
-  if (priv->emmc)
-    {
-      mpfs_phy_training_mmc(dev, MPFS_MMC_PHY_DELAY_INPUT_MMC_LEGACY,
-                            MPFS_MMC_CLOCK_400KHZ);
-    }
-  else
-    {
-      mpfs_phy_training_mmc(dev, MPFS_MMC_PHY_DELAY_INPUT_SDR50,
-                            MPFS_MMC_CLOCK_50MHZ);
-    }
-#endif
-
   leave_critical_section(flags);
 }
 
@@ -1736,7 +1711,8 @@ static void mpfs_widebus(FAR struct sdio_dev_s *dev, bool wide)
  * Name: mpfs_clock
  *
  * Description:
- *   Enable/disable SDIO clocking
+ *   Enable/disable SDIO clocking. Only up to 25 Mhz is supported now. 50 Mhz
+ *   may work with some cards.
  *
  * Input Parameters:
  *   dev  - An instance of the SDIO device interface
@@ -1759,7 +1735,7 @@ static void mpfs_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate)
     default:
     case CLOCK_SDIO_DISABLED:
       clckr = 0;
-      return;
+      break;
 
     /* Enable in initial ID mode clocking (400KHz) */
 
@@ -1770,29 +1746,23 @@ static void mpfs_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate)
     /* Enable normal MMC operation clocking */
 
     case CLOCK_MMC_TRANSFER:
-      // TBD: check proper value:
       clckr = MPFS_MMC_CLOCK_25MHZ;
       break;
 
     /* SD normal operation clocking (wide 4-bit mode) */
 
     case CLOCK_SD_TRANSFER_4BIT:
-      if (!priv->onebit)
-        {
-          // TBD: check proper value:
-          clckr = MPFS_MMC_CLOCK_50MHZ;
-          break;
-        }
+      clckr = MPFS_MMC_CLOCK_25MHZ;
+      break;
 
     /* SD normal operation clocking (narrow 1-bit mode) */
 
     case CLOCK_SD_TRANSFER_1BIT:
-      // TBD: check proper value:
-      clckr = MPFS_MMC_CLOCK_50MHZ;
+      clckr = MPFS_MMC_CLOCK_25MHZ;
       break;
   }
 
-  /* Set the new clock frequency along with the clock enable/disable bit */
+  /* Set the new clock frequency */
 
   mpfs_setclkrate(priv, clckr);
 }
@@ -2219,6 +2189,8 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
   DEBUGASSERT(mpfs_dmapreflight(dev, buffer, buflen) == 0);
 #endif
 
+  DEBUGASSERT(buflen >= priv->blocksize);
+
   priv->buffer     = (uint32_t *)buffer;
   priv->remaining  = buflen;
   priv->receivecnt = buflen;
@@ -2279,6 +2251,7 @@ static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
+  DEBUGASSERT(buflen >= priv->blocksize);
 
   /* Save the source buffer information for use by the interrupt handler */
 
