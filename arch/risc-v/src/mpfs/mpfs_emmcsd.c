@@ -1111,17 +1111,7 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 #ifndef CONFIG_SDIO_DMA
           mpfs_recvfifo(priv);
 #endif
-          //if (!priv->remaining)
-            {
-              mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
-            }
-            /*
-          else
-            {
-              mcinfo("status: %08" PRIx32 "\n", status);
-              putreg32(MPFS_EMMCSD_SRS12_BRR, MPFS_EMMCSD_SRS12);
-            }
-            */
+          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_BWR)
         {
@@ -1998,7 +1988,6 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
 #else
   putreg32(priv->blocksize | (nblocks << 16), MPFS_EMMCSD_SRS01);
 #endif
-
 }
 #endif
 
