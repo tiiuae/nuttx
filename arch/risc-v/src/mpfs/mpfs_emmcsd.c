@@ -188,8 +188,7 @@
                                    MPFS_EMMCSD_SRS14_EDT_IE    | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BRR_IE    | \
-                                   MPFS_EMMCSD_SRS14_TC_IE     | \
-                                   MPFS_EMMCSD_SRS14_CC_IE)
+                                   MPFS_EMMCSD_SRS14_TC_IE)
 
 #define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_EDT_IE    | \
@@ -199,8 +198,7 @@
 #define MPFS_EMMCSD_SEND_MASKDMA  (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE    | \
-                                   MPFS_EMMCSD_SRS14_TC_IE     | \
-                                   MPFS_EMMCSD_SRS14_CC_IE)
+                                   MPFS_EMMCSD_SRS14_TC_IE)
 
 #define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
@@ -448,7 +446,7 @@ struct mpfs_dev_s g_emmcsd_dev =
   .jumpers_3v3       = 1,
   .blocksize         = 512,
   .onebit            = false,
-  .polltransfer      = false,
+  .polltransfer      = true,
 };
 
 /****************************************************************************
@@ -683,8 +681,6 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
     uint8_t  b[4];
   } data;
 
-  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
-
   DEBUGASSERT(priv->remaining != 0);
 
   /* Loop while there is more data to be sent and the TX FIFO is not full */
@@ -725,7 +721,11 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
       putreg32(data.w, MPFS_EMMCSD_SRS08);
     }
 
-  putreg32(MPFS_EMMCSD_SRS12_BWR, MPFS_EMMCSD_SRS12);
+  /* Disable Buffer Write Ready interrupt */
+
+  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
+
+  mcinfo("Wrote all\n");
 }
 
 /****************************************************************************
@@ -744,6 +744,8 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 
 static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 {
+  uint32_t readsize = priv->blocksize;
+
   union
   {
     uint32_t w;
@@ -769,6 +771,7 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 
           *priv->buffer++  = data.w;
           priv->remaining -= sizeof(uint32_t);
+          readsize        -= sizeof(uint32_t);
         }
       else
         {
@@ -785,14 +788,31 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
           /* Now the transfer is finished */
 
           priv->remaining = 0;
+          readsize        = 0;
+        }
+
+      if (readsize == 0)
+        {
+          /* Stop here, multiblock continues on next BRR irq */
+
+          break;
         }
     }
 
-  mcinfo("Read all\n");
+  if (readsize == 0 && priv->remaining)
+    {
+      /* Clear Buffer Read Ready Status - transfer will continue */
 
-  /* Disable Buffer Read Ready interrupt */
+      putreg32(MPFS_EMMCSD_SRS12_BRR, MPFS_EMMCSD_SRS12);
+    }
+  else
+    {
+      /* Disable Buffer Read Ready interrupt */
 
-  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BRR_IE, 0);
+      modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BRR_IE, 0);
+
+      mcinfo("Read all\n");
+    }
 }
 
 /****************************************************************************
@@ -990,8 +1010,6 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
 
       mpfs_endwait(priv, wkupevent);
     }
-
-    priv->polltransfer = false;
 }
 
 /****************************************************************************
@@ -1099,36 +1117,42 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
           if (priv->polltransfer)
             {
               mpfs_recvfifo(priv);
+              if (!priv->remaining)
+                {
+                  mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+                }
             }
-
-          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+          else
+            {
+              mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+            }
         }
       else if (status & MPFS_EMMCSD_SRS12_BWR)
         {
           if (priv->polltransfer)
-          {
-            mpfs_sendfifo(priv);
-          }
+            {
+              mpfs_sendfifo(priv);
+            }
 
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
         {
           putreg32(MPFS_EMMCSD_SRS12_TC, MPFS_EMMCSD_SRS12);
-          mcerr("Unexpected Transfer Complete!\n");
+          if (priv->polltransfer)
+            {
+              mcerr("Unexpected Transfer Complete!\n");
+            }
+          else
+            {
+              mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+            }
         }
       else if (status & MPFS_EMMCSD_SRS12_CC)
         {
-          if (priv->polltransfer)
-          {
-            /* We don't handle Command Completes here! */
+          /* We don't handle Command Completes here! */
 
-            DEBUGPANIC();
-          }
-
-          /* MPFS_EMMCSD_SRS12_CC at MPFS_EMMCSD_SRS12 is cleared later! */
-
-          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+          DEBUGPANIC();
         }
       else if (status & MPFS_EMMCSD_SRS12_CIN)
         {
@@ -1826,18 +1850,6 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
   uint32_t srs9;
   uint32_t retries = EMMCSD_CMDTIMEOUT;
 
-  /* Clear most status interrupts; used when card inserted etc
-   * is functioning.
-   */
-
-#ifdef MPFS_CLEAR_SELECTED
-  modifyreg32(MPFS_EMMCSD_SRS12, MPFS_EMMCSD_SRS12_ECL |
-                                 MPFS_EMMCSD_SRS12_CINT |
-                                 MPFS_EMMCSD_SRS12_CR |
-                                 MPFS_EMMCSD_SRS12_CIN,
-                                 0);
-#endif
-
   /* Check if command line is busy */
 
   do
@@ -1962,12 +1974,8 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
 
   priv->blocksize = blocksize;
 
-#ifdef CONFIG_SDIO_DMA
   putreg32(priv->blocksize | (nblocks << 16) |
            MPFS_EMMCSD_SRS01_DMA_SZ_512KB, MPFS_EMMCSD_SRS01);
-#else
-  putreg32(priv->blocksize | (nblocks << 16), MPFS_EMMCSD_SRS01);
-#endif
 }
 #endif
 
@@ -2159,8 +2167,6 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 #if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
   DEBUGASSERT(mpfs_dmapreflight(dev, buffer, buflen) == 0);
 #endif
-
-  DEBUGASSERT(buflen >= priv->blocksize);
 
   priv->buffer       = (uint32_t *)buffer;
   priv->remaining    = buflen;
@@ -2356,7 +2362,16 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
 
   if (cmd & MMCSD_DATAXFR_MASK)
     {
-      waitbits = MPFS_EMMCSD_SRS12_TC;
+      if (priv->polltransfer)
+        {
+          waitbits = MPFS_EMMCSD_SRS12_TC;
+        }
+      else
+        {
+          /* DMA waits only for CC here */
+
+          waitbits = MPFS_EMMCSD_SRS12_CC;
+        }
     }
   else
     {
@@ -2372,8 +2387,8 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
 
   if (timeout == 0 || (status & MPFS_EMMCSD_SRS12_ECT))
     {
-      mcerr("ERROR: Timeout cmd: %08" PRIx32 " %08" PRIx32 "\n", cmd,
-            status);
+      mcerr("ERROR: Timeout cmd: %08" PRIx32 " stat: %08" PRIx32 " wb: %08"
+            PRIx32 "\n", cmd, status, waitbits);
       return -EBUSY;
     }
 
@@ -2617,12 +2632,9 @@ static void mpfs_waitenable(FAR struct sdio_dev_s *dev,
 
   if ((eventset & SDIOWAIT_TRANSFERDONE) != 0)
     {
-      // blank!
     }
 
   /* Enable event-related interrupts */
-
-  // putreg32(MPFS_EMMCSD_WAITALL_ICR, MPFS_EMMCSD_SRS12);
 
   mpfs_configwaitints(priv, waitmask, eventset, 0);
 
