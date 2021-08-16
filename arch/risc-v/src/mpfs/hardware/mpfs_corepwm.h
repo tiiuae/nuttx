@@ -1,5 +1,9 @@
 /****************************************************************************
+<<<<<<< HEAD
  * arch/risc-v/src/mpfs/hardware/mpfs_corepwm.h
+=======
+ * arch/risc-v/src/mpfs/hardware/mpfs_memorymap.h
+>>>>>>> 7bc1e64ca56e7134c2091f961f45e99aa7126059
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
