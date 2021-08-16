@@ -60,7 +60,7 @@
  */
 
 #ifndef CONFIG_MPFS_HAVE_COREPWM
-#error This should not be compiled as CorePWM block is not defined/configured
+#  error This should not be compiled as CorePWM block is not defined/configured
 #endif
 
 /****************************************************************************
@@ -135,7 +135,7 @@ static const struct pwm_ops_s g_pwmops =
 };
 
 #ifdef CONFIG_MPFS_COREPWM0
-static struct mpfs_pwmtimer_s g_pwm1dev =
+static struct mpfs_pwmtimer_s g_pwm0dev =
 {
   .ops         = &g_pwmops,
   .nchannels   = CONFIG_MPFS_COREPWM0_NCHANNELS,
@@ -152,7 +152,7 @@ static struct mpfs_pwmtimer_s g_pwm1dev =
 #endif
 
 #ifdef CONFIG_MPFS_COREPWM1
-static struct mpfs_pwmtimer_s g_pwm2dev =
+static struct mpfs_pwmtimer_s g_pwm1dev =
 {
   .ops         = &g_pwmops,
   .nchannels   = CONFIG_MPFS_COREPWM1_NCHANNELS,
@@ -670,12 +670,12 @@ FAR struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid)
   {
 #ifdef CONFIG_MPFS_COREPWM0
     case 0:
-      lower = &g_pwm1dev;
+      lower = &g_pwm0dev;
       break;
 #endif
 #ifdef CONFIG_MPFS_COREPWM1
     case 1:
-      lower = &g_pwm2dev;
+      lower = &g_pwm1dev;
       break;
 #endif
     default:

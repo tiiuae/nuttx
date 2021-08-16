@@ -53,10 +53,7 @@
 
 int mpfs_pwm_setup(void)
 {
-  int npwm = 0;
-  char devname[20];                          /* Buffer for device name    */
-  struct pwm_lowerhalf_s *lower_half = NULL; /* lower-half handle         */
-  int config_npwm = 0;                       /* Number of channels in use */
+  struct pwm_lowerhalf_s *lower_half = NULL; /* lower-half handle */
 
   /* The underlying CorePWM driver "knows" there are up to 16 channels
    * available for each timer device, so we don't have to do anything
@@ -64,24 +61,26 @@ int mpfs_pwm_setup(void)
    */
 
 #ifdef CONFIG_MPFS_COREPWM0
-  config_npwm++;
+  lower_half = mpfs_corepwm_init(0);
+
+  /* If we can't get the lower-half handle, skip and keep going. */
+
+  if (lower_half)
+  {	/* Translate the peripheral number to a device name. */
+    pwm_register("/dev/corepwm0", lower_half);
+  }
+
 #endif
 #ifdef CONFIG_MPFS_COREPWM1
-  config_npwm++;
-#endif
+  lower_half = mpfs_corepwm_init(1);
 
-  for (npwm = 0; npwm < config_npwm; npwm++)
-  {
-    lower_half = mpfs_corepwm_init(npwm);
+  /* If we can't get the lower-half handle, skip and keep going. */
 
-    /* If we can't get the lower-half handle, skip and keep going. */
-
-    if (lower_half)
-    {	/* Translate the peripheral number to a device name. */
-      snprintf(devname, sizeof(devname), "/dev/corepwm%d", npwm);
-      pwm_register(devname, lower_half);
-    }
+  if (lower_half)
+  {	/* Translate the peripheral number to a device name. */
+    pwm_register("/dev/corepwm1", lower_half);
   }
+#endif
 
   return 0;
 }
