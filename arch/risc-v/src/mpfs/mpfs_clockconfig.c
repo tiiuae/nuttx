@@ -339,6 +339,21 @@ uint8_t mss_nwc_init(void)
 
 
 
+// TODO: PMP config belongs somewhere else
+
+void configure_pmp() {
+
+  // SDCARD DMA: NB! sizes must be power of 2
+  const uint64_t mode_bits = 0x1Full << 56;
+
+  // 1MB of LIM ram (bootloader RAM_START & SIZE)
+  uint64_t base_range = (0x08000000ull | (0x100000ull - 1ull)) >> 2;
+  putreg64(mode_bits | base_range, 0x20005700);
+
+  // 4MB from the start of DDR
+  base_range = (0x80000000ull | (0x400000ull - 1ull)) >> 2;
+  putreg64(mode_bits | base_range, 0x20005708);
+}
 
 /****************************************************************************
  * Public Functions
@@ -388,7 +403,8 @@ void mpfs_clockconfig(void)
                                   SUBBLK_CLOCK_CR_MMUART4_MASK |
                                   SUBBLK_CLOCK_CR_I2C0_MASK |
                                   SUBBLK_CLOCK_CR_I2C1_MASK |
-                                  SUBBLK_CLOCK_CR_CFM_MASK);
+                                  SUBBLK_CLOCK_CR_CFM_MASK |
+                                  SUBBLK_CLOCK_CR_FIC3_MASK);
 
       /* Turn on peripheral clocks */
       SYSREG->SOFT_RESET_CR &= ~(
@@ -402,9 +418,12 @@ void mpfs_clockconfig(void)
                                  SOFT_RESET_CR_MMUART4_MASK |
                                  SOFT_RESET_CR_I2C0_MASK |
                                  SOFT_RESET_CR_I2C1_MASK |
-                                 SOFT_RESET_CR_CFM_MASK);
+                                 SOFT_RESET_CR_CFM_MASK |
+                                 SOFT_RESET_CR_FIC3_MASK |
+                                 SOFT_RESET_CR_FPGA_MASK);
 
       mss_nwc_init();
+      configure_pmp();
     }
 #endif // CONFIG_MPFS_BOOTLOADER
 #endif
