@@ -52,6 +52,7 @@
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
 #define MPFS_EMMCSD_HRS00      (priv->hw_base + MPFS_EMMCSD_HRS00_OFFSET)
 #define MPFS_EMMCSD_HRS01      (priv->hw_base + MPFS_EMMCSD_HRS01_OFFSET)
 #define MPFS_EMMCSD_HRS04      (priv->hw_base + MPFS_EMMCSD_HRS04_OFFSET)
@@ -81,6 +82,11 @@
                                        MPFS_SYSREG_SOFT_RESET_CR_OFFSET)
 #define MPFS_SYSREG_SUBBLK_CLOCK_CR   (MPFS_SYSREG_BASE + \
                                        MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET)
+
+#define MPFS_PMPCFG_MMC_0             (MPFS_MPUCFG_BASE + 0x700)
+#define MPFS_PMPCFG_MMC_1             (MPFS_MPUCFG_BASE + 0x708)
+#define MPFS_PMPCFG_MMC_2             (MPFS_MPUCFG_BASE + 0x710)
+#define MPFS_PMPCFG_MMC_3             (MPFS_MPUCFG_BASE + 0x718)
 
 #define MPFS_MMC_CLOCK_400KHZ              400u
 #define MPFS_MMC_CLOCK_12_5MHZ             12500u
@@ -259,11 +265,12 @@ struct mpfs_dev_s
   int                plic_irq;        /* PLIC interrupt */
   bool               clk_enabled;     /* Clk state */
 
+  /* eMMC / SD and HW parameters */
+
   bool               emmc;            /* eMMC or SD */
   int                bus_voltage;     /* Bus voltage */
   int                bus_speed;       /* Bus speed */
-  int                status;          /* Status after initialization */
-  int                jumpers_3v3;     /* Jumper settings */
+  bool               jumpers_3v3;     /* Jumper settings */
 
   /* Event support */
 
@@ -292,7 +299,7 @@ struct mpfs_dev_s
 
   /* DMA data transfer support */
 
-  bool               polltransfer;    /* Indicate a poll transfer */
+  bool               polltransfer;    /* Indicate a poll transfer, no DMA */
 
   /* Misc */
 
@@ -304,28 +311,9 @@ struct mpfs_dev_s
  * Private Function Prototypes
  ****************************************************************************/
 
-/* Low-level helpers ********************************************************/
+/* Low-level helper  ********************************************************/
 
-static int  mpfs_takesem(struct mpfs_dev_s *priv);
 #define     mpfs_givesem(priv) (nxsem_post(&priv->waitsem))
-static void mpfs_configwaitints(struct mpfs_dev_s *priv, uint32_t waitmask,
-                                sdio_eventset_t waitevents,
-                                sdio_eventset_t wkupevents);
-static void mpfs_configxfrints(struct mpfs_dev_s *priv, uint32_t xfrmask);
-
-/* Data Transfer Helpers ****************************************************/
-
-static void mpfs_eventtimeout(wdparm_t arg);
-static void mpfs_endwait(struct mpfs_dev_s *priv,
-                         sdio_eventset_t wkupevent);
-static void mpfs_endtransfer(struct mpfs_dev_s *priv,
-                             sdio_eventset_t wkupevent);
-
-/* Interrupt Handling *******************************************************/
-
-static int  mpfs_emmcsd_interrupt(int irq, void *context, void *arg);
-
-/* SDIO interface methods ***************************************************/
 
 /* Mutual exclusion */
 
@@ -343,7 +331,7 @@ static void mpfs_clock(FAR struct sdio_dev_s *dev,
                        enum sdio_clock_e rate);
 static int  mpfs_attach(FAR struct sdio_dev_s *dev);
 
-/* Command/Status/Data Transfer */
+/* Command / Status / Data Transfer */
 
 static int  mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
                          uint32_t arg);
@@ -365,7 +353,7 @@ static int  mpfs_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
 static int  mpfs_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
                            uint32_t *rshort);
 
-/* EVENT handler */
+/* Event handler */
 
 static void mpfs_waitenable(FAR struct sdio_dev_s *dev,
                             sdio_eventset_t eventset, uint32_t timeout);
@@ -378,10 +366,6 @@ static int  mpfs_registercallback(FAR struct sdio_dev_s *dev,
 /* DMA */
 
 #if defined(CONFIG_SDIO_DMA)
-#  if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-static int  mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen);
-#  endif
 static int  mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
                               FAR uint8_t *buffer, size_t buflen);
 static int  mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
@@ -428,11 +412,7 @@ struct mpfs_dev_s g_emmcsd_dev =
     .eventwait        = mpfs_eventwait,
     .callbackenable   = mpfs_callbackenable,
     .registercallback = mpfs_registercallback,
-
 #if defined(CONFIG_SDIO_DMA)
-#  if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-    .dmapreflight     = mpfs_dmapreflight,
-#  endif
     .dmarecvsetup     = mpfs_dmarecvsetup,
     .dmasendsetup     = mpfs_dmasendsetup,
 #endif
@@ -441,9 +421,8 @@ struct mpfs_dev_s g_emmcsd_dev =
   .plic_irq          = MPFS_IRQ_MMC_MAIN,
   .emmc              = false,
   .bus_voltage       = MPFS_EMMCSD_3_3V_BUS_VOLTAGE,
-  .bus_speed         = MPFS_EMMCSD_MODE_DDR,
-  .status            = MPFS_EMMCSD_INITIALIZED,
-  .jumpers_3v3       = 1,
+  .bus_speed         = MPFS_EMMCSD_MODE_SDR,
+  .jumpers_3v3       = true,
   .blocksize         = 512,
   .onebit            = false,
   .polltransfer      = true,
@@ -490,6 +469,7 @@ static int mpfs_takesem(struct mpfs_dev_s *priv)
 
 static void mpfs_reset_lines(struct mpfs_dev_s *priv)
 {
+  uint32_t retries = EMMCSD_CMDTIMEOUT;
   uint32_t status;
 
   /* Software Reset For DAT Line and CMD Line */
@@ -501,7 +481,13 @@ static void mpfs_reset_lines(struct mpfs_dev_s *priv)
     {
       status = getreg32(MPFS_EMMCSD_SRS11);
     }
-  while (status & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD));
+  while ((status & (MPFS_EMMCSD_SRS11_SRDAT | MPFS_EMMCSD_SRS11_SRCMD)) &&
+         --retries);
+
+  if (retries == 0)
+    {
+      mcerr("Timeout waiting line resets!\n");
+    }
 }
 
 /****************************************************************************
@@ -793,7 +779,7 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 
       if (readsize == 0)
         {
-          /* Stop here, multiblock continues on next BRR irq */
+          /* Stop here, multiblock continues on next BRR interrupt */
 
           break;
         }
@@ -816,70 +802,40 @@ static void mpfs_recvfifo(struct mpfs_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: mpfs_recvdma
+ * Name: mpfs_endwait
  *
  * Description:
- *   Receive SDIO data in dma mode
+ *   Wake up a waiting thread if the waited-for event has occurred.
  *
  * Input Parameters:
  *   priv  - Instance of the EMMCSD private state structure.
+ *   wkupevent - The event that caused the wait to end
  *
  * Returned Value:
  *   None
  *
+ * Assumptions:
+ *   Always called from the interrupt level with interrupts disabled.
+ *
  ****************************************************************************/
 
-#if defined (CONFIG_SDIO_DMA) && defined(CONFIG_RISCV_DCACHE)
-static void mpfs_recvdma(struct mpfs_dev_s *priv)
+static void mpfs_endwait(struct mpfs_dev_s *priv,
+                          sdio_eventset_t wkupevent)
 {
-  uint32_t dctrl;
+  mcinfo("wkupevent: %u\n", wkupevent);
 
-  if (priv->unaligned_rx)
-    {
-      /* If we are receiving multiple blocks to an unaligned buffers,
-       * we receive them one-by-one
-       */
+  /* Cancel the watchdog timeout */
 
-      /* Copy the received data to client buffer */
+  wd_cancel(&priv->waitwdog);
 
-      memcpy(priv->buffer, sdmmc_rxbuffer, priv->blocksize);
+  /* Disable event-related interrupts */
 
-      /* Invalidate the cache before receiving next block */
+  mpfs_configwaitints(priv, 0, 0, wkupevent);
 
-      up_invalidate_dcache((uintptr_t)sdmmc_rxbuffer,
-                           (uintptr_t)sdmmc_rxbuffer + priv->blocksize);
+  /* Wake up the waiting thread */
 
-      /* Update how much there is left to receive */
-
-      priv->remaining -= priv->blocksize;
-    }
-  else
-    {
-      /* In an aligned case, we have always received all blocks */
-
-      priv->remaining = 0;
-    }
-
-  if (priv->remaining == 0)
-    {
-      /* no data remaining, end the transfer */
-
-      mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
-    }
-  else
-    {
-      /* We end up here only in unaligned rx-buffers case, and are receiving
-       * the data one block at a time
-       */
-
-      /* Update where to receive the following block */
-
-      priv->buffer = (uint32_t *)((uintptr_t)priv->buffer + priv->blocksize);
-
-      DEBUGPANIC();
-    }
+  mpfs_givesem(priv);
 }
-#endif
 
 /****************************************************************************
  * Name: mpfs_eventtimeout
@@ -921,42 +877,6 @@ static void mpfs_eventtimeout(wdparm_t arg)
       mpfs_endwait(priv, SDIOWAIT_TIMEOUT);
       mcerr("Timeout: remaining: %lu\n", priv->remaining);
     }
-}
-
-/****************************************************************************
- * Name: mpfs_endwait
- *
- * Description:
- *   Wake up a waiting thread if the waited-for event has occurred.
- *
- * Input Parameters:
- *   priv  - Instance of the EMMCSD private state structure.
- *   wkupevent - The event that caused the wait to end
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Always called from the interrupt level with interrupts disabled.
- *
- ****************************************************************************/
-
-static void mpfs_endwait(struct mpfs_dev_s *priv,
-                          sdio_eventset_t wkupevent)
-{
-  mcinfo("wkupevent: %u\n", wkupevent);
-
-  /* Cancel the watchdog timeout */
-
-  wd_cancel(&priv->waitwdog);
-
-  /* Disable event-related interrupts */
-
-  mpfs_configwaitints(priv, 0, 0, wkupevent);
-
-  /* Wake up the waiting thread */
-
-  mpfs_givesem(priv);
 }
 
 /****************************************************************************
@@ -1032,14 +952,11 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
   uintptr_t address;
   uintptr_t highaddr;
   uint64_t address64;
-  uint32_t enabled;
-  uint32_t pending;
   uint32_t status;
 
   DEBUGASSERT(priv != NULL);
 
   status = getreg32(MPFS_EMMCSD_SRS12);
-  enabled = getreg32(MPFS_EMMCSD_SRS14);
 
   mcinfo("status: %08" PRIx32 "\n", status);
 
@@ -1087,9 +1004,6 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
   else
     {
       /* Handle wait events */
-
-      pending = enabled & priv->waitmask;
-      mcinfo("pending: %08" PRIx32 "\n", pending);
 
       if (status & MPFS_EMMCSD_SRS12_DMAINT)
         {
@@ -1156,14 +1070,14 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
         }
       else if (status & MPFS_EMMCSD_SRS12_CIN)
         {
-          mcerr("Card inserted!\n");
+          mcinfo("Card inserted!\n");
 
           sdio_mediachange((struct sdio_dev_s *)priv, true);
           putreg32(MPFS_EMMCSD_SRS12_CIN, MPFS_EMMCSD_SRS12);
         }
       else if (status & MPFS_EMMCSD_SRS12_CR)
         {
-          mcerr("Card removed!\n");
+          mcinfo("Card removed!\n");
 
           sdio_mediachange((struct sdio_dev_s *)priv, false);
           putreg32(MPFS_EMMCSD_SRS12_CR, MPFS_EMMCSD_SRS12);
@@ -1171,43 +1085,6 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
       else
         {
           mcerr("Status not handled: %08" PRIx32 "\n", status);
-        }
-
-      /* TBD: no if(0), if (pending)? */
-
-      if (0)
-        {
-          /* Is this a response completion event? */
-
-          if ((pending & MPFS_EMMCSD_XFRDONE_STA) != 0)
-            {
-              putreg32(MPFS_EMMCSD_XFRDONE_STA, MPFS_EMMCSD_SRS12);
-
-              /* Yes.. Is there a thread waiting for response done? */
-
-              if ((priv->waitevents & SDIOWAIT_RESPONSEDONE) != 0)
-                {
-                  /* Yes.. wake the thread up */
-
-                   mpfs_endwait(priv, SDIOWAIT_RESPONSEDONE);
-                }
-            }
-
-          /* Is this a command completion event? */
-
-          if ((pending & MPFS_EMMCSD_CMDDONE_STA) != 0)
-            {
-              putreg32(MPFS_EMMCSD_CMDDONE_STA, MPFS_EMMCSD_SRS12);
-
-              /* Yes.. Is there a thread waiting for command done? */
-
-              if ((priv->waitevents & SDIOWAIT_RESPONSEDONE) != 0)
-                {
-                  /* Yes.. wake the thread up */
-
-                  mpfs_endwait(priv, SDIOWAIT_CMDDONE);
-                }
-            }
         }
     }
 
@@ -1261,13 +1138,13 @@ static int mpfs_lock(FAR struct sdio_dev_s *dev, bool lock)
 static void mpfs_set_data_timeout(struct mpfs_dev_s *priv,
                                   uint32_t timeout_us)
 {
-  uint32_t temp;
+  uint32_t timeout_interval;
   uint32_t sdmclk_khz;
   uint32_t sdmclk_mhz;
-  uint32_t timeout_interval;
-  uint8_t j;
   uint32_t sdmclk;
   uint32_t timeout;
+  uint32_t temp;
+  uint8_t j;
 
   temp = getreg32(MPFS_EMMCSD_SRS16);
 
@@ -1451,6 +1328,7 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
   uint32_t regval;
   uint32_t cap;
   uint32_t srs09;
+  int status = MPFS_EMMCSD_INITIALIZED;
 
   flags = enter_critical_section();
 
@@ -1528,6 +1406,19 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
       mcerr("DMA not supported!\n");
       DEBUGPANIC();
     }
+
+  uint64_t pmpcfg_mmc_x;
+
+  /* DMA will not work with the power-on default PMPCFG values */
+
+  pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_0);
+  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+  pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_1);
+  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+  pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_2);
+  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+  pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_3);
+  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
 #endif
 
   /* Clear interrupt status and disable interrupts */
@@ -1580,7 +1471,7 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
               }
               else
               {
-                priv->status = MPFS_EMMCSD_NOT_INITIALIZED;
+                status = MPFS_EMMCSD_NOT_INITIALIZED;
                 mcerr("Voltage / mode combination not supported!\n");
               }
             break;
@@ -1596,7 +1487,7 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
        mpfs_set_sdhost_power(priv, MPFS_EMMCSD_SRS10_3_3V_BUS_VOLTAGE);
     }
 
-  if (priv->status == MPFS_EMMCSD_INITIALIZED)
+  if (status == MPFS_EMMCSD_INITIALIZED)
     {
       mpfs_setclkrate(priv, MPFS_MMC_CLOCK_400KHZ);
     }
@@ -1620,6 +1511,9 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
   priv->widebus    = false;
 
   leave_critical_section(flags);
+
+  mcerr("MPFS_SYSREG_SUBBLK_CLOCK_CR: %08" PRIx32 "\n", getreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR));
+  mcerr("MPFS_SYSREG_SOFT_RESET_CR: %08" PRIx32 "\n", getreg32(MPFS_SYSREG_SOFT_RESET_CR));
 }
 
 /****************************************************************************
@@ -1987,7 +1881,7 @@ static void mpfs_blocksetup(FAR struct sdio_dev_s *dev,
  *   (interrupt driven mode).  This method will do whatever controller setup
  *   is necessary.  This would be called for SD memory just BEFORE sending
  *   CMD13 (SEND_STATUS), CMD17 (READ_SINGLE_BLOCK), CMD18
- *   (READ_MULTIPLE_BLOCKS), ACMD51 (SEND_SCR), etc.  Normally,
+ *   (READ_MULTIPLE_BLOCKS), ACMD51 (SEND_SCR), etc. Normally,
  *   EMMCSD_WAITEVENT will be called to receive the indication that the
  *   transfer is complete.
  *
@@ -2040,9 +1934,9 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
  *
  * Description:
  *   Setup hardware in preparation for data transfer from the card.  This
- *   method will do whatever controller setup is necessary.  This would be
- *   called for SD memory just AFTER sending CMD24 (WRITE_BLOCK), CMD25
- *   (WRITE_MULTIPLE_BLOCK), ... and before EMMCSD_SENDDATA is called.
+ *   method will do whatever controller setup is necessary. This would be
+ *   called for SD memory just BEFORE sending CMD24 (WRITE_BLOCK), CMD25
+ *   (WRITE_MULTIPLE_BLOCK).
  *
  * Input Parameters:
  *   dev    - An instance of the SDIO device interface
@@ -2087,59 +1981,13 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
 }
 
 /****************************************************************************
- * Name: mpfs_dmapreflight
- *
- * Description:
- *   Preflight an SDIO DMA operation.  If the buffer is not well-formed for
- *   SDIO DMA transfer (alignment, size, etc.) returns an error.
- *
- * Input Parameters:
- *   dev    - An instance of the SDIO device interface
- *   buffer - The memory to DMA to/from
- *   buflen - The size of the DMA transfer in bytes
- *
- * Returned Value:
- *   OK on success; a negated errno on failure
- ****************************************************************************/
-
-#if defined(CONFIG_SDIO_DMA) && defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-static int mpfs_dmapreflight(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen)
-{
-  struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
-  DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
-
-#if defined(CONFIG_RISCV_DCACHE) && !defined(CONFIG_RISCV_DCACHE_WRITETHROUGH)
-  /* buffer alignment is required for DMA transfers with dcache in buffered
-   * mode (not write-through) because a) arch_invalidate_dcache could lose
-   * buffered writes and b) arch_flush_dcache could corrupt adjacent memory
-   * if the maddr and the mend+1, the next next address are not on
-   * RISCV_DCACHE_LINESIZE boundaries.
-   */
-
-  if (buffer != priv->rxfifo &&
-      (((uintptr_t)buffer & (RISCV_DCACHE_LINESIZE - 1)) != 0 ||
-      ((uintptr_t)(buffer + buflen) & (RISCV_DCACHE_LINESIZE - 1)) != 0))
-    {
-      mcerr("dcache unaligned "
-            "buffer:%p end:%p\n",
-            buffer, buffer + buflen - 1);
-      return -EFAULT;
-    }
-#endif
-
-  return 0;
-}
-#endif
-
-/****************************************************************************
  * Name: mpfs_dmarecvsetup
  *
  * Description:
  *   Setup to perform a read DMA.  If the processor supports a data cache,
  *   then this method will also make sure that the contents of the DMA memory
- *   and the data cache are coherent.  For read transfers this may mean
- *   invalidating the data cache.
+ *   and the data cache are coherent. For read transfers this may mean
+ *   invalidating the data cache. No cache support is currently implemented.
  *
  * Input Parameters:
  *   dev    - An instance of the SDIO device interface
@@ -2164,9 +2012,6 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
-#if defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-  DEBUGASSERT(mpfs_dmapreflight(dev, buffer, buflen) == 0);
-#endif
 
   priv->buffer       = (uint32_t *)buffer;
   priv->remaining    = buflen;
@@ -2203,10 +2048,7 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
  * Name: mpfs_dmasendsetup
  *
  * Description:
- *   Setup to perform a write DMA.  If the processor supports a data cache,
- *   then this method will also make sure that the contents of the DMA memory
- *   and the data cache are coherent.  For write transfers, this may mean
- *   flushing the data cache.
+ *   Setup to perform a write DMA. No cache support is currently implemented.
  *
  * Input Parameters:
  *   dev    - An instance of the SDIO device interface
@@ -2760,8 +2602,8 @@ errout_with_waitints:
  * Name: mpfs_callbackenable
  *
  * Description:
- *   Enable/disable of a set of SDIO callback events.  This is part of the
- *   the SDIO callback sequence.  The set of events is configured to enabled
+ *   Enable/disable of a set of SDIO callback events. This is part of the
+ *   the SDIO callback sequence. The set of events is configured to enabled
  *   callbacks to the function provided in mpfs_registercallback.
  *
  *   Events are automatically disabled once the callback is performed and no
