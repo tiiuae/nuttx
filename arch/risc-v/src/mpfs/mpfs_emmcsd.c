@@ -270,7 +270,7 @@ struct mpfs_dev_s
   bool               emmc;            /* eMMC or SD */
   int                bus_voltage;     /* Bus voltage */
   int                bus_speed;       /* Bus speed */
-  bool               jumpers_3v3;     /* Jumper settings */
+  bool               jumpers_3v3;     /* Jumper settings: 1v8 or 3v3 */
 
   /* Event support */
 
@@ -292,6 +292,7 @@ struct mpfs_dev_s
 
   uint32_t          *buffer;          /* Address of current R/W buffer */
   size_t             remaining;       /* Number of bytes remaining in the transfer */
+  size_t             receivecnt;      /* Real count to receive */
   uint32_t           xfrmask;         /* Interrupt enables for data transfer */
 
   bool               widebus;         /* Required for DMA support */
@@ -304,7 +305,6 @@ struct mpfs_dev_s
   /* Misc */
 
   uint32_t           blocksize;       /* Current block size */
-  uint32_t           receivecnt;      /* Real count to receive */
 };
 
 /****************************************************************************
@@ -572,6 +572,13 @@ static void mpfs_setclkrate(struct mpfs_dev_s *priv, uint32_t clkrate)
     {
       mcwarn("Clock didn't get stable!\n");
       DEBUGPANIC();
+    }
+
+  /* HSE bit enabled if clk greater than 25 Mhz */
+
+  if (clkrate > MPFS_MMC_CLOCK_25MHZ)
+    {
+      modifyreg32(MPFS_EMMCSD_SRS10, 0, MPFS_EMMCSD_SRS10_HSE);
     }
 
   priv->clk_enabled = true;
@@ -1308,26 +1315,27 @@ static void mpfs_sdcard_init(struct mpfs_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: mpfs_reset
+ * Name: mpfs_reset_device
  *
  * Description:
- *   Reset the SDIO controller.  Undo all setup and initialization.
+ *   Reset the SDIO controller. Undo all setup and initialization.
  *
  * Input Parameters:
  *   dev    - An instance of the SDIO device interface
  *
  * Returned Value:
- *   None
+ *   true on success, false otherwise
  *
  ****************************************************************************/
 
-static void mpfs_reset(FAR struct sdio_dev_s *dev)
+static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
 {
   FAR struct mpfs_dev_s *priv = (FAR struct mpfs_dev_s *)dev;
   irqstate_t flags;
   uint32_t regval;
   uint32_t cap;
   uint32_t srs09;
+  bool retval = true;
   int status = MPFS_EMMCSD_INITIALIZED;
 
   flags = enter_critical_section();
@@ -1409,16 +1417,20 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
 
   uint64_t pmpcfg_mmc_x;
 
-  /* DMA will not work with the power-on default PMPCFG values */
+  /* DMA will not work with the power-on default PMPCFG values.
+   * Check that the HSS or envm bootloader has applied the
+   * following values below.
+   */
 
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_0);
-  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+
+  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_1);
-  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_2);
-  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_3);
-  DEBUGASSERT(pmpcfg_mmc_x != 0x1F00000FFFFFFFFFull);
+  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
 #endif
 
   /* Clear interrupt status and disable interrupts */
@@ -1442,9 +1454,11 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
       if (!(srs09 & MPFS_EMMCSD_SRS09_CI))
         {
           mcerr("Please insert the SD card!\n");
-        }
 
-      DEBUGASSERT(srs09 & MPFS_EMMCSD_SRS09_CI);
+          /* No card detected, cannot communicate with it */
+
+          retval = false;
+        }
     }
 
   /* Set 1-bit bus mode */
@@ -1512,8 +1526,27 @@ static void mpfs_reset(FAR struct sdio_dev_s *dev)
 
   leave_critical_section(flags);
 
-  mcerr("MPFS_SYSREG_SUBBLK_CLOCK_CR: %08" PRIx32 "\n", getreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR));
-  mcerr("MPFS_SYSREG_SOFT_RESET_CR: %08" PRIx32 "\n", getreg32(MPFS_SYSREG_SOFT_RESET_CR));
+  return retval;
+}
+
+/****************************************************************************
+ * Name: mpfs_reset
+ *
+ * Description:
+ *   Reset the SDIO controller via mpfs_reset_device. This is a wrapper
+ *   function only.
+ *
+ * Input Parameters:
+ *   dev    - An instance of the SDIO device interface
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static void mpfs_reset(FAR struct sdio_dev_s *dev)
+{
+  mpfs_reset_device(dev);
 }
 
 /****************************************************************************
@@ -2790,7 +2823,10 @@ FAR struct sdio_dev_s *sdio_initialize(int slotno)
    * state.
    */
 
-  mpfs_reset(&priv->dev);
+  if (!mpfs_reset_device(&priv->dev))
+    {
+      return NULL;
+    }
 
   return &priv->dev;
 }
