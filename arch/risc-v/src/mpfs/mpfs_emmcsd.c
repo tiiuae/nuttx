@@ -199,7 +199,8 @@
 #define MPFS_EMMCSD_RECV_MASK     (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_EDT_IE    | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
-                                   MPFS_EMMCSD_SRS14_BRR_IE)
+                                   MPFS_EMMCSD_SRS14_BRR_IE    | \
+                                   MPFS_EMMCSD_SRS14_TC_IE)
 
 #define MPFS_EMMCSD_SEND_MASKDMA  (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_EADMA_IE  | \
@@ -212,7 +213,8 @@
 #define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
                                    MPFS_EMMCSD_SRS14_EDT_IE    | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
-                                   MPFS_EMMCSD_SRS14_BWR_IE)
+                                   MPFS_EMMCSD_SRS14_BWR_IE    | \
+                                   MPFS_EMMCSD_SRS14_TC_IE)
 
 /* SD-Card IOMUX */
 
@@ -713,7 +715,18 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
     uint8_t  b[4];
   } data;
 
-  DEBUGASSERT(priv->remaining != 0);
+  /* Disable Buffer Write Ready interrupt */
+
+  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
+
+  putreg32(MPFS_EMMCSD_SRS12_TC, MPFS_EMMCSD_SRS12);
+
+  /* We might get extra interrupts */
+
+  if (priv->remaining == 0)
+    {
+      return;
+    }
 
   /* Loop while there is more data to be sent and the TX FIFO is not full */
 
@@ -754,10 +767,6 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 
       putreg32(data.w, MPFS_EMMCSD_SRS08);
     }
-
-  /* Disable Buffer Write Ready interrupt */
-
-  modifyreg32(MPFS_EMMCSD_SRS14, MPFS_EMMCSD_SRS14_BWR_IE, 0);
 
   mcinfo("Wrote all\n");
 }
@@ -1080,9 +1089,11 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
           if (priv->polltransfer)
             {
               mpfs_sendfifo(priv);
+              if (status & MPFS_EMMCSD_SRS12_TC)
+                {
+                  mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+                }
             }
-
-          mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
       else if (status & MPFS_EMMCSD_SRS12_TC)
         {
@@ -1859,12 +1870,8 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
                              MPFS_EMMCSD_SRS03_BCE |
                              MPFS_EMMCSD_SRS03_RECE;
 
-      if (priv->polltransfer)
-        {
-          command_information |= MPFS_EMMCSD_SRS03_RID;
-        }
 #ifdef CONFIG_SDIO_DMA
-      else
+      if (!priv->polltransfer)
         {
           command_information |= MPFS_EMMCSD_SRS03_DMAE;
         }
@@ -2263,19 +2270,6 @@ static int mpfs_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
   /* Then wait for the response (or timeout) */
 
   if (cmd & MMCSD_DATAXFR_MASK)
-    {
-      if (priv->polltransfer)
-        {
-          waitbits = MPFS_EMMCSD_SRS12_TC;
-        }
-      else
-        {
-          /* DMA waits only for CC here */
-
-          waitbits = MPFS_EMMCSD_SRS12_CC;
-        }
-    }
-  else
     {
       waitbits = MPFS_EMMCSD_SRS12_CC;
     }
