@@ -202,11 +202,15 @@
                                    MPFS_EMMCSD_SRS14_BRR_IE)
 
 #define MPFS_EMMCSD_SEND_MASKDMA  (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_EADMA_IE  | \
+                                   MPFS_EMMCSD_SRS14_DMAINT_IE | \
+                                   MPFS_EMMCSD_SRS14_EDT_IE    | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE    | \
                                    MPFS_EMMCSD_SRS14_TC_IE)
 
 #define MPFS_EMMCSD_SEND_MASK     (MPFS_EMMCSD_CARD_INTS       | \
+                                   MPFS_EMMCSD_SRS14_EDT_IE    | \
                                    MPFS_EMMCSD_SRS14_ECT_IE    | \
                                    MPFS_EMMCSD_SRS14_BWR_IE)
 
@@ -318,7 +322,7 @@ struct mpfs_dev_s
 /* Mutual exclusion */
 
 #if defined(CONFIG_SDIO_MUXBUS)
-static int mpfs_lock(FAR struct sdio_dev_s *dev, bool lock);
+static int  mpfs_lock(FAR struct sdio_dev_s *dev, bool lock);
 #endif
 
 /* Initialization/setup */
@@ -488,6 +492,41 @@ static void mpfs_reset_lines(struct mpfs_dev_s *priv)
     {
       mcerr("Timeout waiting line resets!\n");
     }
+}
+
+/****************************************************************************
+ * Name: mpfs_check_lines_busy
+ *
+ * Description:
+ *   Verifies the DAT and CMD lines are available, not busy.
+ *
+ * Input Parameters:
+ *   priv  - Instance of the EMMCSD private state structure.
+ *
+ * Returned Value:
+ *   true if busy, false if available
+ *
+ ****************************************************************************/
+
+static bool mpfs_check_lines_busy(struct mpfs_dev_s *priv)
+{
+  uint32_t retries = EMMCSD_LONGTIMEOUT;
+  uint32_t srs9;
+
+  do
+    {
+      srs9 = getreg32(MPFS_EMMCSD_SRS09);
+    }
+  while (srs9 & (MPFS_EMMCSD_SRS09_CICMD | MPFS_EMMCSD_SRS09_CIDAT) &&
+         --retries);
+
+  if (retries == 0)
+    {
+      mcerr("Lines are still busy!\n");
+      return true;
+    }
+
+  return false;
 }
 
 /****************************************************************************
@@ -708,6 +747,8 @@ static void mpfs_sendfifo(struct mpfs_dev_s *priv)
 
           priv->remaining = 0;
         }
+
+      DEBUGASSERT(getreg32(MPFS_EMMCSD_SRS12) & MPFS_EMMCSD_SRS12_BWR);
 
       /* Put the word in the FIFO */
 
@@ -956,9 +997,6 @@ static void mpfs_endtransfer(struct mpfs_dev_s *priv,
 static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 {
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)arg;
-  uintptr_t address;
-  uintptr_t highaddr;
-  uint64_t address64;
   uint32_t status;
 
   DEBUGASSERT(priv != NULL);
@@ -1014,22 +1052,11 @@ static int mpfs_emmcsd_interrupt(int irq, void *context, void *arg)
 
       if (status & MPFS_EMMCSD_SRS12_DMAINT)
         {
-          address = getreg32(MPFS_EMMCSD_SRS22);
-          highaddr = getreg32(MPFS_EMMCSD_SRS23);
-
-          address64 = address | ((uint64_t)highaddr << 32);
-
-          /* Increase address(4kb) and re-write new address in DMA buffer,
-           * see SRS01 / SDMABB. This functionality has not been tested!
+          /* Very large transfers may end up here.
+           * They are not tested at all.
            */
 
-          address = (uint32_t)address64;
-          highaddr = (uint32_t)(address64 >> 32);
-
-          putreg32(address, MPFS_EMMCSD_SRS22);
-          putreg32(highaddr, MPFS_EMMCSD_SRS23);
-
-          putreg32(MPFS_EMMCSD_SRS12_DMAINT, MPFS_EMMCSD_SRS12);
+          mcerr("DMAINT not expected, TC instead!\n");
 
           mpfs_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
         }
@@ -1424,13 +1451,14 @@ static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
 
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_0);
 
-  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
+  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_1);
-  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
+  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_2);
-  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
+  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_3);
-  DEBUGASSERT(pmpcfg_mmc_x == 0x1f00000fffffffff);
+  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
+
 #endif
 
   /* Clear interrupt status and disable interrupts */
@@ -1523,6 +1551,8 @@ static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
   priv->xfrmask    = 0;      /* Interrupt enables for data transfer */
 
   priv->widebus    = false;
+
+  mpfs_reset_lines(priv);
 
   leave_critical_section(flags);
 
@@ -1764,7 +1794,7 @@ static int mpfs_attach(FAR struct sdio_dev_s *dev)
  *   arg  - 32-bit argument required with some commands
  *
  * Returned Value:
- *   None
+ *   OK if no errors, an error otherwise
  *
  ****************************************************************************/
 
@@ -1774,19 +1804,10 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
   struct mpfs_dev_s *priv = (struct mpfs_dev_s *)dev;
   uint32_t command_information;
   uint32_t cmdidx;
-  uint32_t srs9;
-  uint32_t retries = EMMCSD_CMDTIMEOUT;
 
-  /* Check if command line is busy */
+  /* Check if command / data lines are busy */
 
-  do
-    {
-      srs9 = getreg32(MPFS_EMMCSD_SRS09);
-    }
-  while (srs9 & (MPFS_EMMCSD_SRS09_CICMD | MPFS_EMMCSD_SRS09_CIDAT) &&
-         --retries);
-
-  if (retries == 0)
+  if (mpfs_check_lines_busy(priv))
     {
       mcerr("Busy!\n");
       return -EBUSY;
@@ -1943,6 +1964,8 @@ static int mpfs_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
   priv->receivecnt   = nbytes;
   priv->polltransfer = true;
 
+  mpfs_check_lines_busy(priv);
+
   /* Set up the SDIO data path, reset DAT and CMD lines */
 
   mpfs_reset_lines(priv);
@@ -1990,6 +2013,8 @@ static int mpfs_sendsetup(FAR struct sdio_dev_s *dev, FAR const
 
   DEBUGASSERT(priv != NULL && buffer != NULL && nbytes > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
+
+  mpfs_check_lines_busy(priv);
 
   /* Save the source buffer information for use by the interrupt handler */
 
@@ -2059,7 +2084,6 @@ static int mpfs_dmarecvsetup(FAR struct sdio_dev_s *dev,
 
   putreg32((uintptr_t)buffer, MPFS_EMMCSD_SRS22);
   putreg32((uintptr_t)((uint64_t)buffer >> 32), MPFS_EMMCSD_SRS23);
-
 #ifndef CONFIG_SDIO_BLOCKSETUP
   blockcount = ((buflen - 1) / priv->blocksize) + 1;
 
@@ -2106,7 +2130,10 @@ static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
 
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
-  DEBUGASSERT(buflen >= priv->blocksize);
+
+  /* DMA send doesn't work in 0x08xxxxxxx address range */
+
+  DEBUGASSERT(((uintptr_t)buffer & 0xff000000) != 0x08000000);
 
   /* Save the source buffer information for use by the interrupt handler */
 
