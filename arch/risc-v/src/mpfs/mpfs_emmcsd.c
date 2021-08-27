@@ -1353,7 +1353,7 @@ static void mpfs_sdcard_init(struct mpfs_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: mpfs_reset_device
+ * Name: mpfs_device_reset
  *
  * Description:
  *   Reset the SDIO controller. Undo all setup and initialization.
@@ -1366,7 +1366,7 @@ static void mpfs_sdcard_init(struct mpfs_dev_s *priv)
  *
  ****************************************************************************/
 
-static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
+static bool mpfs_device_reset(FAR struct sdio_dev_s *dev)
 {
   FAR struct mpfs_dev_s *priv = (FAR struct mpfs_dev_s *)dev;
   irqstate_t flags;
@@ -1457,18 +1457,32 @@ static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
 
   /* DMA will not work with the power-on default PMPCFG values.
    * Check that the HSS or envm bootloader has applied the
-   * following values below.
+   * following values below, provide info if not.
    */
 
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_0);
+  if ((pmpcfg_mmc_x & 0x1ffffff000000000) != 0x1f00000000000000)
+    {
+      mcinfo("Please check PMPCFG_MMC0 register.\n");
+    }
 
-  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_1);
-  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
+  if ((pmpcfg_mmc_x & 0x1ffffff000000000) != 0x1f00000000000000)
+    {
+      mcinfo("Please check PMPCFG_MMC1 register.\n");
+    }
+
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_2);
-  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
+  if ((pmpcfg_mmc_x & 0x1ffffff000000000) != 0x1f00000000000000)
+    {
+      mcinfo("Please check PMPCFG_MMC2 register.\n");
+    }
+
   pmpcfg_mmc_x = getreg64(MPFS_PMPCFG_MMC_3);
-  DEBUGASSERT((pmpcfg_mmc_x & 0x1ffffff000000000) == 0x1f00000000000000);
+  if ((pmpcfg_mmc_x & 0x1ffffff000000000) != 0x1f00000000000000)
+    {
+      mcinfo("Please check PMPCFG_MMC3 register.\n");
+    }
 
 #endif
 
@@ -1574,7 +1588,7 @@ static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
  * Name: mpfs_reset
  *
  * Description:
- *   Reset the SDIO controller via mpfs_reset_device. This is a wrapper
+ *   Reset the SDIO controller via mpfs_device_reset. This is a wrapper
  *   function only.
  *
  * Input Parameters:
@@ -1587,7 +1601,7 @@ static bool mpfs_reset_device(FAR struct sdio_dev_s *dev)
 
 static void mpfs_reset(FAR struct sdio_dev_s *dev)
 {
-  mpfs_reset_device(dev);
+  mpfs_device_reset(dev);
 }
 
 /****************************************************************************
@@ -1882,10 +1896,6 @@ static int mpfs_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
           command_information |= MPFS_EMMCSD_SRS03_DTDS;
           mcinfo("cmd & MMCSD_RDDATAXFR\n");
         }
-      else if ((cmd & MMCSD_DATAXFR_MASK) == MMCSD_WRDATAXFR)
-        {
-          mcinfo("cmd & MMCSD_WRDATAXFR\n");
-        }
 
       if (cmd & MMCSD_MULTIBLOCK)
         {
@@ -2138,9 +2148,14 @@ static int mpfs_dmasendsetup(FAR struct sdio_dev_s *dev,
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
 
-  /* DMA send doesn't work in 0x08xxxxxxx address range */
+  /* DMA send doesn't work in 0x08xxxxxxx address range. Default to IRQ mode
+   * in this special case.
+   */
 
-  DEBUGASSERT(((uintptr_t)buffer & 0xff000000) != 0x08000000);
+  if (((uintptr_t)buffer & 0xff000000) == 0x08000000)
+    {
+      return mpfs_sendsetup(dev, buffer, buflen);
+    }
 
   /* Save the source buffer information for use by the interrupt handler */
 
@@ -2844,7 +2859,7 @@ FAR struct sdio_dev_s *sdio_initialize(int slotno)
    * state.
    */
 
-  if (!mpfs_reset_device(&priv->dev))
+  if (!mpfs_device_reset(&priv->dev))
     {
       return NULL;
     }
