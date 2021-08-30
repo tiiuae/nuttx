@@ -45,7 +45,8 @@ a single broadcast write from the SCB master. */
 #endif
 #if !defined (LIBERO_SETTING_SGMII_PLL_CTRL)
 /*PLL control register */ 
-#define LIBERO_SETTING_SGMII_PLL_CTRL    0x0100003FUL
+//#define LIBERO_SETTING_SGMII_PLL_CTRL    0x0100003FUL
+  #define LIBERO_SETTING_SGMII_PLL_CTRL 0x0100003FUL
     /* REG_POWERDOWN_B                   [0:1]   RW value= 0x1 */ 
     /* REG_RFDIV_EN                      [1:1]   RW value= 0x1 */ 
     /* REG_DIVQ0_EN                      [2:1]   RW value= 0x1 */ 
@@ -170,7 +171,7 @@ a single broadcast write from the SCB master. */
     /* RESERVE01                         [30:2]  RSVD */ 
 #endif
 #if !defined (LIBERO_SETTING_SGMII_SSCG_REG_2)
-/*SSCG registers 2 */ 
+/*SSCG registers 2 */
 #define LIBERO_SETTING_SGMII_SSCG_REG_2    0x00000014UL
     /* INTIN                             [0:12]  RW value= 0x14 */ 
     /* INTMOD                            [12:12] RO */ 

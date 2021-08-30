@@ -42,11 +42,10 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define OSC_FREQ 80000000UL
+//#define OSC_FREQ 80000000UL
 
-
-#define LIBERO_SETTING_MSS_EXT_SGMII_REF_CLK    100000000
-#define LIBERO_SETTING_MSS_RTC_TOGGLE_CLK    1000000
+//#define LIBERO_SETTING_MSS_EXT_SGMII_REF_CLK    100000000
+//#define LIBERO_SETTING_MSS_RTC_TOGGLE_CLK    1000000
 
 IOSCBCFG_TypeDef                * SCBCFG_REGS         =  (IOSCBCFG_TypeDef            *)IOSCBCFG_BASE ;
 g5_mss_top_scb_regs_TypeDef     * SCB_REGS            = (g5_mss_top_scb_regs_TypeDef *) SYSREGSCB_BASE;
@@ -319,7 +318,7 @@ uint8_t mss_nwc_init(void)
      */
     mss_pll_config();
 
-#ifdef DDR_SUPPORT
+    #ifdef DDR_SUPPORT
     uint32_t  ddr_status;
 
     do
@@ -332,11 +331,10 @@ uint8_t mss_nwc_init(void)
       {
         error |= (0x1U << 2U);
       }
-#endif
+    #endif
 
     return error;
 }
-
 
 
 // TODO: PMP config belongs somewhere else
