@@ -89,7 +89,7 @@ typedef enum mpfs_i2c_clock_divider
   MPFS_I2C_PCLK_DIV_960,
   MPFS_I2C_PCLK_DIV_120,
   MPFS_I2C_PCLK_DIV_60,
-  MPFS_I2C_BCLK_DIV_8
+  MPFS_I2C_BCLK_DIV_8 /* FPGA generated BCLK */
 } mpfs_i2c_clk_div_t;
 
 static int mpfs_i2c_transfer(struct i2c_master_s *dev,
@@ -145,7 +145,7 @@ static struct mpfs_i2c_priv_s g_mpfs_i2c0_lo_priv =
   .hw_base        = MPFS_I2C0_LO_BASE,
   .plic_irq       = MPFS_IRQ_I2C0_MAIN,
   .msgv           = NULL,
-  .bus_divider    = MPFS_I2C_PCLK_DIV_256,
+  .bus_divider    = MPFS_I2C_BCLK_DIV_8,
   .ser_address    = 0x21,
   .target_addr    = 0,
   .refs           = 0,
@@ -165,7 +165,7 @@ static struct mpfs_i2c_priv_s g_mpfs_i2c1_lo_priv =
   .hw_base        = MPFS_I2C1_LO_BASE,
   .plic_irq       = MPFS_IRQ_I2C1_MAIN,
   .msgv           = NULL,
-  .bus_divider    = MPFS_I2C_PCLK_DIV_256,
+  .bus_divider    = MPFS_I2C_BCLK_DIV_8,
   .ser_address    = 0x21,
   .target_addr    = 0,
   .refs           = 0,
