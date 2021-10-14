@@ -41,13 +41,14 @@
 #include <nuttx/cache.h>
 
 #include <arch/board/board.h>
+#include <arch/board/board_liberodefs.h>
 
 #include "riscv_arch.h"
 #include "mpfs_dma.h"
 #include "hardware/mpfs_sysreg.h"
 #include "hardware/mpfs_ddr.h"
 #include "hardware/mpfs_sgmii.h"
-#include "hardware/mpfs_ddr_liberodefs.h"
+
 
 /****************************************************************************
  * Pre-processor Definitions
