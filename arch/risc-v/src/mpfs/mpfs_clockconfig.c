@@ -30,12 +30,12 @@
 
 #include <nuttx/arch.h>
 #include <arch/board/board.h>
+#include <arch/board/board_liberodefs.h>
 
 #include "mpfs_clockconfig.h"
 #include "riscv_arch.h"
 #include "hardware/mpfs_sysreg.h"
 #include "hardware/mpfs_sgmii.h"
-#include "hardware/mpfs_ddr_liberodefs.h"
 
 /****************************************************************************
  * Pre-processor Definitions

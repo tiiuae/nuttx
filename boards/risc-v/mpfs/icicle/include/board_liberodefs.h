@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/risc-v/src/mpfs/hardware/mpfs_ddr_liberodefs.h
+ * boards/risc-v/mpfs/icicle/include/board_liberodefs.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_DDR_LIBERODEFS_H
-#define __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_DDR_LIBERODEFS_H
+#ifndef __BOARDS_RISCV_MPFS_ICICLE_INCLUDE_BOARD_LIBERODEFS_H
+#define __BOARDS_RISCV_MPFS_ICICLE_INCLUDE_BOARD_LIBERODEFS_H
 
 /* These are constants provided by the vendor. Values have been synced from
  * hart-software-services (HSS) with the tag: 2021.08
@@ -592,4 +592,4 @@
 #define LIBERO_SETTING_DPC_BITS              0x00050422
 #define LIBERO_SETTING_DATA_LANES_USED       0x00000004
 
-#endif /* __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_DDR_LIBERODEFS_H */
+#endif /* __BOARDS_RISCV_MPFS_ICICLE_INCLUDE_BOARD_LIBERODEFS_H */
