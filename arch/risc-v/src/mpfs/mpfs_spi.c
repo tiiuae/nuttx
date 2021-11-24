@@ -147,10 +147,10 @@ struct mpfs_spi_priv_s
 
 static int mpfs_spi_lock(struct spi_dev_s *dev, bool lock);
 
-/* TODO: add some configuration option to enable this
+#ifdef CONFIG_SPI_CS_CONTROL
 static void mpfs_spi_select(struct spi_dev_s *dev, uint32_t devid,
                             bool selected);
-*/
+#endif
 
 static uint32_t mpfs_spi_setfrequency(struct spi_dev_s *dev,
                                       uint32_t frequency);
@@ -194,7 +194,11 @@ static const struct mpfs_spi_config_s mpfs_spi_config =
 static const struct spi_ops_s mpfs_spi0_ops =
 {
     .lock             = mpfs_spi_lock,
+#ifdef CONFIG_SPI_CS_CONTROL
+    .select           = mpfs_spi_select,
+#else
     .select           = mpfs_spi0_select,
+#endif
     .setfrequency     = mpfs_spi_setfrequency,
 #ifdef CONFIG_SPI_CS_DELAY_CONTROL
     .setdelay         = mpfs_spi_setdelay,
@@ -240,7 +244,11 @@ static struct mpfs_spi_priv_s g_mpfs_spi0_priv =
 static const struct spi_ops_s mpfs_spi1_ops =
 {
     .lock             = mpfs_spi_lock,
+#ifdef CONFIG_SPI_CS_CONTROL
+    .select           = mpfs_spi_select,
+#else
     .select           = mpfs_spi1_select,
+#endif
     .setfrequency     = mpfs_spi_setfrequency,
 #ifdef CONFIG_SPI_CS_DELAY_CONTROL
     .setdelay         = mpfs_spi_setdelay,
@@ -388,9 +396,7 @@ static int mpfs_spi_lock(struct spi_dev_s *dev, bool lock)
  *
  ****************************************************************************/
 
-
-/* TODO: add some configuration option to enable this
-
+#ifdef CONFIG_SPI_CS_CONTROL
 static void mpfs_spi_select(struct spi_dev_s *dev, uint32_t devid,
                             bool selected)
 {
@@ -409,7 +415,7 @@ static void mpfs_spi_select(struct spi_dev_s *dev, uint32_t devid,
 
   spiinfo("devid: %u, CS: %s\n", devid, selected ? "select" : "free");
 }
-*/
+#endif
 
 /****************************************************************************
  * Name: mpfs_spi_setfrequency
