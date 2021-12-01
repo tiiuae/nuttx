@@ -22,16 +22,28 @@ include $(TOPDIR)/.config
 include $(TOPDIR)/tools/Config.mk
 include $(TOPDIR)/arch/risc-v/src/rv64gc/Toolchain.defs
 
+LDMEMORY =
+ARCHSCRIPT =
+
 ifeq ($(CONFIG_MPFS_BOOTLOADER),y)
   LDSCRIPT = ld-envm.script
+else ifeq ($(CONFIG_BUILD_PROTECTED),y)
+  LDMEMORY = memory.ld
+  LDSCRIPT = kernel-space.ld
 else
   LDSCRIPT = ld.script
 endif
 
 ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  ARCHSCRIPT = -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)}"
+  ifneq ($(LDMEMORY),)
+    ARCHSCRIPT += -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDMEMORY)}"
+  endif
+  ARCHSCRIPT += -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)}"
 else
-  ARCHSCRIPT = -T$(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
+  ifneq ($(LDMEMORY),)
+    ARCHSCRIPT += -T$(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDMEMORY)
+  endif
+  ARCHSCRIPT += -T$(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
 endif
 
 ifeq ($(CONFIG_DEBUG_SYMBOLS),y)
