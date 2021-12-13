@@ -71,13 +71,15 @@ config ARCH_CHIP_C906
 		THEAD C906 processor (RISC-V 64bit core with GCVX extensions).
 
 config ARCH_CHIP_MPFS
-        bool "MicroChip Polarfire (MPFS)"
-        select ARCH_RV64GC
-        select ARCH_HAVE_MPU
-        select ARCH_HAVE_RESET
-        select ARCH_HAVE_SPI_CS_CONTROL
-        select ARCH_HAVE_PWM_MULTICHAN
-        ---help---
+	bool "MicroChip Polarfire (MPFS)"
+	select ARCH_RV64GC
+	select ARCH_HAVE_MPU
+	select ARCH_HAVE_MMU
+	select ARCH_MMU_TYPE_SV39
+	select ARCH_HAVE_RESET
+	select ARCH_HAVE_SPI_CS_CONTROL
+	select ARCH_HAVE_PWM_MULTICHAN
+	---help---
 		MicroChip Polarfire processor (RISC-V 64bit core with GCVX extensions).
 
 config ARCH_CHIP_RV32M1
@@ -140,6 +142,10 @@ config ARCH_RISCV_INTXCPT_EXTREGS
 	default 0
 
 endif
+
+config ARCH_MMU_TYPE_SV39
+	bool
+	default n
 
 if ARCH_RV32IM
 source "arch/risc-v/src/rv32im/Kconfig"
