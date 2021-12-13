@@ -90,6 +90,11 @@ SECTIONS
         _ebss = ABSOLUTE(.);
     } > ksram
 
+    /* Page tables here, align to 4K boundary */
+    .pgtables : ALIGN(0x1000) {
+        *(.pgtables)
+    } > ksram
+
     /* Stack top */
     .stack_top : {
         . = ALIGN(32);
