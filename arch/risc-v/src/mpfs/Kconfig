@@ -248,5 +248,3 @@ config MPFS_DMA
 menu "MPFS Others"
 
 endmenu
-
-
