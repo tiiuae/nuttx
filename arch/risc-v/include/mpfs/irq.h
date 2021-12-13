@@ -36,7 +36,7 @@
 /* IRQ 0-15 : (exception:interrupt=0) */
 
 #define MPFS_IRQ_IAMISALIGNED   (0) /* Instruction Address Misaligned */
-#define MPFS_IRQ_IAFAULT        (1) /* Instruction Address Fault */
+#define MPFS_IRQ_IAFAULT        (1) /* Instruction Access Fault */
 #define MPFS_IRQ_IINSTRUCTION   (2) /* Illegal Instruction */
 #define MPFS_IRQ_BPOINT         (3) /* Break Point */
 #define MPFS_IRQ_LAMISALIGNED   (4) /* Load Address Misaligned */
