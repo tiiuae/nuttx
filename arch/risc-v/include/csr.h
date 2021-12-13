@@ -306,6 +306,10 @@
 #define MSTATUS_FS_INIT   (0x1 << 13)
 #define MSTATUS_FS_CLEAN  (0x2 << 13)
 #define MSTATUS_FS_DIRTY  (0x3 << 13)
+#define MSTATUS_MPRV      (0x1 << 17) /* Modify Privilege */
+#define MSTATUS_SUM       (0x1 << 18) /* S mode access to U mode memory */
+#define MSTATUS_MXR       (0x1 << 19) /* Make executable / readable */
+#define MSTATUS_TVM       (0x1 << 20) /* Allow access to satp from S mode */
 
 /* In mie (machine interrupt enable) register */
 
