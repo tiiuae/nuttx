@@ -44,7 +44,7 @@
  */
 
 #ifdef CONFIG_LIB_SYSCALL
-#  ifdef CONFIG_BUILD_PROTECTED
+#  if defined (CONFIG_BUILD_PROTECTED) || defined (CONFIG_BUILD_KERNEL)
 #    ifndef CONFIG_SYS_RESERVED
 #      error "CONFIG_SYS_RESERVED must be defined to have the value 9"
 #    elif CONFIG_SYS_RESERVED != 9
@@ -91,7 +91,7 @@
 
 #define SYS_syscall_return        (3)
 
-#ifdef CONFIG_BUILD_PROTECTED
+#if defined (CONFIG_BUILD_PROTECTED) || defined (CONFIG_BUILD_KERNEL)
 /* SYS call 4:
  *
  * void up_task_start(main_t taskentry, int argc, char *argv[])
