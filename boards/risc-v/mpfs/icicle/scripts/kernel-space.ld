@@ -25,11 +25,19 @@
 OUTPUT_ARCH("riscv")
 
 /* Provide these so there is no need for using config files for this */
+
 __uflash_start = ORIGIN(uflash);
 __uflash_size = LENGTH(uflash);
 __usram_start = ORIGIN(usram);
 __usram_size = LENGTH(usram);
-    
+
+/* Provide the kernel boundaries as well */
+
+__kflash_start = ORIGIN(kflash);
+__kflash_size = LENGTH(kflash);
+__ksram_start = ORIGIN(ksram);
+__ksram_size = LENGTH(ksram);
+
 ENTRY(_stext)
 EXTERN(_vectors)
 SECTIONS
@@ -80,6 +88,15 @@ SECTIONS
         *(COMMON)
         . = ALIGN(4);
         _ebss = ABSOLUTE(.);
+    } > ksram
+
+    /* Page tables here, align to 4K boundary */
+    .pgtables : ALIGN(0x1000) {
+        *(.pgtables)
+    } > ksram
+
+    /* Stack top */
+    .stack_top : {
         . = ALIGN(32);
         _default_stack_limit = ABSOLUTE(.);
     } > ksram

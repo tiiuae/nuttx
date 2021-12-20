@@ -38,6 +38,13 @@
  ****************************************************************************/
 
 /****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+extern uintptr_t    __pgheap_start;
+extern uintptr_t    __pgheap_size;
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -56,6 +63,6 @@ void up_allocate_pgheap(FAR void **heap_start, size_t *heap_size)
 {
   DEBUGASSERT(heap_start && heap_size);
 
-  *heap_start = (FAR void *)0x80300000;
-  *heap_size  = 0x100000;
+  *heap_start = (FAR void *)&__pgheap_start;
+  *heap_size  = (size_t)&__pgheap_size;
 }
