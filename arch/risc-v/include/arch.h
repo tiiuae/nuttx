@@ -33,6 +33,7 @@
 
 #ifndef __ASSEMBLY__
 #  include <stdint.h>
+#  include <stddef.h>
 #endif
 
 #include <arch/csr.h>
@@ -43,6 +44,10 @@
 
 #ifdef CONFIG_ARCH_RV64GC
 #  include <arch/rv64gc/arch.h>
+#endif
+
+#ifdef CONFIG_ARCH_ADDRENV
+#  include "../src/rv64gc/riscv_mmu.h"
 #endif
 
 /****************************************************************************
@@ -77,6 +82,61 @@ uint32_t up_gethartid(void);
 /****************************************************************************
  * Public Types
  ****************************************************************************/
+
+#ifdef CONFIG_ARCH_ADDRENV
+
+/* A task group must have its L1 table in memory always, and the rest can
+ * be dynamically committed to memory (and even swapped).
+ *
+ * In this implementation every level tables besides the final level N are
+ * kept in memory always, while the level N tables are dynamically allocated.
+ *
+ * The motivation ?
+ *
+ * This does consume more memory statically compared to dynamic level N
+ * allocation, but it makes context switches fast, especially when the
+ * risc-v kernel runs in machine mode as the address translation tables do
+ * not need to be switched nor the TLB flushed when running kernel code.
+ *
+ * The implications ? They depend on the MMU type.
+ *
+ * For Sv39 this means that:
+ * - A task can not have more than 1GB of memory allocated. This should be
+ *   plenty enough...
+ * - The minimum amount of memory needed for page tables per task is 12K,
+ *   which gives access to 2MB of memory. This is plenty for many tasks.
+ */
+
+struct group_addrenv_s
+{
+  /* Pointers to LN-1 tables here, one of each are allocated for the task
+   * when it is created.
+   */
+
+  uint64_t *spgtables[RV_MMU_PT_LEVELS - 1];
+
+  /* For convenience store the data base here */
+
+  uint64_t datavbase;
+
+  /* For convenience store the heap base and initial size here */
+
+  uint64_t heapvbase;
+  uint64_t heapsize;
+
+  /* For convenience store the satp value here */
+
+  uint64_t satp;
+};
+
+typedef struct group_addrenv_s group_addrenv_t;
+
+/* If an address environment needs to be saved, saving the satp register
+ * will suffice. The register width is architecture dependent
+ */
+
+typedef uint64_t save_addrenv_t;
+#endif
 
 /****************************************************************************
  * Public Function Prototypes
