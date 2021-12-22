@@ -398,7 +398,8 @@ int riscv_swint(int irq, void *context, void *arg)
 #if defined (CONFIG_BUILD_PROTECTED)
           regs[REG_EPC]        = (uintptr_t)USERSPACE->signal_handler & ~1;
 #else
-          regs[REG_EPC]        = (uintptr_t)ARCH_DATA_RESERVE->ar_sigtramp;
+          regs[REG_EPC]        =
+              (uintptr_t)ARCH_DATA_RESERVE->ar_sigtramp & ~1;
 #endif
           regs[REG_INT_CTX]   &= ~MSTATUS_MPPM; /* User mode */
 
