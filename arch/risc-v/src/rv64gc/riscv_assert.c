@@ -194,6 +194,9 @@ static void up_dumpstate(void)
   uintptr_t istackbase;
   uintptr_t istacksize;
 #endif
+#ifdef CONFIG_ARCH_KERNEL_STACK
+  uintptr_t kstackbase = 0;
+#endif
 
   /* Show back trace */
 
@@ -255,18 +258,45 @@ static void up_dumpstate(void)
   _alert("stack size: %016" PRIxPTR "\n", ustacksize);
 #endif
 
+#ifdef CONFIG_ARCH_KERNEL_STACK
+  /* Does this thread have a kernel stack allocated? */
+
+  if (rtcb->xcp.kstack)
+    {
+      kstackbase = (uintptr_t)rtcb->xcp.kstack;
+
+      _alert("Kernel stack:\n");
+      _alert("  base: %016\n" PRIxPTR "\n", kstackbase);
+      _alert("  size: %016\n" PRIxPTR "\n", CONFIG_ARCH_KERNEL_STACKSIZE);
+    }
+#endif
+
   /* Dump the user stack if the stack pointer lies within the allocated user
    * stack memory.
    */
 
   if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      _alert("User Stack\n");
       up_stackdump(ustackbase, ustackbase + ustacksize);
     }
+
+#ifdef CONFIG_ARCH_KERNEL_STACK
+  /* Dump the kernel stack if the stack pointer lies within the allocated
+   * kernel stack memory.
+   */
+
+  else if (kstackbase != 0 &&
+           sp >= kstackbase &&
+           sp < kstackbase + CONFIG_ARCH_KERNEL_STACKSIZE)
+    {
+      _alert("Kernel Stack\n");
+      up_stackdump(sp, kstackbase + CONFIG_ARCH_KERNEL_STACKSIZE);
+    }
+#endif
   else
     {
-      up_stackdump(sp, ustackbase + ustacksize);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
     }
 }
 
