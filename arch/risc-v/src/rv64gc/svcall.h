@@ -39,8 +39,8 @@
 
 /* This logic uses three system calls {0,1,2} for context switching and one
  * for the syscall return.  So a minimum of four syscall values must be
- * reserved.  If CONFIG_BUILD_PROTECTED is defined, then four more syscall
- * values must be reserved.
+ * reserved.  If CONFIG_BUILD_PROTECTED or CONFIG_BUILD_KERNEL is defined,
+ * then four more syscall values must be reserved.
  */
 
 #ifdef CONFIG_LIB_SYSCALL
@@ -114,7 +114,7 @@
 
 #define SYS_signal_handler_return (7)
 
-#endif /* CONFIG_BUILD_PROTECTED */
+#endif /* CONFIG_BUILD_PROTECTED  or CONFIG_BUILD_KERNEL */
 
 /* SYS call 5:
  *
