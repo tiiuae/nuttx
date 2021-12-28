@@ -18,16 +18,31 @@
  *
  ****************************************************************************/
 
+/* Map memory so that the kernel itself has 256K executable and data memory,
+ * for a total of 0.5M, and the rest is given for the user tasks. A total of
+ * 4M is reserved which should be plenty
+ */
+
 MEMORY
 {
-    progmem (rx) : ORIGIN = 0x80000000, LENGTH = 2M    /* w/ cache */
-    sram   (rwx) : ORIGIN = 0x80200000, LENGTH = 1M    /* w/ cache */
+    kflash (rx) : ORIGIN = 0x80000000, LENGTH = 256K    /* w/ cache */
+    ksram (rwx) : ORIGIN = 0x80040000, LENGTH = 256K    /* w/ cache */
+    usram (rwx) : ORIGIN = 0x80080000, LENGTH = 3584K	/* w/ cache */
 }
 
 OUTPUT_ARCH("riscv")
 
-__ksram_start = ORIGIN(sram);
-__ksram_size = LENGTH(sram);
+/* Provide the kernel boundaries */
+
+__kflash_start = ORIGIN(kflash);
+__kflash_size = LENGTH(kflash);
+__ksram_start = ORIGIN(ksram);
+__ksram_size = LENGTH(ksram);
+
+/* Page heap is the same as the user space */
+
+__pgheap_start = ORIGIN(usram);
+__pgheap_size = LENGTH(usram);
 
 ENTRY(_stext)
 EXTERN(_vectors)
@@ -47,13 +62,13 @@ SECTIONS
         *(.gcc_except_table)
         *(.gnu.linkonce.r.*)
         _etext = ABSOLUTE(.);
-    } > progmem
+    } > kflash
 
     .init_section : ALIGN(4) {
         _sinit = ABSOLUTE(.);
         KEEP(*(.init_array .init_array.*))
         _einit = ABSOLUTE(.);
-    } > progmem
+    } > kflash
 
     _eronly = ABSOLUTE(.);
 
@@ -66,7 +81,7 @@ SECTIONS
         CONSTRUCTORS
         . = ALIGN(4);
         _edata = ABSOLUTE(.);
-    } > sram AT > progmem
+    } > ksram AT > kflash
 
     PROVIDE(__global_pointer$ = _sdata + ((_edata - _sdata) / 2));
 
@@ -79,9 +94,14 @@ SECTIONS
         *(COMMON)
         . = ALIGN(4);
         _ebss = ABSOLUTE(.);
+    } > ksram
+
+    /* Stack top */
+
+    .stack_top : {
         . = ALIGN(32);
         _default_stack_limit = ABSOLUTE(.);
-    } > sram
+    } > ksram
 
     /* Stabs debugging sections. */
 

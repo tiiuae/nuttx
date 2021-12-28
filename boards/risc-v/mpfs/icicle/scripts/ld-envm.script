@@ -27,6 +27,9 @@ MEMORY
 
 OUTPUT_ARCH("riscv")
 
+__ksram_start = ORIGIN(lim);
+__ksram_size = LENGTH(lim);
+
 ENTRY(_stext)
 EXTERN(_vectors)
 SECTIONS
