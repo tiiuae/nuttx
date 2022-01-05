@@ -33,7 +33,7 @@
 #include <nuttx/board.h>
 #include <nuttx/drivers/ramdisk.h>
 
-#ifdef MPFS_ROMFS_MOUNT
+#ifdef CONFIG_MPFS_ROMFS_MOUNT
 #  include <arch/board/boot_romfsimg.h>
 #endif
 
@@ -45,10 +45,10 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#ifdef MPFS_ROMFS_MOUNT
+#ifdef CONFIG_MPFS_ROMFS_MOUNT
 #  define SECTORSIZE    512
 #  define NSECTORS(b)   (((b) + SECTORSIZE - 1) / SECTORSIZE)
-#endif /* MPFS_ROMFS_MOUNT */
+#endif /* CONFIG_MPFS_ROMFS_MOUNT */
 
 /****************************************************************************
  * Public Functions
@@ -83,7 +83,7 @@ int mpfs_bringup(void)
     }
 #endif
 
-#ifdef MPFS_ROMFS_MOUNT
+#ifdef CONFIG_MPFS_ROMFS_MOUNT
   /* Create a ROM disk for the /bin filesystem */
 
   ret = romdisk_register(0, romfs_img, NSECTORS(romfs_img_len), SECTORSIZE);
@@ -101,7 +101,7 @@ int mpfs_bringup(void)
           serr("ERROR: Failed to mount romfs: %d\n", -ret);
         }
     }
-#endif /* MPFS_ROMFS_MOUNT */
+#endif /* CONFIG_MPFS_ROMFS_MOUNT */
 
 #if defined(CONFIG_MPFS_SPI0) || defined(CONFIG_MPFS_SPI1)
   /* Configure SPI peripheral interfaces */
