@@ -43,6 +43,13 @@
  * Private Data
  ****************************************************************************/
 
+#ifdef CONFIG_ARCH_MMU_TYPE_SV39
+static const uint64_t m_pgt_sizes[] =
+{
+    RV_MMU_L1_PAGE_SIZE, RV_MMU_L2_PAGE_SIZE, RV_MMU_L3_PAGE_SIZE
+};
+#endif
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -53,7 +60,7 @@ void mmu_ln_setentry(uint32_t ptlevel, uint64_t lnvaddr, uint64_t paddr,
   uint64_t *lntable = (uint64_t *)lnvaddr;
   uint32_t  index;
 
-  DEBUGASSERT(ptlevel <= RV_MMU_PT_LEVELS);
+  DEBUGASSERT(ptlevel > 0 && ptlevel <= RV_MMU_PT_LEVELS);
 
   /* Test if this is a leaf PTE, if it is, set A+D even if they are not used
    * by the implementation.
@@ -97,11 +104,14 @@ void mmu_ln_map_region(uint32_t ptlevel, uint64_t lnvaddr, uint64_t paddr,
                        uint64_t vaddr, size_t size, uint32_t mmuflags)
 {
   uint64_t end_paddr = paddr + size;
+  uint64_t page_size = m_pgt_sizes[ptlevel - 1];
+
+  DEBUGASSERT(ptlevel > 0 && ptlevel <= RV_MMU_PT_LEVELS);
 
   while (paddr < end_paddr)
     {
       mmu_ln_setentry(ptlevel, lnvaddr, paddr, vaddr, mmuflags);
-      paddr += RV_MMU_PAGE_SIZE;
-      vaddr += RV_MMU_PAGE_SIZE;
+      paddr += page_size;
+      vaddr += page_size;
     }
 }
