@@ -644,9 +644,19 @@ int riscv_check_pmp_access(uintptr_t attr, uintptr_t base, uintptr_t size)
           continue;
         }
 
-      /* Does this address range match ? */
+      /* Does this address range match ? Take partial matches into account.
+       *
+       * There are four possibilities:
+       * 1: Full match; region inside mapped area
+       * 2: Partial match; mapped area inside region
+       * 3: Partial match; base inside mapped region, end outside
+       * 4: Partial match; base outside mapped region, end inside
+       */
 
-      if (base >= entry.base || end <= entry.end)
+      if ((base >= entry.base && end  <= entry.end) ||
+          (base <= entry.base && end  >= entry.end) ||
+          (base >= entry.base && base <= entry.end) ||
+          (end  >= entry.base && end  <= entry.end))
         {
           /* Found a matching splice, check rights */
 
