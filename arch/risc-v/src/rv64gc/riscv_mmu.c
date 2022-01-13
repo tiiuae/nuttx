@@ -100,6 +100,18 @@ void mmu_ln_setentry(uint32_t ptlevel, uint64_t lnvaddr, uint64_t paddr,
   mmu_invalidate_tlb_by_vaddr(vaddr);
 }
 
+uint64_t mmu_ln_getentry(uint32_t ptlevel, uint64_t lnvaddr, uint64_t vaddr)
+{
+  uint64_t *lntable = (uint64_t *)lnvaddr;
+  uint32_t  index;
+
+  DEBUGASSERT(ptlevel > 0 && ptlevel <= RV_MMU_PT_LEVELS);
+
+  index = (vaddr >> RV_MMU_VADDR_SHIFT(ptlevel)) & RV_MMU_VPN_MASK;
+
+  return lntable[index];
+}
+
 void mmu_ln_map_region(uint32_t ptlevel, uint64_t lnvaddr, uint64_t paddr,
                        uint64_t vaddr, size_t size, uint32_t mmuflags)
 {
