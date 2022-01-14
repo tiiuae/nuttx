@@ -174,6 +174,10 @@ __start_mpfs:
 
 .continue_boot:
 
+    /* Clear PMP */
+
+    csrw pmpcfg0, zero
+    csrw pmpcfg2, zero
 #endif
 
   /* Set stack pointer to the idle thread stack */
