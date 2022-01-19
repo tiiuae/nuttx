@@ -192,9 +192,8 @@ static void configure_mpu(void)
   /* Configure the PMP to permit user-space access to its ROM and RAM.
    *
    * Note: PMP by default revokes access, thus if different privilege modes
-   * are in use (mstatus.mprv is set), the the user space _must_ be granted
-   * access here, otherwise an exception will fire when the user space task
-   * is started.
+   * are in use, the the user space _must_ be granted access here, otherwise
+   * an exception will fire when the user space task is started.
    *
    * Note: according to the Polarfire reference manual, address bits [1:0]
    * are not considered (due to 4 octet alignment), so strictly they don't
