@@ -34,6 +34,7 @@
 #include "mpfs_ddr.h"
 #include "mpfs_cache.h"
 #include "mpfs_userspace.h"
+#include "mpfs_scratch.h"
 #include "riscv_arch.h"
 
 /****************************************************************************
@@ -111,7 +112,7 @@ const uint64_t g_entrypoints[5] =
  * Name: __mpfs_start
  ****************************************************************************/
 
-void __mpfs_start(uint32_t mhartid)
+void __mpfs_start(uint64_t mhartid)
 {
   const uint32_t *src;
   uint32_t *dest;
@@ -161,6 +162,14 @@ void __mpfs_start(uint32_t mhartid)
   /* Do board initialization */
 
   mpfs_boardinitialize();
+
+  /* Initialize scratch area */
+
+  if (mhartid != 0)
+    {
+      mpfs_scratch_init();
+      mpfs_set_hart_sscratch(mpfs_scratch_get_addr(mhartid));
+    }
 
   /* Initialize the caches.  Should only be executed from E51 (hart 0) to be
    * functional.  Consider the caches already configured if running without
