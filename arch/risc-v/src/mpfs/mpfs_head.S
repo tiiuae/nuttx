@@ -103,6 +103,10 @@ __start_mpfs:
   csrr a0, mhartid
   beqz a0, .skip_e51
 
+  /* Clear sscratch if u54 */
+
+  csrw sscratch, zero
+
   /* Init delegation registers, mideleg, medeleg, if a U54
    * These are not initialised by the hardware and come up in a random state
    */
