@@ -39,6 +39,7 @@
 #include <nuttx/mm/mm.h>
 #include <nuttx/mm/shm.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/pgalloc.h>
 #include <nuttx/sched_note.h>
 #include <nuttx/syslog/syslog.h>
 #include <nuttx/binfmt/binfmt.h>

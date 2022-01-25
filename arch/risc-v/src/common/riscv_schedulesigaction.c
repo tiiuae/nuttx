@@ -140,7 +140,7 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 
               int_ctx                     = CURRENT_REGS[REG_INT_CTX];
               int_ctx                    &= ~MSTATUS_MPIE;
-#ifdef CONFIG_BUILD_PROTECTED
+#if defined (CONFIG_BUILD_PROTECTED) || defined (CONFIG_BUILD_KERNEL)
               int_ctx                    |= MSTATUS_MPPM;
 #endif
 
@@ -305,7 +305,7 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 
                   int_ctx                   = CURRENT_REGS[REG_INT_CTX];
                   int_ctx                   &= ~MSTATUS_MPIE;
-#ifdef CONFIG_BUILD_PROTECTED
+#if defined (CONFIG_BUILD_PROTECTED) || defined (CONFIG_BUILD_KERNEL)
                   int_ctx                   |= MSTATUS_MPPM;
 #endif
 
