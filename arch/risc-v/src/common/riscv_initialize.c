@@ -157,6 +157,12 @@ void up_initialize(void)
   ptmx_register();
 #endif
 
+#ifndef CONFIG_NETDEV_LATEINIT
+  /* Initialize the network */
+
+  riscv_netinitialize();
+#endif
+
 #ifdef CONFIG_NET_LOOPBACK
   /* Initialize the local loopback device */
 
