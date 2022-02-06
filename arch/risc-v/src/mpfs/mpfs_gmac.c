@@ -1,40 +1,6 @@
 /****************************************************************************
  * arch/arm/src/sama5/sam_gmac.c
  *
- *   Copyright (C) 2013-2019 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * The Atmel sample code has a BSD compatible license that requires this
- * copyright notice:
- *
- *   Copyright (c) 2012, Atmel Corporation
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the names NuttX nor Atmel nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
  *
  ****************************************************************************/
 
@@ -78,10 +44,16 @@
 
 #include <arch/board/board.h>
 
-// TODO:
-#ifdef CONFIG_MPFS_ETHMAC_REGDEBUG
-  #define CONFIG_SAMA5_GMAC_REGDEBUG
-#endif
+
+#define MPFS_PMPCFG_ETH0_0             (MPFS_MPUCFG_BASE + 0x400)
+#define MPFS_PMPCFG_ETH0_1             (MPFS_MPUCFG_BASE + 0x408)
+#define MPFS_PMPCFG_ETH0_2             (MPFS_MPUCFG_BASE + 0x410)
+#define MPFS_PMPCFG_ETH0_3             (MPFS_MPUCFG_BASE + 0x418)
+#define MPFS_PMPCFG_ETH1_0             (MPFS_MPUCFG_BASE + 0x500)
+#define MPFS_PMPCFG_ETH1_1             (MPFS_MPUCFG_BASE + 0x508)
+#define MPFS_PMPCFG_ETH1_2             (MPFS_MPUCFG_BASE + 0x510)
+#define MPFS_PMPCFG_ETH1_3             (MPFS_MPUCFG_BASE + 0x518)
+
 
 
 #if defined(CONFIG_NET) && defined(CONFIG_MPFS_ETHMAC)
@@ -102,11 +74,6 @@
 
 /* The low priority work queue is preferred.  If it is not enabled, LPWORK
  * will be the same as HPWORK.
- *
- * NOTE:  However, the network should NEVER run on the high priority work
- * queue!  That queue is intended only to service short back end interrupt
- * processing that never suspends.  Suspending the high priority work queue
- * may bring the system to its knees!
  */
 
 #define ETHWORK LPWORK
@@ -123,27 +90,39 @@
 #  define CONFIG_SAMA5_GMAC_NTXBUFFERS  8
 #endif
 
-#undef CONFIG_SAMA5_GMAC_NBC
-
 #ifndef CONFIG_MPFS_PHYADDR
 #  error "CONFIG_MPFS_PHYADDR must be defined in the NuttX configuration"
 #endif
 
-#define CONFIG_SAMA5_GMAC_AUTONEG
-
 /* PHY definitions */
-#define SAMA5_GMAC_PHY_KSZ90x1
 
-#ifdef SAMA5_GMAC_PHY_KSZ90x1
+#ifdef CONFIG_MPFS_HAVE_CORERMII
+#  define CORE_RMII_RESET		    (1 << 15)
+#  define CORE_RMII_LOOPBACK	  (1 << 2)
+#  define CORE_RMII_FULL_DUPLEX	(1 << 1)
+#  define CORE_RMII_100MBIT	    (1 << 0)
+#endif
+
+//#define CONFIG_MPFS_MAC_PHY_VSC862x
+#define CONFIG_MPFS_MAC_PHY_LAN874x
+
+#ifdef CONFIG_MPFS_MAC_PHY_VSC862x // Icicle Vitesse
 #  define GMII_OUI_MSB  0x0007
 #  define GMII_OUI_LSB  GMII_PHYID2_OUI(1)
+#elif defined(CONFIG_MPFS_MAC_PHY_LAN874x) // external LAN-8742
+#  define GMII_OUI_MSB  0x0007
+#  define GMII_OUI_LSB  GMII_PHYID2_OUI(48)
 #else
 #  error Unknown PHY
 #endif
 
-// TODO
-#define MPFS_IRQ_MAC  MPFS_IRQ_MAC1_INT
 
+// TODO
+#define MPFS_IRQ_MAC  MPFS_IRQ_MAC0_INT
+//#define MPFS_IRQ_MAC  MPFS_IRQ_MAC1_INT
+
+
+//#define CONFIG_SAMA5_GMAC_PREALLOCATE
 
 /* GMAC buffer sizes, number of buffers, and number of descriptors. */
 
@@ -161,19 +140,12 @@
 
 #define SAM_GMAC_NFREEBUFFERS (CONFIG_SAMA5_GMAC_NTXBUFFERS+1)
 
-/* Extremely detailed register debug that you would normally never want
- * enabled.
- */
-
-#ifndef CONFIG_DEBUG_NET_INFO
-#  undef CONFIG_SAMA5_GMAC_REGDEBUG
-#endif
-
 #ifdef CONFIG_NET_DUMPPACKET
 #  define sam_dumppacket(m,a,n) lib_dumpbuffer(m,a,n)
 #else
 #  define sam_dumppacket(m,a,n)
 #endif
+
 
 /* Timing *******************************************************************/
 
@@ -193,9 +165,7 @@
 
 /* Helpers ******************************************************************/
 
-/* This is a helper pointer for accessing the contents of the GMAC
- * header
- */
+/* This is a helper pointer for accessing the contents of the GMAC header */
 
 #define BUF ((struct eth_hdr_s *)priv->dev.d_buf)
 
@@ -221,22 +191,13 @@ struct sam_gmac_s
 
   uint8_t               phyaddr;     /* PHY address (pre-defined by pins on reset) */
   uint16_t              txhead;      /* Circular buffer head index */
-  uint16_t              txtail;      /* Circualr buffer tail index */
+  uint16_t              txtail;      /* Circular buffer tail index */
   uint16_t              rxndx;       /* RX index for current processing RX descriptor */
 
   uint8_t              *rxbuffer;    /* Allocated RX buffers */
   uint8_t              *txbuffer;    /* Allocated TX buffers */
   struct gmac_rxdesc_s *rxdesc;      /* Allocated RX descriptors */
   struct gmac_txdesc_s *txdesc;      /* Allocated TX descriptors */
-
-  /* Debug stuff */
-
-#ifdef CONFIG_SAMA5_GMAC_REGDEBUG
-  bool                  wrlast;     /* Last was a write */
-  uintptr_t             addrlast;   /* Last address */
-  uint32_t              vallast;    /* Last value */
-  int                   ntimes;     /* Number of times */
-#endif
 };
 
 /****************************************************************************
@@ -246,6 +207,7 @@ struct sam_gmac_s
 /* The driver state singleton */
 
 static struct sam_gmac_s g_gmac;
+
 
 /* A single packet buffer is used
  *
@@ -271,12 +233,7 @@ static struct gmac_txdesc_s g_txdesc[CONFIG_SAMA5_GMAC_NTXBUFFERS]
 static struct gmac_rxdesc_s g_rxdesc[CONFIG_SAMA5_GMAC_NRXBUFFERS]
               aligned_data(8);
 
-/* Transmit Buffers
- *
- * Section 3.6 of AMBA 2.0 spec states that burst should not cross 1K
- * Boundaries. Receive buffer manager writes are burst of
- * 2 words => 3 lsb bits of the address shall be set to 0
- */
+/* Transmit Buffers */
 
 static uint8_t g_txbuffer[CONFIG_SAMA5_GMAC_NTXBUFFERS * GMAC_TX_UNITSIZE]
                aligned_data(8);
@@ -293,18 +250,12 @@ static uint8_t g_rxbuffer[CONFIG_SAMA5_GMAC_NRXBUFFERS * GMAC_RX_UNITSIZE]
 
 /* Register operations ******************************************************/
 
-#if defined(CONFIG_SAMA5_GMAC_REGDEBUG) && defined(CONFIG_DEBUG_FEATURES)
-static bool sam_checkreg(struct sam_gmac_s *priv, bool wr,
-                         uint32_t regval, uintptr_t address);
-static uint32_t sam_getreg(struct sam_gmac_s *priv, uintptr_t addr);
-static void sam_putreg(struct sam_gmac_s *priv, uintptr_t addr,
-                       uint32_t val);
-#else
 # define sam_getreg(priv,addr)      getreg32(addr)
 # define sam_putreg(priv,addr,val)  putreg32(val,addr)
-#endif
 
 /* Buffer management */
+
+static dump_dma_buffers(struct sam_gmac_s *priv);
 
 static uint16_t sam_txinuse(struct sam_gmac_s *priv);
 static uint16_t sam_txfree(struct sam_gmac_s *priv);
@@ -374,7 +325,7 @@ static int  sam_phyread(struct sam_gmac_s *priv, uint8_t phyaddr,
                         uint8_t regaddr, uint16_t *phyval);
 static int  sam_phywrite(struct sam_gmac_s *priv, uint8_t phyaddr,
                          uint8_t regaddr, uint16_t phyval);
-#ifdef CONFIG_SAMA5_GMAC_AUTONEG
+#ifdef CONFIG_MPFS_MAC_AUTONEG
 static int  sam_autonegotiate(struct sam_gmac_s *priv);
 #else
 static void sam_linkspeed(struct sam_gmac_s *priv);
@@ -726,8 +677,6 @@ static int sam_transmit(struct sam_gmac_s *priv)
 
   status = GMACTXD_STA_USED | GMACTXD_STA_LAST;
   txdesc->status = status;
-//  up_clean_dcache((uint32_t)txdesc,
-//                  (uint32_t)txdesc + sizeof(struct gmac_txdesc_s));
 
   /* Setup/Copy data to transmission buffer */
 
@@ -735,9 +684,7 @@ static int sam_transmit(struct sam_gmac_s *priv)
     {
       /* Driver managed the ring buffer */
 
-      //virtaddr = sam_virtramaddr(txdesc->addr);
       memcpy((void *)txdesc->addr, dev->d_buf, dev->d_len);
-      //up_clean_dcache((uint32_t)virtaddr, (uint32_t)virtaddr + dev->d_len);
     }
 
   /* Update TX descriptor status. */
@@ -750,11 +697,9 @@ static int sam_transmit(struct sam_gmac_s *priv)
       status |= GMACTXD_STA_WRAP;
     }
 
-  /* Update the descriptor status and flush the updated value to RAM */
+  /* Update the descriptor status */
 
   txdesc->status = status;
-//  up_clean_dcache((uint32_t)txdesc,
-//                  (uint32_t)txdesc + sizeof(struct gmac_txdesc_s));
 
   /* Increment the head index */
 
@@ -1031,10 +976,6 @@ static int sam_recvframe(struct sam_gmac_s *priv)
 
                   /* Flush the modified RX descriptor to RAM */
 
-                  //up_clean_dcache((uintptr_t)rxdesc,
-                  //                (uintptr_t)rxdesc +
-                  //                sizeof(struct gmac_rxdesc_s));
-
                   /* Increment the RX index */
 
                   if (++priv->rxndx >= CONFIG_SAMA5_GMAC_NRXBUFFERS)
@@ -1300,7 +1241,7 @@ static void sam_receive(struct sam_gmac_s *priv)
         }
     }
 
-  ninfo("receive done.");
+  ninfo("receive done.\n");
 }
 
 /****************************************************************************
@@ -1434,7 +1375,7 @@ static void sam_interrupt_work(FAR void *arg)
   imr = sam_getreg(priv, SAM_GMAC_IMR);
 
   pending = isr & ~(imr | GMAC_INT_UNUSED);
-  //ninfo("isr: %08" PRIx32 " pending: %08" PRIx32 "\n", isr, pending);
+  ninfo("isr: %08" PRIx32 " pending: %08" PRIx32 "\n", isr, pending);
 
   /* Check for the completion of a transmission.  This should be done before
    * checking for received data (because receiving can cause another
@@ -1448,10 +1389,10 @@ static void sam_interrupt_work(FAR void *arg)
   if (tsr != 0)
     {
       /* A frame has been transmitted */
-      ninfo("TX\n");
+      ninfo("TX tsr=0x%X\n", tsr);
+      uint32_t tx_error = 0;
 
       /* Check for Retry Limit Exceeded (RLE) */
-      uint32_t tx_error = 0;
 
       if ((tsr & GMAC_TSR_RLE) != 0)
         {
@@ -1497,7 +1438,7 @@ static void sam_interrupt_work(FAR void *arg)
 
       if ((tsr & GMAC_TSR_HRESP) != 0)
         {
-          nerr("ERROR: HRESP not OK: %08" PRIx32 "\n", tsr);
+          nerr("ERROR: TX HRESP not OK: %08" PRIx32 "\n", tsr);
           ++tx_error;
         }
 
@@ -1543,10 +1484,17 @@ static void sam_interrupt_work(FAR void *arg)
    *   in memory. This indication is cleared by writing a one to this bit.
    */
 
-  if ((pending & GMAC_INT_RCOMP) != 0 || (rsr & GMAC_RSR_REC) != 0)
+  if (rsr != 0)
     {
-      clrbits = GMAC_RSR_REC;
-      //sam_putreg(priv, SAM_GMAC_ISR, GMAC_INT_RCOMP);
+      uint32_t rx_error = 0;
+      ninfo("RX: rsr=0x%X\n", rsr);
+
+      if ((rsr & GMAC_RSR_REC) != 0)
+        {
+          /* Handle the received packet */
+
+          sam_receive(priv);
+        }
 
       /* Check for Receive Overrun.
        *
@@ -1560,9 +1508,8 @@ static void sam_interrupt_work(FAR void *arg)
 
       if ((rsr & GMAC_RSR_RXOVR) != 0)
         {
+          ++rx_error;
           nerr("ERROR: Receiver overrun RSR: %08" PRIx32 "\n", rsr);
-          clrbits |= GMAC_RSR_RXOVR;
-          //sam_putreg(priv, SAM_GMAC_ISR, GMAC_INT_ROVR);
         }
 
       /* Check for buffer not available (BNA)
@@ -1578,55 +1525,33 @@ static void sam_interrupt_work(FAR void *arg)
 
       if ((rsr & GMAC_RSR_BNA) != 0)
         {
+          ++rx_error;
           nerr("ERROR: Buffer not available RSR: %08" PRIx32 "\n", rsr);
-          clrbits |= GMAC_RSR_BNA;
         }
 
       /* Check for HRESP not OK (HNO) */
 
       if ((rsr & GMAC_RSR_HNO) != 0)
         {
+          ++rx_error;
           nerr("ERROR: HRESP not OK: %08" PRIx32 "\n", rsr);
-          clrbits |= GMAC_RSR_HNO;
         }
 
       /* Clear status */
 
-      //ninfo("ISR: RCOMP clearing rsr=0x%x\n", clrbits);
-      sam_putreg(priv, SAM_GMAC_RSR, clrbits);
+      sam_putreg(priv, SAM_GMAC_RSR, rsr);
 
-      /* Handle the received packet */
+      if (rx_error != 0)
+        {
+          nerr("RX ERROR: reset\n");
+          //dump_dma_buffers(priv);
+          sam_rxreset(priv);
 
-       sam_receive(priv);
-    }
+          regval = sam_getreg(priv, SAM_GMAC_NCR);
+          regval |= GMAC_NCR_RXEN;
+          sam_putreg(priv, SAM_GMAC_NCR, regval);
+        }
 
-#ifdef CONFIG_DEBUG_NET
-  /* Check for PAUSE Frame received (PFRE).
-   *
-   * ISR:PFRE indicates that a pause frame has been received.  Cleared on a
-   * read.
-   */
-
-  if ((pending & GMAC_INT_PFNZ) != 0)
-    {
-      nwarn("WARNING: Pause frame received\n");
-    }
-
-  /* Check for Pause Time Zero (PTZ)
-   *
-   * ISR:PTZ is set Pause Time Zero
-   */
-
-  if ((pending & GMAC_INT_PTZ) != 0)
-    {
-      nwarn("WARNING: Pause TO!\n");
-    }
-#endif
-
-  if ((pending & GMAC_INT_MFS) != 0)
-    {
-      nwarn("management_frame_sent!\n");
-      //sam_putreg(priv, SAM_GMAC_ISR, GMAC_INT_MFS);
     }
 
   net_unlock();
@@ -1647,6 +1572,26 @@ static void sam_interrupt_work(FAR void *arg)
   sam_putreg(priv, SAM_GMAC_IER, regval);
 
 }
+
+
+static dump_dma_buffers(struct sam_gmac_s *priv)
+{
+  uint32_t reg = sam_getreg(priv, SAM_GMAC_RBQB);
+  ninfo("Q0=0x%X\n", reg);
+  reg = sam_getreg(priv, SAM_GMAC_RBQBAPQ(0));
+  ninfo("q1=0x%X\n", reg);
+  reg = sam_getreg(priv, SAM_GMAC_RBQBAPQ(1));
+  ninfo("q2=0x%X\n", reg);
+  reg = sam_getreg(priv, SAM_GMAC_RBQBAPQ(2));
+  ninfo("q3=0x%X\n", reg);
+
+
+  struct gmac_rxdesc_s *desc = priv->rxdesc;
+  ninfo("rxdesc.addr = 0x%X\n", desc->addr);
+  ninfo("rxdesc.status = 0x%X\n", desc->status);
+
+}
+
 
 /****************************************************************************
  * Function: sam_gmac_interrupt
@@ -1677,7 +1622,6 @@ static int sam_gmac_interrupt(int irq, void *context, FAR void *arg)
    * condition here.
    */
 
-  //up_disable_irq(MPFS_IRQ_MAC);
   sam_putreg(priv, SAM_GMAC_IDR, 0xffffffff);
   uint32_t isr = sam_getreg(priv, SAM_GMAC_ISR);
   ninfo("isr=0x%X\n, isr");
@@ -1897,13 +1841,12 @@ static int sam_ifup(struct net_driver_s *dev)
       return ret;
     }
 
-#ifdef CONFIG_SAMA5_GMAC_AUTONEG
-  /* Auto Negotiate, working in RMII mode */
+#ifdef CONFIG_MPFS_MAC_AUTONEG
 
   ret = sam_autonegotiate(priv);
   if (ret < 0)
     {
-      nerr("ERROR: sam_autonegotiate failed: %d\n", ret);
+      nerr("ERROR: mpfs_autonegotiate failed: %d\n", ret);
       return ret;
     }
 #else
@@ -2744,6 +2687,24 @@ static int sam_phyfind(struct sam_gmac_s *priv, uint8_t *phyaddr)
 
   sam_enablemdio(priv);
 
+#ifdef CONFIG_MPFS_HAVE_CORERMII
+  ninfo("coreRMII: reset @address: %d\n", CONFIG_MPFS_CORERMII_ADDRESS);
+
+  ret = sam_phywrite(priv, CONFIG_MPFS_CORERMII_ADDRESS, GMII_MCR,
+		     CORE_RMII_RESET | CORE_RMII_FULL_DUPLEX | CORE_RMII_100MBIT);
+  if (ret != OK)
+    {
+      nerr("Core RMII reset write failed!\n");
+    }
+
+  ret = sam_phyread(priv, CONFIG_MPFS_CORERMII_ADDRESS, GMII_MCR, &phyval);
+  ninfo("CORE-RMII after reset MCR=%d\n", phyval);
+  if ((phyval != 0x03) || (ret != OK))
+    {
+      nerr("Core RMII reset read failed! val=%d\n", phyval);
+    }
+#endif
+
   /* Check initial candidate address */
 
   candidate = *phyaddr;
@@ -2915,7 +2876,7 @@ static int sam_phywrite(struct sam_gmac_s *priv, uint8_t phyaddr,
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SAMA5_GMAC_AUTONEG
+#ifdef CONFIG_MPFS_MAC_AUTONEG
 static int sam_autonegotiate(struct sam_gmac_s *priv)
 {
   uint32_t regval;
@@ -2935,7 +2896,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
 
   sam_enablemdio(priv);
 
-  /* Read the MS bits of the OUI from Pthe PHYID1 register */
+  /* Read the MS bits of the OUI from the PHYID1 register */
 
   ret = sam_phyread(priv, priv->phyaddr, GMII_PHYID1, &phyid1);
   if (ret < 0)
@@ -2946,7 +2907,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
 
   ninfo("PHYID1: %04x PHY address: %02x\n", phyid1, priv->phyaddr);
 
-  /* Read the LS bits of the OUI from Pthe PHYID2 register */
+  /* Read the LS bits of the OUI from the PHYID2 register */
 
   ret = sam_phyread(priv, priv->phyaddr, GMII_PHYID2, &phyid2);
   if (ret < 0)
@@ -2971,25 +2932,8 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
             phyid1, phyid2);
     }
 
-#if 0
-#ifdef SAMA5_GMAC_PHY_KSZ90x1
-  /* Set up the KSZ9020/31 PHY */
-
-  phyval = GMII_KSZ90X1_RCCPSR | GMII_ERCR_WRITE;
-  sam_phywrite(priv, priv->phyaddr, GMII_ERCR, phyval);
-  sam_phywrite(priv, priv->phyaddr, GMII_ERDWR, 0xf2f4);
-
-  phyval = GMII_KSZ90X1_RRDPSR | GMII_ERCR_WRITE;
-  sam_phywrite(priv, priv->phyaddr, GMII_ERCR, phyval);
-  sam_phywrite(priv, priv->phyaddr, GMII_ERDWR, 0x2222);
-
-  ret = sam_phywrite(priv, priv->phyaddr,
-                     GMII_KSZ90X1_ICS, 0xff00);
-#endif
-#endif
-
   /* Set the Auto_negotiation Advertisement Register, MII advertising for
-   * Next page 100BaseTxFD and HD, 10BaseTFD and HD, IEEE 802.3
+   * Next page 100BaseTxFD and HD, 10BaseTxFD and HD, IEEE 802.3
    */
 
   advertise = GMII_ADVERTISE_100BASETXFULL | GMII_ADVERTISE_100BASETXHALF |
@@ -3003,6 +2947,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
       goto errout;
     }
 
+#ifndef CONFIG_MPFS_MAC_DISABLE_1000BMPS
   /* Modify the 1000Base-T control register to advertise 1000Base-T full
    * and half duplex support.
    */
@@ -3023,6 +2968,8 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
       goto errout;
     }
 
+#endif
+
   /* Restart Auto_negotiation */
 
   ret  = sam_phyread(priv, priv->phyaddr, GMII_MCR, &phyval);
@@ -3038,6 +2985,13 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
   if (ret < 0)
     {
       nerr("ERROR: Failed to write MCR register: %d\n", ret);
+      goto errout;
+    }
+
+  ret  = sam_phyread(priv, priv->phyaddr, GMII_MCR, &phyval);
+  if (ret < 0)
+    {
+      nerr("ERROR: Failed to read MCR register: %d\n", ret);
       goto errout;
     }
 
@@ -3083,6 +3037,9 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
 
   for (; ; )
     {
+
+#ifndef CONFIG_MPFS_MAC_DISABLE_1000MBPS
+      // only on GBIt mode...
       ret  = sam_phyread(priv, priv->phyaddr, GMII_1000BTSR, &btsr);
       if (ret < 0)
         {
@@ -3097,6 +3054,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
         {
           /* Set RGMII for 1000BaseTX and Full Duplex */
 
+          ninfo("Link: FD - 1000\n");
           linkmode = (GMAC_NCFGR_FD | GMAC_NCFGR_GBE);
           break;
         }
@@ -3105,9 +3063,11 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
         {
           /* Set RGMII for 1000BaseT and Half Duplex */
 
+          ninfo("Link: HD - 1000\n");
           linkmode = GMAC_NCFGR_GBE;
           break;
         }
+#endif
 
       /* Get the Autonegotiation Link partner base page */
 
@@ -3125,6 +3085,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
         {
           /* Set RGMII for 100BaseTX and Full Duplex */
 
+          ninfo("Link: FD - 100\n");
           linkmode = (GMAC_NCFGR_SPD | GMAC_NCFGR_FD);
           break;
         }
@@ -3133,6 +3094,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
         {
           /* Set RGMII for 10BaseT and Full Duplex */
 
+          ninfo("Link: FD - 10\n");
           linkmode = GMAC_NCFGR_FD;
           break;
         }
@@ -3141,6 +3103,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
         {
           /* Set RGMII for 100BaseTX and half Duplex */
 
+          ninfo("Link: HD - 100\n");
           linkmode = GMAC_NCFGR_SPD;
           break;
         }
@@ -3149,6 +3112,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
         {
           /* Set RGMII for 10BaseT and half Duplex */
 
+          ninfo("Link: HD - 10\n");
           break;
         }
 
@@ -3175,13 +3139,6 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
   regval |= linkmode;
   sam_putreg(priv, SAM_GMAC_NCFGR, regval);
   sam_putreg(priv, SAM_GMAC_NCR, ncr);
-
-  /* Enable RGMII enable */
-/* TEST
-  regval  = sam_getreg(priv, SAM_GMAC_UR);
-  regval |= GMAC_UR_RGMII;
-  sam_putreg(priv, SAM_GMAC_UR, regval);
-*/
 
 errout:
 
@@ -3223,18 +3180,28 @@ static void sam_linkspeed(struct sam_gmac_s *priv)
   regval = sam_getreg(priv, SAM_GMAC_NCFGR);
   regval &= ~(GMAC_NCFGR_SPD | GMAC_NCFGR_FD | GMAC_NCFGR_GBE);
 
-#ifdef SAMA5_GMAC_ETHFD
+#ifdef CONFIG_MPFS_MAC_ETHFD
   regval |= GMAC_NCFGR_FD;
 #endif
 
-#if defined(SAMA5_GMAC_ETH100MBPS)
+#if defined(CONFIG_MPFS_MAC_ETH100MBPS)
   regval |= GMAC_NCFGR_SPD;
-#elif defined(SAMA5_GMAC_ETH1000MBPS)
+#elif defined(CONFIG_MPFS_MAC_ETH1000MBPS)
   regval |= GMAC_NCFGR_GBE;
 #endif
 
+  ninfo("set linkspeed: CFGR=0x%x\n", regval);
+
   sam_putreg(priv, SAM_GMAC_NCFGR, regval);
   sam_putreg(priv, SAM_GMAC_NCR, ncr);
+
+/*
+  regval  = sam_getreg(priv, SAM_GMAC_UR);
+  ninfo("UR reg = 0x%X\n", regval);
+  regval |= GMAC_UR_RGMII;
+  sam_putreg(priv, SAM_GMAC_UR, regval);
+*/
+
 }
 #endif
 
@@ -3425,12 +3392,18 @@ static void sam_txreset(struct sam_gmac_s *priv)
   sam_putreg(priv, SAM_GMAC_TBQBAPQ(1), ((uint32_t)(uint64_t)txdesc) | 1U);
   sam_putreg(priv, SAM_GMAC_TBQBAPQ(2), ((uint32_t)(uint64_t)txdesc) | 1U);
   sam_putreg(priv, SAM_GMAC_TBQBAPQ(3), ((uint32_t)(uint64_t)txdesc) | 1U);
-
-  // TEST disable q1-3, B0 = 1
-  sam_putreg(priv, SAM_GMAC_RBQBAPQ(0), ((uint32_t)(uint64_t)txdesc) | 1U);
-  sam_putreg(priv, SAM_GMAC_RBQBAPQ(1), ((uint32_t)(uint64_t)txdesc) | 1U);
-  sam_putreg(priv, SAM_GMAC_RBQBAPQ(2), ((uint32_t)(uint64_t)txdesc) | 1U);
-  sam_putreg(priv, SAM_GMAC_RBQBAPQ(3), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(4), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(5), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(6), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(7), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(8), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(9), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(10), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(11), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(12), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(13), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(14), ((uint32_t)(uint64_t)txdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_TBQBAPQ(15), ((uint32_t)(uint64_t)txdesc) | 1U);
 
 }
 
@@ -3477,8 +3450,7 @@ static void sam_rxreset(struct sam_gmac_s *priv)
        * GMACRXD_ADDR_WRAP.
        */
 
-      physaddr           = bufaddr;
-      rxdesc[ndx].addr   = physaddr;
+      rxdesc[ndx].addr   = bufaddr;
       rxdesc[ndx].status = 0;
     }
 
@@ -3486,16 +3458,28 @@ static void sam_rxreset(struct sam_gmac_s *priv)
 
   rxdesc[CONFIG_SAMA5_GMAC_NRXBUFFERS - 1].addr |= GMACRXD_ADDR_WRAP;
 
-  /* Flush the entire RX descriptor table to RAM */
-
-//  up_clean_dcache((uintptr_t)rxdesc,
-//                  (uintptr_t)rxdesc + CONFIG_SAMA5_GMAC_NRXBUFFERS *
-//                  sizeof(struct gmac_rxdesc_s));
-
   /* Set the Receive Buffer Queue Base Register */
 
-  physaddr = rxdesc;
-  sam_putreg(priv, SAM_GMAC_RBQB, physaddr);
+  sam_putreg(priv, SAM_GMAC_RBQB, rxdesc);
+
+  // TEST disable B0 = 1
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(0), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(1), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(2), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(3), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(4), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(5), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(6), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(7), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(8), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(9), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(10), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(11), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(12), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(13), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(14), ((uint32_t)(uint64_t)rxdesc) | 1U);
+  sam_putreg(priv, SAM_GMAC_RBQBAPQ(15), ((uint32_t)(uint64_t)rxdesc) | 1U);
+
 }
 
 /****************************************************************************
@@ -3705,6 +3689,8 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
   // TODO: gmac0 only
   modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET, 0,
                   SYSREG_SUBBLK_CLOCK_CR_MAC1);
+  modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET, 0,
+                  SYSREG_SUBBLK_CLOCK_CR_MAC0);
 
   /* reset */
 
@@ -3713,6 +3699,12 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
 
   modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
               SYSREG_SOFT_RESET_CR_MAC1, 0);
+
+  modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
+              0, SYSREG_SOFT_RESET_CR_MAC0);
+
+  modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
+              SYSREG_SOFT_RESET_CR_MAC0, 0);
 
   /* Disable TX, RX, clear statistics.  Disable all interrupts. */
 
@@ -3735,38 +3727,54 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
 
   /* Initial configuration */
 
-  regval = GMAC_NCFGR_FD | GMAC_NCFGR_GBE | GMAC_NCFGR_PEN |
-           GMAC_NCFGR_RFCS | GMAC_NCFGR_CLK_DIV64;
+  //regval = GMAC_NCFGR_FD | GMAC_NCFGR_GBE | GMAC_NCFGR_PEN |
+  //         GMAC_NCFGR_RFCS | GMAC_NCFGR_CLK_DIV64;
+
+  regval = GMAC_NCFGR_FD | GMAC_NCFGR_RFCS | GMAC_NCFGR_CLK_DIV64;
 
   /* TODO: get info from: DESIGNCFG_DEBUG1 */
   regval |= GMAC_NCFGR_DBW_64; // DMA bus width
 
-  /* for SGMII Mode only */
+  /* set SGMII Mode */
+
+#ifdef CONFIG_MPFS_MAC_SGMII
   regval |= GMAC_NCFGR_SGMIIEN | GMAC_NCFGR_PCSSEL;
+#endif
+
+  // TEST
+  //regval  = sam_getreg(priv, SAM_GMAC_UR);
+  //regval |= GMAC_UR_RGMII;
+  //sam_putreg(priv, SAM_GMAC_UR, regval);
+
 
 #ifdef CONFIG_NET_PROMISCUOUS
   regval |= GMAC_NCFGR_CAF;
 #endif
 
-  /* If using only queue0- use all memory for that.
+  /* TODO: If using only queue0 use all memory for that.
    * TX_Q_SEG_ALLOC_Q_LOWER xxx
    * */
 
-  // no broadcasts frames...
-//#ifdef CONFIG_SAMA5_GMAC_NBC
+  /* disable receiving of broadcast frames */
+
+#ifdef CONFIG_MPFS_MAC_NO_BROADCAST
   regval |= GMAC_NCFGR_NBC;
-//#endif
+#endif
 
   sam_putreg(priv, SAM_GMAC_NCFGR, regval);
 
   /* Reset PCS (values from baremetal driver) */
 
-  sam_putreg(priv, SAM_GMAC_PCS_CONTROL, 0x8000);
+  //sam_putreg(priv, SAM_GMAC_PCS_CONTROL, 0x8000);
+
+  //regval = sam_getreg(priv, SAM_GMAC_GEM_USX_CONTROL);
+  //ninfo("USX_CONTROL: 0x%X\n", regval);
+  //regval = sam_getreg(priv, SAM_GMAC_GEM_USX_STATUS);
+  //ninfo("USX_STATUS: 0x%X\n", regval);
 
   /* Configure MAC Network DMA Config register */
 
   regval = 0;
-
   regval = sam_getreg(priv, SAM_GMAC_DCFGR);
   /*
   regval =  (MSS_MAC_RX_BUF_VALUE << DMA_CONFIG_RX_BUF_SIZE_SHIFT) |
@@ -3775,19 +3783,18 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
                 ((uint32_t)(0x04 & MSS_MAC_AMBA_BURST_MASK));
                 */
 
-  //#define MSS_MAC_64_BIT_ADDRESS_MODE
-
 #if defined(MSS_MAC_64_BIT_ADDRESS_MODE)
   regval |= 30 << 1; //DMA_CONFIG_DMA_ADDR_BUS_WIDTH_1;
 #endif
 
-  //mac_putreg32(priv, dma_config, DMA_CONFIG);
+  //mac_putreg32(priv, regval, DMA_CONFIG);
   sam_putreg(priv, SAM_GMAC_DCFGR, regval);
 
   // TEST
-  //regval  = sam_getreg(priv, SAM_GMAC_UR);
-  //regval |= GMAC_UR_RGMII;  // TSU clock?
-  //sam_putreg(priv, SAM_GMAC_UR, regval);
+ // regval  = sam_getreg(priv, SAM_GMAC_UR);
+ // ninfo("SAM_GMAC_UR: 0x%X\n", regval);
+ // regval |= GMAC_UR_RGMII;
+ // sam_putreg(priv, SAM_GMAC_UR, regval);
 
   /* Reset TX and RX */
 
@@ -3802,6 +3809,8 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
   regval  = sam_getreg(priv, SAM_GMAC_NCR);
   regval |= (GMAC_NCR_RXEN | GMAC_NCR_TXEN | GMAC_NCR_WESTAT);
   //regval |= GMAC_NCR_ALT_SGMII_MODE; // TEST
+  //regval |= GMAC_NCR_sel_mii_on_rgmii;
+
   sam_putreg(priv, SAM_GMAC_NCR, regval);
 
   /* Setup the interrupts for TX events, RX events, and error events */
@@ -3864,9 +3873,10 @@ int sam_gmac_initialize(void)
 #endif
   priv->dev.d_private = &g_gmac;         /* Used to recover private state from dev */
 
-  /* Configure PIO pins to support GMAC */
+  /* MPU hack for ETH DMA*/
 
-  //sam_ethgpioconfig(priv);
+  putreg64(0x1f00000fffffffff, MPFS_PMPCFG_ETH0_0);
+  putreg64(0x1f00000fffffffff, MPFS_PMPCFG_ETH1_0);
 
   /* Allocate buffers */
 
@@ -3894,6 +3904,8 @@ int sam_gmac_initialize(void)
   //sam_gmac_enableclk();
   modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET, 0,
                   SYSREG_SUBBLK_CLOCK_CR_MAC0);
+  modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET, 0,
+                  SYSREG_SUBBLK_CLOCK_CR_MAC1);
 
   /* Put the interface in the down state (disabling clocking again). */
 
@@ -3921,3 +3933,12 @@ errout_with_buffers:
 }
 
 #endif /* CONFIG_NET && CONFIG_SAMA5_GMAC */
+
+
+
+#if !defined(CONFIG_NETDEV_LATEINIT)
+void riscv_netinitialize(void)
+{
+  sam_gmac_initialize();
+}
+#endif

@@ -244,6 +244,12 @@ config MPFS_EMMCSD
 	---help---
 		Selects the MPFS eMMCSD driver.
 
+config MPFS_ETHMAC
+	bool "Ethernet MAC"
+	default n
+	select NETDEVICES
+	select ARCH_HAVE_PHY
+
 comment "CorePWM Options"
 
 config MPFS_HAVE_COREPWM
@@ -308,12 +314,6 @@ config MPFS_COREPWM1_NCHANNELS
 	range 1 16
 	depends on MPFS_COREPWM1
 
-config MPFS_ETHMAC
-	bool "Ethernet MAC"
-	default n
-	select NETDEVICES
-	select ARCH_HAVE_PHY
-
 endmenu
 
 config MPFS_DMA
@@ -332,11 +332,74 @@ config MPFS_PHYADDR
 	---help---
 		The 5-bit address of the PHY on the board.  Default: 1
 
-config MPFS_MII
-	bool "Use MII interface"
+config MPFS_MAC_NO_BROADCAST
+	bool "Disable Broadcast"
 	default n
 	---help---
-		Support Ethernet MII interface.
+		Select to disable receipt of broadcast packets.
+
+config MPFS_MAC_DISABLE_1000MBPS
+	bool "Disable Gigabit mode"
+	default n
+	---help---
+		Select to disable Gigabit speed support.
+		If disabled then autonegotiation don't advertise 1GB mode
+
+config MPFS_MAC_SGMII
+	bool "Use SGMII interface"
+	default y
+	---help---
+		Use Ethernet SGMII interface.
+
+config MPFS_MAC_GMII
+	bool "Use GMII interface"
+	default n
+	---help---
+		Use Ethernet GMII interface.
+
+config MPFS_MAC_AUTONEG
+	bool "Use autonegotiation"
+	default y
+	---help---
+		Use PHY autonegotiation to determine speed and mode
+
+if !MPFS_MAC_AUTONEG
+
+config MPFS_MAC_ETHFD
+	bool "Full duplex"
+	default n
+	---help---
+		If SAMA5_GMAC_AUTONEG is not defined, then this may be defined to
+		select full duplex mode. Default: half-duplex
+
+choice
+	prompt "MAC Speed"
+	default MPFS_MAC_ETH100MBPS
+	---help---
+		If autonegotiation is not used, then you must select the fixed speed
+		of the PHY
+
+config MPFS_MAC_ETH10MBPS
+	bool "10 Mbps"
+	---help---
+		If MPFS_MAC_AUTONEG is not defined, then this may be defined to select 10 MBps
+		speed.  Default: 100 Mbps
+
+config MPFS_MAC_ETH100MBPS
+	bool "100 Mbps"
+	---help---
+		If MPFS_MAC_AUTONEG is not defined, then this may be defined to select 100 MBps
+		speed.  Default: 100 Mbps
+
+config MPFS_MAC_ETH1000MBPS
+	bool "1000 Mbps"
+	---help---
+		If MPFS_MAC_AUTONEG is not defined, then this may be defined to select 1000 MBps
+		speed.  Default: 100 Mbps
+
+endchoice # GMAC speed
+
+endif # !MPFS_MAC_AUTONEG
 
 config MPFS_ETHMAC_REGDEBUG
 	bool "Register-Level Debug"
@@ -345,8 +408,18 @@ config MPFS_ETHMAC_REGDEBUG
 	---help---
 		Enable very low-level register access debug.  Depends on
 		CONFIG_DEBUG_FEATURES.
-
 endmenu
+
+
+config MPFS_HAVE_CORERMII
+	bool "CoreRMII FPGA IP block configured"
+	default n
+
+config MPFS_CORERMII_ADDRESS
+	int "CoreRMII Phy address"
+	default 1
+	depends on MPFS_HAVE_CORERMII
+
 
 # Override the default values for MPU / PMP parameters here
 
@@ -361,4 +434,6 @@ config ARCH_MPU_HAS_NO4
 
 config ARCH_MPU_HAS_NAPOT
 	default y
+
+
 

@@ -254,9 +254,14 @@
 #define SAM_GMAC_IMRPQ5_OFFSET     0x654 /* Interrupt Mask Register Priority Queue 5 */
 #define SAM_GMAC_IMRPQ6_OFFSET     0x658 /* Interrupt Mask Register Priority Queue 6 */
 
+#define SAM_GMAC_GEM_USX_CONTROL_OFFSET	 0x0A80 /* High speed PCS control register */
+#define SAM_GMAC_GEM_USX_STATUS_OFFSET	 0x0A88 /* High speed PCS status register */
+
+
 /* GMAC Register Addresses **************************************************/
 
-#define MPFS_GMAC_BASE MPFS_GEM1_LO_BASE
+#define MPFS_GMAC_BASE MPFS_GEM0_LO_BASE
+//#define MPFS_GMAC_BASE MPFS_GEM1_LO_BASE
 
 #define SAM_GMAC_NCR               (MPFS_GMAC_BASE+SAM_GMAC_NCR_OFFSET)
 #define SAM_GMAC_NCFGR             (MPFS_GMAC_BASE+SAM_GMAC_NCFGR_OFFSET)
@@ -451,6 +456,10 @@
 
 #define SAM_GMAC_PCS_CONTROL       (MPFS_GMAC_BASE+SAM_GMAC_PCS_CONTROL_OFFSET)
 
+#define SAM_GMAC_GEM_USX_CONTROL	 (MPFS_GMAC_BASE+SAM_GMAC_GEM_USX_CONTROL_OFFSET)
+#define SAM_GMAC_GEM_USX_STATUS  	 (MPFS_GMAC_BASE+SAM_GMAC_GEM_USX_STATUS_OFFSET)
+
+
 /* GMAC Register Bit Definitions ********************************************/
 
 /* Network Control Register */
@@ -473,6 +482,8 @@
 #define GMAC_NCR_TXPBPF            (1 << 17) /* Bit 17: Transmit PFC Priority-based Pause Frame */
 #define GMAC_NCR_FNP               (1 << 18) /* Bit 18: Flush Next Packet */
 #define GMAC_NCR_ALT_SGMII_MODE    (1 << 21) /* Bit 21 */
+
+#define GMAC_NCR_sel_mii_on_rgmii  (1 << 28) /* Bit 28 */
 
 /* Network Configuration Register */
 

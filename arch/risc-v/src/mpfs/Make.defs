@@ -106,7 +106,7 @@ CHIP_CSRCS += mpfs_emmcsd.c
 endif
 
 ifeq ($(CONFIG_MPFS_ETHMAC),y)
-CHIP_CSRCS += mpfs_ethernet.c
+#CHIP_CSRCS += mpfs_ethernet.c
 CHIP_CSRCS += mpfs_gmac.c
 endif
 
