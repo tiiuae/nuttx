@@ -255,7 +255,7 @@ static uint8_t g_rxbuffer[CONFIG_SAMA5_GMAC_NRXBUFFERS * GMAC_RX_UNITSIZE]
 
 /* Buffer management */
 
-static dump_dma_buffers(struct sam_gmac_s *priv);
+// not used static void dump_dma_buffers(struct sam_gmac_s *priv);
 
 static uint16_t sam_txinuse(struct sam_gmac_s *priv);
 static uint16_t sam_txfree(struct sam_gmac_s *priv);
@@ -330,7 +330,7 @@ static int  sam_autonegotiate(struct sam_gmac_s *priv);
 #else
 static void sam_linkspeed(struct sam_gmac_s *priv);
 #endif
-static void sam_mdcclock(struct sam_gmac_s *priv);
+// not used static void sam_mdcclock(struct sam_gmac_s *priv);
 static int  sam_phyinit(struct sam_gmac_s *priv);
 
 /* GMAC Initialization */
@@ -645,7 +645,7 @@ static int sam_transmit(struct sam_gmac_s *priv)
 {
   struct net_driver_s *dev = &priv->dev;
   volatile struct gmac_txdesc_s *txdesc;
-  uintptr_t virtaddr;
+  /* uintptr_t virtaddr;  [-Werror=unused-variable] */
   uint32_t regval;
   uint32_t status;
 
@@ -684,7 +684,10 @@ static int sam_transmit(struct sam_gmac_s *priv)
     {
       /* Driver managed the ring buffer */
 
-      memcpy((void *)txdesc->addr, dev->d_buf, dev->d_len);
+      /* TODO: FIX. txdesc->addr should be uintptr_t or some other 64-bit type in order to
+       * cast to 64-bit address? [-Werror=int-to-pointer-cast]
+       */
+		memcpy((void *)(uintptr_t)txdesc->addr, dev->d_buf, dev->d_len);
     }
 
   /* Update TX descriptor status. */
@@ -896,7 +899,7 @@ static int sam_recvframe(struct sam_gmac_s *priv)
   struct net_driver_s *dev;
   const uint8_t *src;
   uint8_t  *dest;
-  uintptr_t physaddr;
+/*  uintptr_t physaddr; [-Werror=unused-variable] */
   uint32_t rxndx;
   uint32_t pktlen;
   uint16_t copylen;
@@ -997,7 +1000,7 @@ static int sam_recvframe(struct sam_gmac_s *priv)
 
           /* And do the copy */
 
-          src = (const uint8_t *)(rxdesc->addr & GMACRXD_ADDR_MASK);
+          src = (const uint8_t *)((uintptr_t)rxdesc->addr & GMACRXD_ADDR_MASK); /* TODO: check [-Werror=int-to-pointer-cast] */
           memcpy(dest, src, copylen);
           dest   += copylen;
           pktlen += copylen;
@@ -1294,7 +1297,7 @@ static void sam_txdone(struct sam_gmac_s *priv)
            * descriptor address.  If it is not, then treat is as used anyway.
            */
 
-          if (priv->txtail == 0 && (txdesc != sam_getreg(priv, SAM_GMAC_TBQB)))
+			if (priv->txtail == 0 && ((uintptr_t)txdesc != sam_getreg(priv, SAM_GMAC_TBQB))) /* error: comparison between pointer and integer [-Werror] */
             {
               ninfo("TX buffer marked in-use: unusual startup case (%d)\n",
                     priv->txtail);
@@ -1364,7 +1367,7 @@ static void sam_interrupt_work(FAR void *arg)
   uint32_t imr;
   uint32_t regval;
   uint32_t pending;
-  uint32_t clrbits;
+/*  uint32_t clrbits; [-Werror=unused-variable] */
 
   /* Process pending Ethernet interrupts */
 
@@ -1573,8 +1576,8 @@ static void sam_interrupt_work(FAR void *arg)
 
 }
 
-
-static dump_dma_buffers(struct sam_gmac_s *priv)
+#if 0 /* [-Werror=unused-function] */
+static void dump_dma_buffers(struct sam_gmac_s *priv)
 {
   uint32_t reg = sam_getreg(priv, SAM_GMAC_RBQB);
   ninfo("Q0=0x%X\n", reg);
@@ -1591,7 +1594,7 @@ static dump_dma_buffers(struct sam_gmac_s *priv)
   ninfo("rxdesc.status = 0x%X\n", desc->status);
 
 }
-
+#endif
 
 /****************************************************************************
  * Function: sam_gmac_interrupt
@@ -1624,7 +1627,7 @@ static int sam_gmac_interrupt(int irq, void *context, FAR void *arg)
 
   sam_putreg(priv, SAM_GMAC_IDR, 0xffffffff);
   uint32_t isr = sam_getreg(priv, SAM_GMAC_ISR);
-  ninfo("isr=0x%X\n, isr");
+  ninfo("isr=0x%" PRIX32 "\n", isr);
 
   // clear all pending...
   sam_putreg(priv, SAM_GMAC_ISR, isr);
@@ -1898,13 +1901,15 @@ static int sam_ifdown(struct net_driver_s *dev)
   flags = enter_critical_section();
   //up_disable_irq(MPFS_IRQ_MAC);
   sam_putreg(priv, SAM_GMAC_IDR, 0xffffffff);
-
+  
   /* Cancel the TX poll timer and TX timeout timers *
+
+	 [-Werror=comment] ????
 
   wd_cancel(&priv->txpoll);
   wd_cancel(&priv->txtimeout);
 
-  /* Put the GMAC in its reset, non-operational state.  This should be
+  * Put the GMAC in its reset, non-operational state.  This should be
    * a known configuration that will guarantee the sam_ifup() always
    * successfully brings the interface back up.
    */
@@ -2888,7 +2893,7 @@ static int sam_autonegotiate(struct sam_gmac_s *priv)
   uint16_t advertise;
   uint16_t lpa;
   uint16_t btcr;
-  uint16_t btsr;
+/*  uint16_t btsr; [-Werror=unused-variable] */
   int timeout;
   int ret;
 
@@ -3164,7 +3169,8 @@ errout:
  *
  ****************************************************************************/
 
-#ifndef CONFIG_SAMA5_GMAC_AUTONEG
+//#ifndef CONFIG_SAMA5_GMAC_AUTONEG
+#if 0 /* [-Werror=unused-function] */
 static void sam_linkspeed(struct sam_gmac_s *priv)
 {
   uint32_t regval;
@@ -3219,6 +3225,9 @@ static void sam_linkspeed(struct sam_gmac_s *priv)
  *
  ****************************************************************************/
 
+
+/* TODO:  [-Werror=unused-function] */
+#if 0
 static void sam_mdcclock(struct sam_gmac_s *priv)
 {
   uint32_t ncfgr;
@@ -3270,6 +3279,7 @@ static void sam_mdcclock(struct sam_gmac_s *priv)
 
   sam_putreg(priv, SAM_GMAC_NCR, ncr);
 }
+#endif
 
 /****************************************************************************
  * Function: sam_phyinit
@@ -3351,7 +3361,7 @@ static void sam_txreset(struct sam_gmac_s *priv)
   uint8_t *txbuffer = priv->txbuffer;
   struct gmac_txdesc_s *txdesc = priv->txdesc;
   uintptr_t bufaddr;
-  uint32_t physaddr;
+/*  uint32_t physaddr; [-Werror=unused-variable] */
   uint32_t regval;
   int ndx;
 
@@ -3385,7 +3395,7 @@ static void sam_txreset(struct sam_gmac_s *priv)
 
   /* Set the Transmit Buffer Queue Base Register */
 
-  sam_putreg(priv, SAM_GMAC_TBQB, txdesc);
+  sam_putreg(priv, SAM_GMAC_TBQB, (uintptr_t)txdesc);
 
   // TEST disable q1-3, B0 = 1
   sam_putreg(priv, SAM_GMAC_TBQBAPQ(0), ((uint32_t)(uint64_t)txdesc) | 1U);
@@ -3428,7 +3438,7 @@ static void sam_rxreset(struct sam_gmac_s *priv)
   struct gmac_rxdesc_s *rxdesc = priv->rxdesc;
   uint8_t *rxbuffer = priv->rxbuffer;
   uintptr_t bufaddr;
-  uint32_t physaddr;
+/*  uint32_t physaddr; [-Werror=unused-variable] */
   uint32_t regval;
   int ndx;
 
@@ -3460,7 +3470,7 @@ static void sam_rxreset(struct sam_gmac_s *priv)
 
   /* Set the Receive Buffer Queue Base Register */
 
-  sam_putreg(priv, SAM_GMAC_RBQB, rxdesc);
+  sam_putreg(priv, SAM_GMAC_RBQB, (uintptr_t)rxdesc);
 
   // TEST disable B0 = 1
   sam_putreg(priv, SAM_GMAC_RBQBAPQ(0), ((uint32_t)(uint64_t)rxdesc) | 1U);
