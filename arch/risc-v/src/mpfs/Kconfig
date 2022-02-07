@@ -363,6 +363,13 @@ config MPFS_MAC_AUTONEG
 	---help---
 		Use PHY autonegotiation to determine speed and mode
 
+config MPFS_PHYINIT
+	bool "Use board phyinit"
+	default n
+	---help---
+		call mpfs_phy_boardinitialize() on init
+
+
 if !MPFS_MAC_AUTONEG
 
 config MPFS_MAC_ETHFD

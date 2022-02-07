@@ -3873,6 +3873,19 @@ int sam_gmac_initialize(void)
 #endif
   priv->dev.d_private = &g_gmac;         /* Used to recover private state from dev */
 
+  // REVISIT: Correct place for this?
+
+#ifdef CONFIG_MPFS_PHYINIT
+  /* Perform any necessary, board-specific PHY initialization */
+
+  ret = mpfs_phy_boardinitialize(0);
+  if (ret < 0)
+    {
+      nerr("ERROR: Failed to initialize the PHY: %d\n", ret);
+      return ret;
+    }
+#endif
+
   /* MPU hack for ETH DMA*/
 
   putreg64(0x1f00000fffffffff, MPFS_PMPCFG_ETH0_0);
