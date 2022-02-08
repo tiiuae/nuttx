@@ -345,17 +345,20 @@ config MPFS_MAC_DISABLE_1000MBPS
 		Select to disable Gigabit speed support.
 		If disabled then autonegotiation don't advertise 1GB mode
 
-config MPFS_MAC_SGMII
-	bool "Use SGMII interface"
-	default y
-	---help---
-		Use Ethernet SGMII interface.
+choice
+	prompt "MII interface type"
+	config MPFS_MAC_SGMII
+		bool "Use SGMII interface"
+		default y
+		---help---
+			Use Ethernet SGMII interface.
 
-config MPFS_MAC_GMII
-	bool "Use GMII interface"
-	default n
-	---help---
-		Use Ethernet GMII interface.
+	config MPFS_MAC_GMII
+		bool "Use GMII interface"
+		default n
+		---help---
+			Use Ethernet GMII interface.
+endchoice
 
 config MPFS_MAC_AUTONEG
 	bool "Use autonegotiation"
