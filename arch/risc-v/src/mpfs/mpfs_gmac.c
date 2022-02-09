@@ -2251,9 +2251,9 @@ static int sam_rmmac(struct net_driver_s *dev, const uint8_t *mac)
       bit      = 1 << ndx;        /* Bit 0-31 */
     }
 
-  regval  = sam_getreg(priv, regaddr1);
+  regval  = sam_getreg(priv, (uintptr_t)regaddr1);
   regval &= ~bit;
-  sam_putreg(priv, regaddr1, regval);
+  sam_putreg(priv, (uintptr_t)regaddr1, regval);
 
   /* The unicast hash enable and the multicast hash enable bits in the
    * Network Configuration Register enable the reception of hash matched
@@ -2269,7 +2269,7 @@ static int sam_rmmac(struct net_driver_s *dev, const uint8_t *mac)
 
   /* Are all multicast address matches disabled? */
 
-  if (regval == 0 && sam_getreg(priv, regaddr2) == 0)
+  if (regval == 0 && sam_getreg(priv, (uintptr_t)regaddr2) == 0)
     {
       /* Yes.. disable all address matching */
 
