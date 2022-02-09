@@ -157,7 +157,7 @@ void up_initialize(void)
   ptmx_register();
 #endif
 
-#ifndef CONFIG_NETDEV_LATEINIT
+#if defined(CONFIG_NET) && !defined(CONFIG_NETDEV_LATEINIT)
   /* Initialize the network */
 
   riscv_netinitialize();
