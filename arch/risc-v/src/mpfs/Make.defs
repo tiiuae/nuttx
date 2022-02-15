@@ -59,24 +59,14 @@ ifeq ($(CONFIG_MPFS_DMA),y)
 CHIP_CSRCS += mpfs_dma.c
 endif
 
-# Flag to enable certain modules for non-flat builds (PROTECTED/KERNEL)
-__MPFS_BUILD_NONFLAT =
-
 ifeq ($(CONFIG_BUILD_PROTECTED),y)
-CHIP_CSRCS += mpfs_userspace.c
-__MPFS_BUILD_NONFLAT=y
-endif
-
-ifeq ($(CONFIG_BUILD_KERNEL),y)
-__MPFS_BUILD_NONFLAT=y
-endif
-
-ifeq ($(__MPFS_BUILD_NONFLAT),y)
 CMN_CSRCS  += riscv_task_start.c
 CMN_CSRCS  += riscv_pthread_start.c riscv_pthread_exit.c
 CMN_CSRCS  += riscv_signal_dispatch.c
 
 CMN_UASRCS += riscv_signal_handler.S
+
+CHIP_CSRCS += mpfs_userspace.c
 endif
 
 ifeq ($(CONFIG_ARCH_USE_MPU),y)

@@ -53,6 +53,20 @@
 
 /* Configuration ************************************************************/
 
+/* SYS call 1 and 2 are defined for internal use by the RISC-V port (see
+ * arch/risc-v/include/rv64gc/syscall.h). In addition, SYS call 3 is the
+ * return from a SYS call in kernel mode. The first four syscall values must,
+ * therefore, be reserved (0 is not used).
+ */
+
+#ifdef CONFIG_BUILD_KERNEL
+#  ifndef CONFIG_SYS_RESERVED
+#    error "CONFIG_SYS_RESERVED must be defined to the value 4"
+#  elif CONFIG_SYS_RESERVED != 4
+#    error "CONFIG_SYS_RESERVED must have the value 4"
+#  endif
+#endif
+
 /* sys_call macros **********************************************************/
 
 #ifndef __ASSEMBLY__
