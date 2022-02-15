@@ -62,12 +62,6 @@ uint32_t up_gethartid(void);
 
 #endif
 
-/* Provide the maximum amount of page table levels per MMU type */
-
-#ifdef CONFIG_ARCH_MMU_TYPE_SV39
-#define ARCH_PGT_MAX_LEVELS (3)
-#endif
-
 /****************************************************************************
  * Inline functions
  ****************************************************************************/
