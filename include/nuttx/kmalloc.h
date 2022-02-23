@@ -123,6 +123,11 @@ extern "C"
 
 FAR void *group_malloc(FAR struct task_group_s *group, size_t nbytes);
 
+/* Functions defined in group/group_realloc.c *******************************/
+
+FAR void *group_realloc(FAR struct task_group_s *group, FAR void *oldmem,
+                        size_t newsize);
+
 /* Functions defined in group/group_zalloc.c ********************************/
 
 FAR void *group_zalloc(FAR struct task_group_s *group, size_t nbytes);
