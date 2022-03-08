@@ -266,7 +266,7 @@ struct mpfs_mac_queue_s
 struct mpfs_ethmac_s
 {
   uint32_t             is_emac;
-  void                 *regbase;    /* */
+  uintptr_t            regbase;    /* */
   irq_t                mac_q_int[MPFS_MAC_QUEUE_COUNT];
 
   uint8_t              ifup : 1;    /* true:ifup false:ifdown */
@@ -290,17 +290,17 @@ struct mpfs_ethmac_s
 
 static struct mpfs_ethmac_s g_mpfsethmac[MPFS_NETHERNET];
 
-static uint32_t *g_regbases[MPFS_NETHERNET] =
+static uintptr_t g_regbases[MPFS_NETHERNET] =
 {
 #ifdef CONFIG_MPFS_ETHMAC_0
-        (uint32_t *) MPFS_GEM0_LO_BASE,
+        MPFS_GEM0_LO_BASE,
 #endif
 #ifdef CONFIG_MPFS_ETHMAC_1
-        (uint32_t *) MPFS_GEM1_LO_BASE,
+        MPFS_GEM1_LO_BASE,
 #endif
       /* if support for emacs is added later
-       * (uint32_t *) (MPFS_GEM0_LO_BASE + 0x1000),
-       * (uint32_t *) (MPFS_GEM1_LO_BASE + 0x1000),'
+       * (MPFS_GEM0_LO_BASE + 0x1000),
+       * (MPFS_GEM1_LO_BASE + 0x1000),'
        */
 };
 
@@ -419,7 +419,7 @@ static void mpfs_interrupt_work(void *arg);
 static inline void mac_putreg(struct mpfs_ethmac_s *priv,
                               uint32_t offset, uint32_t val)
 {
-  uint32_t *addr = priv->regbase + offset;
+  uint32_t *addr = (uint32_t *)(priv->regbase + offset);
 #if defined(CONFIG_DEBUG_NET) && defined(CONFIG_MPFS_ETHMAC_REGDEBUG)
   ninfo("0x%08x <- 0x%08x\n", addr, val);
 #endif
@@ -444,7 +444,7 @@ static inline void mac_putreg(struct mpfs_ethmac_s *priv,
 static inline uint32_t mac_getreg(struct mpfs_ethmac_s *priv,
                                   uint32_t offset)
 {
-  uint32_t *addr = priv->regbase + offset;
+  uint32_t *addr = (uint32_t *)(priv->regbase + offset);
   uint32_t value = getreg32(addr);
 #if defined(CONFIG_DEBUG_NET) && defined(CONFIG_MPFS_ETHMAC_REGDEBUG)
   ninfo("0x%08x -> 0x%08x\n", addr, value);
@@ -2422,12 +2422,12 @@ static int mpfs_autonegotiate(struct mpfs_ethmac_s *priv)
   uint16_t phyid2;
   uint16_t advertise;
   uint16_t lpa;
-  uint16_t btcr;
   int timeout;
   int ret;
 
 #ifndef CONFIG_MPFS_MAC_DISABLE_1000MBPS
   uint16_t btsr;
+  uint16_t btcr;
 #endif
 
   /* Enable management port */
@@ -3209,7 +3209,7 @@ static void mpfs_ethreset(struct mpfs_ethmac_s *priv)
   /* if we are supporting PHY IOCTLs, then do not reset the MAC. */
 
 #ifndef CONFIG_NETDEV_PHY_IOCTL
-  if (priv->regbase == (void *)MPFS_GEM0_LO_BASE)
+  if (priv->regbase == MPFS_GEM0_LO_BASE)
     {
       /* reset */
 
@@ -3219,7 +3219,7 @@ static void mpfs_ethreset(struct mpfs_ethmac_s *priv)
                   SYSREG_SOFT_RESET_CR_MAC0, 0);
     }
 
-  if (priv->regbase == (void *)MPFS_GEM1_LO_BASE)
+  if (priv->regbase == MPFS_GEM1_LO_BASE)
     {
       /* reset */
 
@@ -3706,36 +3706,36 @@ static inline int mpfs_ethinitialize(int intf)
   priv->mac_q_int[1] = g_irq_numbers[intf][1];
   priv->mac_q_int[2] = g_irq_numbers[intf][2];
   priv->mac_q_int[3] = g_irq_numbers[intf][3];
-  ninfo("mac @ 0x%p\n", priv->regbase);
+  ninfo("mac @ 0x%p\n", (void *)priv->regbase);
 
-  priv->queue[0].int_status = priv->regbase + INT_STATUS;
-  priv->queue[1].int_status = priv->regbase + INT_Q1_STATUS;
-  priv->queue[2].int_status = priv->regbase + INT_Q2_STATUS;
-  priv->queue[3].int_status = priv->regbase + INT_Q3_STATUS;
-  priv->queue[0].int_mask = priv->regbase + INT_MASK;
-  priv->queue[1].int_mask = priv->regbase + INT_Q1_MASK;
-  priv->queue[2].int_mask = priv->regbase + INT_Q2_MASK;
-  priv->queue[3].int_mask = priv->regbase + INT_Q3_MASK;
-  priv->queue[0].int_enable = priv->regbase + INT_ENABLE;
-  priv->queue[1].int_enable = priv->regbase + INT_Q1_ENABLE;
-  priv->queue[2].int_enable = priv->regbase + INT_Q2_ENABLE;
-  priv->queue[3].int_enable = priv->regbase + INT_Q3_ENABLE;
-  priv->queue[0].int_disable = priv->regbase + INT_DISABLE;
-  priv->queue[1].int_disable = priv->regbase + INT_Q1_DISABLE;
-  priv->queue[2].int_disable = priv->regbase + INT_Q2_DISABLE;
-  priv->queue[3].int_disable = priv->regbase + INT_Q3_DISABLE;
-  priv->queue[0].rx_q_ptr = priv->regbase + RECEIVE_Q_PTR;
-  priv->queue[1].rx_q_ptr = priv->regbase + RECEIVE_Q1_PTR;
-  priv->queue[2].rx_q_ptr = priv->regbase + RECEIVE_Q2_PTR;
-  priv->queue[3].rx_q_ptr = priv->regbase + RECEIVE_Q3_PTR;
-  priv->queue[0].tx_q_ptr = priv->regbase + TRANSMIT_Q_PTR;
-  priv->queue[1].tx_q_ptr = priv->regbase + TRANSMIT_Q1_PTR;
-  priv->queue[2].tx_q_ptr = priv->regbase + TRANSMIT_Q2_PTR;
-  priv->queue[3].tx_q_ptr = priv->regbase + TRANSMIT_Q3_PTR;
-  priv->queue[0].dma_rxbuf_size = priv->regbase + DMA_RXBUF_SIZE_Q1;
-  priv->queue[1].dma_rxbuf_size = priv->regbase + DMA_RXBUF_SIZE_Q1;
-  priv->queue[2].dma_rxbuf_size = priv->regbase + DMA_RXBUF_SIZE_Q2;
-  priv->queue[3].dma_rxbuf_size = priv->regbase + DMA_RXBUF_SIZE_Q3;
+  priv->queue[0].int_status = (uint32_t *)(priv->regbase + INT_STATUS);
+  priv->queue[1].int_status = (uint32_t *)(priv->regbase + INT_Q1_STATUS);
+  priv->queue[2].int_status = (uint32_t *)(priv->regbase + INT_Q2_STATUS);
+  priv->queue[3].int_status = (uint32_t *)(priv->regbase + INT_Q3_STATUS);
+  priv->queue[0].int_mask = (uint32_t *)(priv->regbase + INT_MASK);
+  priv->queue[1].int_mask = (uint32_t *)(priv->regbase + INT_Q1_MASK);
+  priv->queue[2].int_mask = (uint32_t *)(priv->regbase + INT_Q2_MASK);
+  priv->queue[3].int_mask = (uint32_t *)(priv->regbase + INT_Q3_MASK);
+  priv->queue[0].int_enable = (uint32_t *)(priv->regbase + INT_ENABLE);
+  priv->queue[1].int_enable = (uint32_t *)(priv->regbase + INT_Q1_ENABLE);
+  priv->queue[2].int_enable = (uint32_t *)(priv->regbase + INT_Q2_ENABLE);
+  priv->queue[3].int_enable = (uint32_t *)(priv->regbase + INT_Q3_ENABLE);
+  priv->queue[0].int_disable = (uint32_t *)(priv->regbase + INT_DISABLE);
+  priv->queue[1].int_disable = (uint32_t *)(priv->regbase + INT_Q1_DISABLE);
+  priv->queue[2].int_disable = (uint32_t *)(priv->regbase + INT_Q2_DISABLE);
+  priv->queue[3].int_disable = (uint32_t *)(priv->regbase + INT_Q3_DISABLE);
+  priv->queue[0].rx_q_ptr = (uint32_t *)(priv->regbase + RECEIVE_Q_PTR);
+  priv->queue[1].rx_q_ptr = (uint32_t *)(priv->regbase + RECEIVE_Q1_PTR);
+  priv->queue[2].rx_q_ptr = (uint32_t *)(priv->regbase + RECEIVE_Q2_PTR);
+  priv->queue[3].rx_q_ptr = (uint32_t *)(priv->regbase + RECEIVE_Q3_PTR);
+  priv->queue[0].tx_q_ptr = (uint32_t *)(priv->regbase + TRANSMIT_Q_PTR);
+  priv->queue[1].tx_q_ptr = (uint32_t *)(priv->regbase + TRANSMIT_Q1_PTR);
+  priv->queue[2].tx_q_ptr = (uint32_t *)(priv->regbase + TRANSMIT_Q2_PTR);
+  priv->queue[3].tx_q_ptr = (uint32_t *)(priv->regbase + TRANSMIT_Q3_PTR);
+  priv->queue[0].dma_rxbuf_size = (uint32_t *)(priv->regbase + DMA_RXBUF_SIZE_Q1);
+  priv->queue[1].dma_rxbuf_size = (uint32_t *)(priv->regbase + DMA_RXBUF_SIZE_Q1);
+  priv->queue[2].dma_rxbuf_size = (uint32_t *)(priv->regbase + DMA_RXBUF_SIZE_Q2);
+  priv->queue[3].dma_rxbuf_size = (uint32_t *)(priv->regbase + DMA_RXBUF_SIZE_Q3);
 
   /* MPU hack for ETH DMA if not enabled by bootloader */
 
@@ -3791,7 +3791,7 @@ static inline int mpfs_ethinitialize(int intf)
 
   /* MAC HW clock enable and reset */
 
-  if (priv->regbase == (void *)MPFS_GEM0_LO_BASE)
+  if (priv->regbase == MPFS_GEM0_LO_BASE)
     {
       modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET, 0,
                   SYSREG_SUBBLK_CLOCK_CR_MAC0);
@@ -3807,7 +3807,7 @@ static inline int mpfs_ethinitialize(int intf)
                   SYSREG_SOFT_RESET_CR_MAC0, 0);
     }
 
-  if (priv->regbase == (void *)MPFS_GEM1_LO_BASE)
+  if (priv->regbase == MPFS_GEM1_LO_BASE)
     {
       modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET, 0,
                   SYSREG_SUBBLK_CLOCK_CR_MAC1);
