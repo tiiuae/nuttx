@@ -70,7 +70,7 @@
 #define MPFS_PMPCFG_ETH1_2   (MPFS_MPUCFG_BASE + 0x510)
 #define MPFS_PMPCFG_ETH1_3   (MPFS_MPUCFG_BASE + 0x518)
 
-#if defined(CONFIG_MPFS_ETHMAC_0) && defined(CONFIG_MPFS_ETHMAC_0)
+#if defined(CONFIG_MPFS_ETHMAC_0) && defined(CONFIG_MPFS_ETHMAC_1)
 #  warning "Using 2 MACs is not yet supported."
 #  define MPFS_NETHERNET     (2)
 #else
