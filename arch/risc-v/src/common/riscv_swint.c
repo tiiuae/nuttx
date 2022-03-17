@@ -114,7 +114,7 @@ static void dispatch_syscall(void)
 {
   asm volatile
     (
-     " addi sp, sp, -8\n"         /* Create a stack frame to hold ra */
+     " addi sp, sp, -16\n"        /* Create a stack frame to hold ra */
      " sd   ra, 0(sp)\n"          /* Save ra in the stack frame */
      " la   t0, g_stublookup\n"   /* t0=The base of the stub lookup table */
      " slli a0, a0, 3\n"          /* a0=Offset for the stub lookup table */
@@ -122,10 +122,14 @@ static void dispatch_syscall(void)
      " ld   t0, 0(t0)\n"          /* t0=The address of the stub for this syscall */
      " jalr ra, t0\n"             /* Call the stub (modifies ra) */
      " ld   ra, 0(sp)\n"          /* Restore ra */
-     " addi sp, sp, 8\n"          /* Destroy the stack frame */
+     " addi sp, sp, 16\n"         /* Destroy the stack frame */
      " mv   a2, a0\n"             /* a2=Save return value in a0 */
      " li   a0, 3\n"              /* a0=SYS_syscall_return (3) */
+#ifdef CONFIG_ARCH_USE_S_MODE
+     " j    riscv_syscall_return" /* Return from the syscall */
+#else
      " ecall"                     /* Return from the syscall */
+#endif
   );
 }
 #else
@@ -144,7 +148,11 @@ static void dispatch_syscall(void)
      " addi sp, sp, 4\n"          /* Destroy the stack frame */
      " mv   a2, a0\n"             /* a2=Save return value in a0 */
      " li   a0, 3\n"              /* a0=SYS_syscall_return (3) */
+#ifdef CONFIG_ARCH_USE_S_MODE
+     " j    riscv_syscall_return" /* Return from the syscall */
+#else
      " ecall"                     /* Return from the syscall */
+#endif
   );
 }
 #endif
@@ -179,6 +187,31 @@ int riscv_swint(int irq, void *context, void *arg)
   riscv_registerdump(regs);
 #endif
 
+  /* Handle the syscall */
+
+  regs = riscv_handle_syscall(regs);
+
+  /* Report what happened.  That might difficult in the case of a context
+   * switch
+   */
+
+#ifdef CONFIG_DEBUG_SYSCALL_INFO
+  if (regs != CURRENT_REGS)
+    {
+      svcinfo("SWInt Return: Context switch!\n");
+      riscv_registerdump((const uintptr_t *)CURRENT_REGS);
+    }
+  else
+    {
+      svcinfo("SWInt Return: %d\n", regs[REG_A0]);
+    }
+#endif
+
+  return OK;
+}
+
+void *riscv_handle_syscall(uintptr_t *regs)
+{
   /* Handle the SWInt according to the command in $a0 */
 
   switch (regs[REG_A0])
@@ -196,6 +229,7 @@ int riscv_swint(int irq, void *context, void *arg)
        * save register space references in the saved A1 and return.
        */
 
+#ifndef CONFIG_ARCH_USE_S_MODE
       case SYS_save_context:
         {
           DEBUGASSERT(regs[REG_A1] != 0);
@@ -253,6 +287,7 @@ int riscv_swint(int irq, void *context, void *arg)
           CURRENT_REGS = (uintptr_t *)regs[REG_A2];
         }
         break;
+#endif /* CONFIG_ARCH_USE_S_MODE */
 
       /* A0=SYS_syscall_return: This is a SYSCALL return command:
        *
@@ -352,7 +387,7 @@ int riscv_swint(int irq, void *context, void *arg)
           regs[REG_A0]       = regs[REG_A2]; /* argc */
           regs[REG_A1]       = regs[REG_A3]; /* argv */
 #endif
-          regs[REG_INT_CTX] &= ~MSTATUS_MPPM; /* User mode */
+          regs[REG_INT_CTX] &= ~STATUS_PPP; /* User mode */
         }
         break;
 #endif
@@ -384,7 +419,7 @@ int riscv_swint(int irq, void *context, void *arg)
 
           regs[REG_A0]       = regs[REG_A2];  /* pthread entry */
           regs[REG_A1]       = regs[REG_A3];  /* arg */
-          regs[REG_INT_CTX] &= ~MSTATUS_MPPM; /* User mode */
+          regs[REG_INT_CTX] &= ~STATUS_PPP;   /* User mode */
         }
         break;
 #endif
@@ -423,7 +458,7 @@ int riscv_swint(int irq, void *context, void *arg)
           regs[REG_EPC]        =
               (uintptr_t)ARCH_DATA_RESERVE->ar_sigtramp & ~1;
 #endif
-          regs[REG_INT_CTX]   &= ~MSTATUS_MPPM; /* User mode */
+          regs[REG_INT_CTX]   &= ~STATUS_PPP; /* User mode */
 
           /* Change the parameter ordering to match the expectation of struct
            * userpace_s signal_handler.
@@ -473,7 +508,7 @@ int riscv_swint(int irq, void *context, void *arg)
 
           DEBUGASSERT(rtcb->xcp.sigreturn != 0);
           regs[REG_EPC]        = rtcb->xcp.sigreturn & ~1;
-          regs[REG_INT_CTX]   |= MSTATUS_MPPM; /* Machine mode */
+          regs[REG_INT_CTX]   |= STATUS_PPP; /* Privileged mode */
 
           rtcb->xcp.sigreturn  = 0;
 
@@ -521,7 +556,7 @@ int riscv_swint(int irq, void *context, void *arg)
 
           rtcb->xcp.syscall[index].sysreturn  = regs[REG_EPC];
 #ifndef CONFIG_BUILD_FLAT
-          rtcb->xcp.syscall[index].int_ctx     = regs[REG_INT_CTX];
+          rtcb->xcp.syscall[index].int_ctx    = regs[REG_INT_CTX];
 #endif
 
           rtcb->xcp.nsyscalls  = index + 1;
@@ -529,7 +564,7 @@ int riscv_swint(int irq, void *context, void *arg)
           regs[REG_EPC]        = (uintptr_t)dispatch_syscall & ~1;
 
 #ifndef CONFIG_BUILD_FLAT
-          regs[REG_INT_CTX]   |= MSTATUS_MPPM; /* Machine mode */
+          regs[REG_INT_CTX]   |= STATUS_PPP; /* Privileged mode */
 #endif
 
           /* Offset A0 to account for the reserved values */
@@ -559,21 +594,5 @@ int riscv_swint(int irq, void *context, void *arg)
         break;
     }
 
-  /* Report what happened.  That might difficult in the case of a context
-   * switch
-   */
-
-#ifdef CONFIG_DEBUG_SYSCALL_INFO
-  if (regs != CURRENT_REGS)
-    {
-      svcinfo("SWInt Return: Context switch!\n");
-      riscv_registerdump((const uintptr_t *)CURRENT_REGS);
-    }
-  else
-    {
-      svcinfo("SWInt Return: %d\n", regs[REG_A0]);
-    }
-#endif
-
-  return OK;
+  return regs;
 }

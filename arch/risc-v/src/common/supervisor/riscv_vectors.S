@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/risc-v/src/common/riscv_cpuindex.c
+ * arch/risc-v/src/common/supervisor/riscv_vectors.S
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -22,62 +22,31 @@
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/config.h>
-#include <stdint.h>
-#include <nuttx/arch.h>
-
-#include <arch/csr.h>
-
-#include "riscv_internal.h"
+  .section .text
+  .balign  8
+  .global  __trap_vec
+  .global  __irq_vec
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: riscv_mhartid
+ * Name: __trap_vec
  *
  * Description:
- *   Context aware way to query hart id
- *
- * Returned Value:
- *   Hart id
+ *   All M-mode exceptions and interrupts will be handled from here.
  *
  ****************************************************************************/
 
-uintptr_t riscv_mhartid(void)
-{
-#ifdef CONFIG_ARCH_USE_S_MODE
-  /* Kernel is in S-mode */
+__trap_vec:
+  j    trap_vector
+  nop
 
-#error "Missing functionality..."
-
-#else
-  /* Kernel is in M-mode */
-
-  return READ_CSR(mhartid);
-#endif
-}
-
-/****************************************************************************
- * Name: up_cpu_index
+ /****************************************************************************
+ * Name: __irq_vec
  *
  * Description:
- *   Return an index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
- *   corresponds to the currently executing CPU.
- *
- * Input Parameters:
- *   None
- *
- * Returned Value:
- *   An integer index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
- *   corresponds to the currently executing CPU.
+ *   All S-mode exceptions and interrupts will be handled from here.
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SMP
-int up_cpu_index(void)
-{
-  return (int)riscv_mhartid();
-}
-#endif
+__irq_vec:
+  j    exception_common
+  nop

@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/risc-v/src/common/riscv_exception_common.S
+ * arch/risc-v/src/common/machine/riscv_exception_common.S
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -35,14 +35,6 @@
 #else
 #  define REGLOAD   ld
 #  define REGSTORE  sd
-#endif
-
-#ifdef CONFIG_IRQ_NSTACKS
-#  define IRQ_NSTACKS CONFIG_IRQ_NSTACKS
-#elif defined CONFIG_SMP
-#  define IRQ_NSTACKS CONFIG_SMP_NCPUS
-#else
-#  define IRQ_NSTACKS 1
 #endif
 
 /****************************************************************************

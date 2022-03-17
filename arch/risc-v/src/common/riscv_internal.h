@@ -32,6 +32,7 @@
 #  include <nuttx/arch.h>
 #  include <sys/types.h>
 #  include <stdint.h>
+#  include <syscall.h>
 #endif
 
 /****************************************************************************
@@ -201,6 +202,7 @@ void riscv_copystate(uintptr_t *dest, uintptr_t *src);
 
 void riscv_sigdeliver(void);
 int riscv_swint(int irq, void *context, void *arg);
+void *riscv_handle_syscall(uintptr_t *regs);
 uintptr_t riscv_get_newintctx(void);
 
 #ifdef CONFIG_ARCH_FPU
@@ -282,6 +284,60 @@ int riscv_pause_handler(int irq, void *c, void *arg);
  ****************************************************************************/
 
 uintptr_t riscv_mhartid(void);
+
+#ifdef CONFIG_ARCH_USE_S_MODE
+/* If kernel runs in Supervisor mode, declare proper function prototypes,
+ * this is because it is not possible to ecall from S mode to S mode
+ */
+
+int riscv_saveusercontext(uintptr_t *saveregs);
+void riscv_fullcontextrestore(uintptr_t *restoreregs) noreturn_function;
+void riscv_switchcontext(uintptr_t **saveregs, uintptr_t *restoreregs);
+void riscv_syscall_return(void);
+void riscv_syscall_dispatch(void) noreturn_function;
+
+#else
+
+/* Context switching via system calls ***************************************/
+
+/* SYS call 0:
+ *
+ * int riscv_saveusercontext(uintptr_t *saveregs);
+ *
+ * Return:
+ * 0: Normal Return
+ * 1: Context Switch Return
+ */
+
+#define riscv_saveusercontext(saveregs) \
+  sys_call1(SYS_save_context, (uintptr_t)saveregs)
+
+/* SYS call 1:
+ *
+ * void riscv_fullcontextrestore(uintptr_t *restoreregs) noreturn_function;
+ */
+
+#define riscv_fullcontextrestore(restoreregs) \
+  sys_call1(SYS_restore_context, (uintptr_t)restoreregs)
+
+/* SYS call 2:
+ *
+ * void riscv_switchcontext(uintptr_t *saveregs, uintptr_t *restoreregs);
+ */
+
+#define riscv_switchcontext(saveregs, restoreregs) \
+  sys_call2(SYS_switch_context, (uintptr_t)saveregs, (uintptr_t)restoreregs)
+
+#ifdef CONFIG_BUILD_KERNEL
+/* SYS call 3:
+ *
+ * void riscv_syscall_return(void);
+ */
+
+#define riscv_syscall_return() sys_call0(SYS_syscall_return)
+
+#endif /* CONFIG_BUILD_KERNEL */
+#endif /* CONFIG_ARCH_USE_S_MODE */
 
 #undef EXTERN
 #ifdef __cplusplus

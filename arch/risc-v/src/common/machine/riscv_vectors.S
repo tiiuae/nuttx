@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/risc-v/src/common/riscv_vectors.S
+ * arch/risc-v/src/common/machine/riscv_vectors.S
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -23,11 +23,15 @@
  ****************************************************************************/
 
   .section .text
-  .balign  4
+  .balign  8
   .global  __trap_vec
 
 /****************************************************************************
- * Name: exception_common
+ * Name: __trap_vec
+ *
+ * Description:
+ *   All M-mode exceptions and interrupts will be handled from here.
+ *
  ****************************************************************************/
 
 __trap_vec:

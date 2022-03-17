@@ -24,10 +24,19 @@ ifeq ($(CONFIG_OPENSBI),y)
 include opensbi/Make.defs
 endif
 
+# Kernel runs in supervisor mode or machine mode ?
+
+ifeq ($(CONFIG_ARCH_USE_S_MODE),y)
+ARCH_CMN_MODE_DIR = supervisor
+else
+ARCH_CMN_MODE_DIR = machine
+endif
+
 ARCH_SRCDIR = $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src
 
 INCLUDES += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)chip}
 INCLUDES += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)common}
+INCLUDES += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)common$(DELIM)$(ARCH_CMN_MODE_DIR)}
 INCLUDES += ${shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)sched}
 ifeq ($(CONFIG_OPENSBI),y)
 INCLUDES += $(shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)opensbi$(DELIM)opensbi-3rdparty$(DELIM)include)
@@ -101,6 +110,7 @@ endif
 
 VPATH += chip
 VPATH += common
+VPATH += common$(DELIM)$(ARCH_CMN_MODE_DIR)
 ifeq ($(CONFIG_OPENSBI),y)
 VPATH += opensbi
 endif

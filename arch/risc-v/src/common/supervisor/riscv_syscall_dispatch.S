@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/risc-v/src/common/riscv_cpuindex.c
+ * arch/risc-v/src/common/supervisor/riscv_syscall_dispatch.S
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,66 +18,76 @@
  *
  ****************************************************************************/
 
+.file "riscv_syscall_dispatch.S"
+
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <stdint.h>
-#include <nuttx/arch.h>
+#include <arch/mode.h>
 
-#include <arch/csr.h>
-
-#include "riscv_internal.h"
+#include "riscv_exception_macros.S"
 
 /****************************************************************************
- * Public Functions
+ * Pre-processor Definitions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: riscv_mhartid
- *
- * Description:
- *   Context aware way to query hart id
- *
- * Returned Value:
- *   Hart id
- *
+ * Public Symbols
  ****************************************************************************/
 
-uintptr_t riscv_mhartid(void)
-{
-#ifdef CONFIG_ARCH_USE_S_MODE
-  /* Kernel is in S-mode */
-
-#error "Missing functionality..."
-
-#else
-  /* Kernel is in M-mode */
-
-  return READ_CSR(mhartid);
-#endif
-}
+    .globl  riscv_syscall_dispatch
 
 /****************************************************************************
- * Name: up_cpu_index
+ * Name: riscv_syscall_dispatch
  *
  * Description:
- *   Return an index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
- *   corresponds to the currently executing CPU.
+ *   Dispatch syscall from kernel, return to user mode
+ *
+ * C Function Prototype:
+ *   void riscv_syscall_dispatch(void);
  *
  * Input Parameters:
- *   None
+ *   Assumes the context to return is already set up
  *
  * Returned Value:
- *   An integer index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
- *   corresponds to the currently executing CPU.
+ *   Return value of system call is returned into contex
+ *
+ * Assumptions:
+ *   User task is running in privileged mode with interrupts masked,
+ *   ready to resume the user task in unprivileged mode with interrupts
+ *   restored
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SMP
-int up_cpu_index(void)
-{
-  return (int)riscv_mhartid();
-}
+.type riscv_syscall_dispatch, function
+
+riscv_syscall_dispatch:
+
+  addi       sp, sp, -XCPTCONTEXT_SIZE /* make room */
+  save_ctx   sp                        /* save current context */
+
+  REGSTORE   x1, REG_EPC(sp)           /* save ra to epc */
+
+  addi       s0, sp, XCPTCONTEXT_SIZE
+  REGSTORE   s0, REG_SP(sp)            /* original SP */
+
+  /* Set previous privilege, we are in privileged mode now */
+
+  csrr       s0, CSR_STATUS            /* read status register */
+  li         s1, STATUS_PPP            /* set previous privilege */
+  or         s0, s0, s1
+  li         s1, ~STATUS_PIE           /* clear previous interrupt enable */
+  and        s0, s0, s1
+  REGSTORE   s0, REG_INT_CTX(sp)       /* store status to context */
+
+#ifdef CONFIG_ARCH_FPU
+  mv         a0, sp
+  jal        x1, riscv_savefpu         /* FP registers */
 #endif
+
+  mv         a0, sp                    /* a0 = context */
+  jal        x1, riscv_handle_syscall  /* run the syscall */
+
+  j          riscv_fullcontextrestore  /* resume the user task */
