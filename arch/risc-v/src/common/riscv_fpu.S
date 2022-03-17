@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <arch/irq.h>
+#include <arch/mode.h>
 
 #include "riscv_internal.h"
 
@@ -75,7 +76,7 @@
 
 riscv_fpuconfig:
     li           a0, FS_INITIAL
-    csrs         mstatus, a0
+    csrs         CSR_STATUS, a0
     csrwi        fcsr, 0
     ret
 
