@@ -3,14 +3,14 @@
 # see the file kconfig-language.txt in the NuttX tools repository.
 #
 
-config FS_SHM
+config FS_SHMFS
 	bool "Shared memory support"
+	select MM_VM_MAP
 	default n
-	depends on MM_SHM && EXPERIMENTAL
 	---help---
 		Include support for shm_open() and shm_close.
 
-if FS_SHM
+if FS_SHMFS
 
 config FS_SHM_VFS_PATH
 	string "Path to shared memory object storage"
@@ -18,5 +18,12 @@ config FS_SHM_VFS_PATH
 	---help---
 		The path to where shared memory objects will exist in the VFS
 		namespace.
+
+config FS_SHM_VFS_MAXNAMLEN
+	int "Maximum file name length"
+	default 128
+	---help---
+		The maximum size of an SHMFS file name.
+		Default: 255.
 
 endif # FS_SHM
