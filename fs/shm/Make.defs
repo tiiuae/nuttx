@@ -20,9 +20,9 @@
 
 # Include POSIX message queue support
 
-ifeq ($(CONFIG_FS_SHM),y)
+ifeq ($(CONFIG_FS_SHMFS),y)
 
-CSRCS += shm_open.c shm_close.c
+CSRCS += shm_open.c shm_unlink.c shmfs.c shmfs_alloc.c
 
 # Include POSIX message queue build support
 
