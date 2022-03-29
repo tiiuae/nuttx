@@ -29,6 +29,7 @@
 #include <arch/csr.h>
 
 #include "riscv_internal.h"
+#include "riscv_percpu.h"
 
 /****************************************************************************
  * Public Functions
@@ -50,7 +51,7 @@ uintptr_t riscv_mhartid(void)
 #ifdef CONFIG_ARCH_USE_S_MODE
   /* Kernel is in S-mode */
 
-#error "Missing functionality..."
+  return riscv_percpu_get_hartid();
 
 #else
   /* Kernel is in M-mode */
