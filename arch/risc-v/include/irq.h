@@ -39,6 +39,7 @@
 #include <arch/csr.h>
 #include <arch/mode.h>
 #include <arch/chip/irq.h>
+#include <arch/mode.h>
 
 /****************************************************************************
  * Pre-processor Definitions
