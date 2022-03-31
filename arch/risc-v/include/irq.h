@@ -35,10 +35,10 @@
 
 #include <arch/types.h>
 
+#include <arch/arch.h>
 #include <arch/csr.h>
-#include <arch/chip/irq.h>
-#include <arch/macros.h>
 #include <arch/mode.h>
+#include <arch/chip/irq.h>
 
 /****************************************************************************
  * Pre-processor Definitions
