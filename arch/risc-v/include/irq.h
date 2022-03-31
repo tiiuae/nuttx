@@ -37,6 +37,7 @@
 
 #include <arch/csr.h>
 #include <arch/chip/irq.h>
+#include <arch/macros.h>
 #include <arch/mode.h>
 
 /****************************************************************************
