@@ -74,7 +74,7 @@ extern "C"
  *
  ****************************************************************************/
 
-int env_dup(FAR struct task_group_s *group);
+int env_dup(FAR struct task_group_s *group, FAR char * const *envp);
 
 /****************************************************************************
  * Name: env_release

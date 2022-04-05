@@ -118,6 +118,7 @@ int exec_module(FAR const struct binary_s *binp,
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   save_addrenv_t oldenv;
 #endif
+  FAR char * const *envp = NULL;
   pid_t pid;
   int ret;
 
@@ -151,6 +152,15 @@ int exec_module(FAR const struct binary_s *binp,
     }
 
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
+  /* Make a copy of the parent's environment here */
+
+  envp = binfmt_copyenv(envp);
+  if (!envp)
+    {
+      ret = -ENOMEM;
+      goto errout_with_args;
+    }
+
   /* Instantiate the address environment containing the user heap */
 
   ret = up_addrenv_select(&binp->addrenv, &oldenv);
@@ -174,12 +184,12 @@ int exec_module(FAR const struct binary_s *binp,
   if (argv && argv[0])
     {
       ret = nxtask_init(tcb, argv[0], binp->priority, NULL,
-                        binp->stacksize, binp->entrypt, &argv[1]);
+                        binp->stacksize, binp->entrypt, &argv[1], envp);
     }
   else
     {
       ret = nxtask_init(tcb, filename, binp->priority, NULL,
-                        binp->stacksize, binp->entrypt, argv);
+                        binp->stacksize, binp->entrypt, argv, envp);
     }
 
   binfmt_freeargv(argv);
@@ -189,7 +199,15 @@ int exec_module(FAR const struct binary_s *binp,
       goto errout_with_addrenv;
     }
 
+  /* The copied arguments can now be released */
+
+  binfmt_freeargv(argv);
+
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_ARCH_KERNEL_STACK)
+  /* The copied environment can now be released */
+
+  binfmt_freeenv(envp);
+
   /* Allocate the kernel stack */
 
   ret = up_addrenv_kstackalloc(&tcb->cmn);
@@ -282,6 +300,9 @@ errout_with_addrenv:
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   up_addrenv_restore(&oldenv);
 #endif
+errout_with_args:
+  binfmt_freeargv(argv);
+  binfmt_freeenv(envp);
 errout_with_tcb:
   kmm_free(tcb);
   return ret;

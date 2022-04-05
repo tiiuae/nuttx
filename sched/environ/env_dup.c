@@ -61,7 +61,7 @@
  *
  ****************************************************************************/
 
-int env_dup(FAR struct task_group_s *group)
+int env_dup(FAR struct task_group_s *group, FAR char * const *envcp)
 {
   FAR struct tcb_s *ptcb = this_task();
   FAR char *envp = NULL;
@@ -108,7 +108,11 @@ int env_dup(FAR struct task_group_s *group)
             {
               /* Duplicate the parent environment. */
 
-              memcpy(envp, ptcb->group->tg_envp, envlen);
+              if (envcp == NULL)
+                {
+                  envcp = (FAR char * const *)ptcb->group->tg_envp;
+                }
+              memcpy(envp, envcp, envlen);
             }
         }
 
