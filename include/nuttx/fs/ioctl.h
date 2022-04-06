@@ -185,6 +185,9 @@
 #define FIOC_TRUNCATE   _FIOC(0x0010)     /* IN:  Length of the file after truncate
                                            * OUT: None
                                            */
+#define FIOC_TRUNCATE   _FIOC(0x0010)     /* IN:  Length of the file after truncate
+                                           * OUT: None
+                                           */
 
 /* NuttX file system ioctl definitions **************************************/
 
