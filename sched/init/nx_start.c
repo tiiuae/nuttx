@@ -34,6 +34,7 @@
 #include <nuttx/compiler.h>
 #include <nuttx/sched.h>
 #include <nuttx/fs/fs.h>
+#include <nuttx/fs/shmfs.h>
 #include <nuttx/net/net.h>
 #include <nuttx/mm/iob.h>
 #include <nuttx/mm/mm.h>
@@ -585,6 +586,12 @@ void nx_start(void)
   /* Initialize the file system (needed to support device drivers) */
 
   fs_initialize();
+
+  /* Initialize posix shm support */
+
+#ifdef CONFIG_FS_SHMFS
+  shmfs_initialize();
+#endif
 
   /* Initialize the interrupt handling subsystem (if included) */
 
