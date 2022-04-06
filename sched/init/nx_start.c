@@ -37,6 +37,7 @@
 #include <nuttx/net/net.h>
 #include <nuttx/mm/iob.h>
 #include <nuttx/mm/mm.h>
+#include <nuttx/fs/shmfs.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/pgalloc.h>
 #include <nuttx/sched_note.h>
@@ -599,6 +600,12 @@ void nx_start(void)
   /* Initialize the named message queue facility (if in link) */
 
   nxmq_initialize();
+#endif
+
+#ifdef CONFIG_FS_SHMFS
+  /* Initialize posix shm support */
+
+  shmfs_initialize();
 #endif
 
 #ifdef CONFIG_NET
