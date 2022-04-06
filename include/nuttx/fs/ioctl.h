@@ -183,6 +183,9 @@
 #define FIOC_FILEPATH   _FIOC(0x000f)     /* IN:  FAR char *(length >= PATH_MAX)
                                            * OUT: The full file path
                                            */
+#define FIOC_TRUNCATE   _FIOC(0x0010)     /* IN:  Length of the file after truncate
+                                           * OUT: None
+                                           */
 
 /* NuttX file system ioctl definitions **************************************/
 
