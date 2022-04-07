@@ -33,6 +33,7 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/net/net.h>
 #include <nuttx/lib/lib.h>
+#include <nuttx/mm/vm_map.h>
 
 #ifdef CONFIG_BINFMT_LOADABLE
 #  include <nuttx/binfmt/binfmt.h>
@@ -173,6 +174,12 @@ static inline void group_release(FAR struct task_group_s *group)
   /* Release all shared environment variables */
 
   env_release(group);
+#endif
+
+#ifdef CONFIG_MM_VM_MAP
+  /* Destroy the vm_map list */
+
+  vm_map_destroy(&group->tg_vm_map);
 #endif
 
 #if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_MM_SHM)
