@@ -32,6 +32,7 @@ include circbuf/Make.defs
 include mempool/Make.defs
 include kasan/Make.defs
 include ubsan/Make.defs
+include vm_map/Make.defs
 
 BINDIR ?= bin
 
