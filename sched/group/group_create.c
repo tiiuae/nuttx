@@ -34,6 +34,7 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/sched.h>
 #include <nuttx/tls.h>
+#include <nuttx/mm/vm_map.h>
 
 #include "environ/environ.h"
 #include "sched/sched.h"
@@ -284,6 +285,12 @@ int group_initialize(FAR struct task_tcb_s *tcb)
 
   DEBUGASSERT(tcb && tcb->cmn.group);
   group = tcb->cmn.group;
+
+#ifdef CONFIG_MM_VM_MAP
+  /* Allocate vm_map list if required */
+
+  vm_map_initialize(&group->tg_vm_map);
+#endif
 
 #ifdef HAVE_GROUP_MEMBERS
   /* Allocate space to hold GROUP_INITIAL_MEMBERS members of the group */
