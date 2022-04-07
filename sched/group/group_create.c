@@ -35,6 +35,7 @@
 #include <nuttx/lib/lib.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/sched.h>
+#include <nuttx/mm/vm_map.h>
 
 #include "sched/sched.h"
 #include "group/group.h"
@@ -266,6 +267,12 @@ void group_initialize(FAR struct task_tcb_s *tcb)
 
   DEBUGASSERT(tcb && tcb->cmn.group);
   group = tcb->cmn.group;
+
+#ifdef CONFIG_MM_VM_MAP
+  /* Allocate vm_map list if required */
+
+  vm_map_initialize(&group->tg_vm_map);
+#endif
 
 #ifdef HAVE_GROUP_MEMBERS
   /* Assign the PID of this new task as a member of the group. */

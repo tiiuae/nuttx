@@ -78,10 +78,6 @@ struct vm_map_s
  * Public Function Prototypes
  ****************************************************************************/
 
-/* These may only be called within kernel context */
-
-#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
-
 /****************************************************************************
  * Name: vm_map_initialize
  *
@@ -212,8 +208,6 @@ FAR const struct vm_map_entry_s *vm_map_find(FAR const void *vaddr,
  ****************************************************************************/
 
 int vm_map_rm(FAR const struct vm_map_entry_s **map);
-
-#endif /* defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__) */
 
 #endif /* CONFIG_MM_VM_MAP */
 
