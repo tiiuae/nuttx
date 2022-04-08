@@ -26,6 +26,7 @@
 
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/ioctl.h>
 
 #include <stdint.h>
 #include <errno.h>
@@ -158,7 +159,95 @@ errout_with_lock:
   nxmutex_unlock(&g_rammaps.lock);
   return ret;
 #else
+
+#ifdef CONFIG_MM_VM_MAP
+  const FAR struct vm_map_entry_s *map = NULL;
+  struct file tmp_file;
+  int err;
+  int ret = OK;
+  bool found = false;
+
+  /* Iterate through all the mappings */
+
+  while ((map = vm_map_next(map)))
+    {
+      /* If this is a file-backed mapping, call ioctl to do unmap */
+
+      switch (map->type)
+        {
+        case VM_MAP_FILE:
+          if (map->id.inode)
+            {
+              if (start == map->vaddr && length == map->length)
+                {
+                  /* Create a temporary file struct and make ioctl */
+
+                  tmp_file.f_oflags = 0;
+                  tmp_file.f_pos    = 0;
+                  tmp_file.f_inode  = map->id.inode;
+                  tmp_file.f_priv   = NULL;
+
+                  err = file_ioctl(&tmp_file, FIOC_MUNMAP, map);
+                  if (err < 0)
+                    {
+                      ferr("ERROR: file_ioctl fail\n");
+                      ret = err;
+                    }
+
+                  err = vm_map_rm(&map);
+                  if (err < 0)
+                    {
+                      ret = err;
+                    }
+
+                  found = true;
+                }
+            }
+          else
+            {
+              ferr("ERROR: No inode in file mmap\n");
+            }
+          break;
+
+        case VM_MAP_ANONYMOUS:
+          /* If this is an anonymous mapping, de-allocate memory
+           * NB: This is incomplete anounymous mapping implementation
+           * refer to fs_mmap.c
+           */
+
+          if (start == map->vaddr && length == map->length)
+            {
+              if (kernel)
+                {
+                  kmm_free(start);
+                }
+              else
+                {
+                  kumm_free(start);
+                }
+
+              err = vm_map_rm(&map);
+              if (err < 0)
+                {
+                  ret = err;
+                }
+
+              found = true;
+            }
+          break;
+
+        default:
+          ferr("ERROR: Unknown map type\n");
+          break;
+        }
+    }
+
+  return found ? ret : -EINVAL;
+
+#endif
+
   return OK;
+
 #endif /* CONFIG_FS_RAMMAP */
 }
 
