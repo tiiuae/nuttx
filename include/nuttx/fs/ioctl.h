@@ -186,6 +186,9 @@
 #define FIOC_TRUNCATE   _FIOC(0x0010)     /* IN:  Length of the file after truncate
                                            * OUT: None
                                            */
+#define FIOC_MUNMAP     _FIOC(0x0011)     /* IN:  Pointer to struct vm_map_entry
+                                           * OUT: None
+                                           */
 
 /* NuttX file system ioctl definitions **************************************/
 
