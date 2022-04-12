@@ -32,6 +32,7 @@
 #include <nuttx/sched.h>
 #include <nuttx/arch.h>
 #include <nuttx/pgalloc.h>
+#include <nuttx/mm/vm_map.h>
 
 #include "shm/shm.h"
 
@@ -103,6 +104,7 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
   FAR void *vaddr;
   unsigned int npages;
   int ret;
+  union vm_map_id_u map_id;
 
   /* Get the region associated with the shmid */
 
@@ -114,9 +116,8 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
 
   tcb = nxsched_self();
   DEBUGASSERT(tcb && tcb->group);
+
   group = tcb->group;
-  DEBUGASSERT(group->tg_shm.gs_handle != NULL &&
-              group->tg_shm.gs_vaddr[shmid] == 0);
 
   /* Get exclusive access to the region data structure */
 
@@ -155,7 +156,14 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
    * detach, we need to get the region table index.
    */
 
-  group->tg_shm.gs_vaddr[shmid] = (uintptr_t)vaddr;
+  map_id.shmid = shmid;
+  ret = vm_map_add(VM_MAP_SHM, map_id, (FAR const void *)vaddr,
+                   region->sr_ds.shm_segsz);
+  if (ret < 0)
+    {
+      shmerr("ERROR: vm_map_add() failed\n");
+      goto errout_with_vaddr;
+    }
 
   /* Increment the count of processes attached to this region */
 
