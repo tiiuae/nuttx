@@ -29,10 +29,15 @@
 
 #include "riscv_internal.h"
 
+#ifdef CONFIG_NUTTSBI
+#include "sbi_mcall.h"
+#endif
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
+#ifndef CONFIG_NUTTSBI
 #ifdef CONFIG_ARCH_RV64
 static inline uint64_t rdtime(void)
 {
@@ -51,6 +56,7 @@ static inline uint64_t rdtime(void)
 #else
 #define rdtime() READ_CSR(time)
 #endif /* CONFIG_ARCH_RV64 */
+#endif /* CONFIG_NUTTSBI */
 
 /****************************************************************************
  * Public Functions
@@ -69,7 +75,9 @@ static inline uint64_t rdtime(void)
 
 void riscv_sbi_set_timer(uint64_t stime_value)
 {
-#if 0
+#ifdef CONFIG_NUTTSBI
+  sbi_mcall_set_timer(stime_value);
+#else
 #error "Missing functionality..."
 #endif
 }
@@ -87,5 +95,9 @@ void riscv_sbi_set_timer(uint64_t stime_value)
 
 uint64_t riscv_sbi_get_time(void)
 {
+#ifdef CONFIG_NUTTSBI
+  return sbi_mcall_get_time();
+#else
   return rdtime();
+#endif
 }
