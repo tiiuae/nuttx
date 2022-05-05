@@ -27,6 +27,8 @@ OPENSBI_CSRCS = $(wildcard opensbi/opensbi-3rdparty/lib/sbi/*.c)
 OPENSBI_CSRCS += opensbi/opensbi-3rdparty/lib/utils/ipi/aclint_mswi.c
 OPENSBI_CSRCS += opensbi/opensbi-3rdparty/lib/utils/irqchip/plic.c
 OPENSBI_CSRCS += opensbi/opensbi-3rdparty/lib/utils/timer/aclint_mtimer.c
+OPENSBI_CSRCS += $(wildcard opensbi/opensbi-3rdparty/lib/utils/fdt/*.c)
+OPENSBI_CSRCS += $(wildcard opensbi/opensbi-3rdparty/lib/utils/libfdt/*.c)
 
 OPENSBI_ASRCS += opensbi/opensbi-3rdparty/lib/sbi/sbi_expected_trap.S
 OPENSBI_ASRCS += opensbi/opensbi-3rdparty/lib/sbi/sbi_hfence.S

@@ -136,6 +136,23 @@ static struct aclint_mtimer_data mpfs_mtimer =
   .has_64bit_mmio = TRUE,
 };
 
+#if CONFIG_MPFS_HART1_ENTRYPOINT != 0xFFFFFFFFFFFFFFFF
+#define CONFIG_SEL4
+#endif
+
+#ifdef CONFIG_SEL4
+
+#define FDT_LOAD_ADDRESS 0x8B020000
+
+static int generic_domains_init(void)
+{
+  static uint64_t *fdtl;
+  fdtl = (void*)FDT_LOAD_ADDRESS;
+	return fdt_domains_populate((void *)fdtl);
+}
+
+#endif
+
 static const struct sbi_platform_operations platform_ops =
 {
   .console_init   = mpfs_opensbi_console_init,
@@ -146,6 +163,9 @@ static const struct sbi_platform_operations platform_ops =
   .ipi_exit       = NULL,
   .timer_init     = mpfs_timer_init,
   .timer_exit     = NULL,
+#ifdef CONFIG_SEL4
+  .domains_init		= generic_domains_init,
+#endif
 };
 
 static struct aclint_mswi_data mpfs_mswi =
@@ -521,11 +541,28 @@ static void mpfs_opensbi_pmp_setup(void)
  *   None - this will never return
  *
  ****************************************************************************/
+#ifdef CONFIG_SEL4
+static volatile uint8_t sel4_booted = 0;
+
+/* Sel4 on HART 1*/
+static void wait_seL4_hart(uint32_t hartid)
+{
+    if (hartid == 1) {
+        sel4_booted = 1;
+        return;
+    }
+
+    /* Ensure the value is re-read on each loop */
+    while (!__smp_load_acquire(&sel4_booted));
+}
+#endif
 
 void __attribute__((noreturn)) mpfs_opensbi_setup(void)
 {
   uint32_t hartid = current_hartid();
-
+#ifdef CONFIG_SEL4
+  wait_seL4_hart(hartid);
+#endif
   mpfs_opensbi_pmp_setup();
 
   sbi_console_set_device(&mpfs_console);

@@ -31,6 +31,7 @@ INCLUDES += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)common}
 INCLUDES += ${shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)sched}
 ifeq ($(CONFIG_OPENSBI),y)
 INCLUDES += $(shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)opensbi$(DELIM)opensbi-3rdparty$(DELIM)include)
+INCLUDES += $(shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)opensbi$(DELIM)opensbi-3rdparty$(DELIM)lib$(DELIM)utils$(DELIM)libfdt)
 endif
 
 CPPFLAGS += $(INCLUDES)
