@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/* Copyright (c) 2020-2021 Microchip Technology Inc */
+
+/dts-v1/;
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "Microchip PolarFire SoC";
+	compatible = "microchip,mpfs";
+
+
+	chosen {
+        opensbi-domains {
+            compatible = "opensbi,domain,config";
+
+            allmem: allmem {
+                compatible = "opensbi,domain,memregion";
+                base = <0x0 0x0>;
+                order = <64>;
+            };
+
+            tdomain: trusted-domain {
+                compatible = "opensbi,domain,instance";
+                possible-harts = <&cpu1>;
+                boot-hart = <&cpu1>;
+                next-arg1 = <0x0 0x0>;
+                next-addr = <0x0 0x88000000>;
+                next-mode = <0x1>;
+                regions =  <&allmem 0x7>;
+
+            };   
+
+            udomain: untrusted-domain {
+                compatible = "opensbi,domain,instance";
+                possible-harts = <&cpu3 &cpu4>;
+                boot-hart = <&cpu3>;
+                next-arg1 = <0x0 0x0>;
+                next-addr = <0x0 0x89000000>;
+                next-mode = <0x1>;
+                regions =  <&allmem 0x7>;
+            };
+        };
+    };
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu1: cpu@1 {
+			compatible = "sifive,u54-mc", "sifive,rocket0", "riscv";
+			d-cache-block-size = <64>;
+			d-cache-sets = <64>;
+			d-cache-size = <32768>;
+			d-tlb-sets = <1>;
+			d-tlb-size = <32>;
+			device_type = "cpu";
+			i-cache-block-size = <64>;
+			i-cache-sets = <64>;
+			i-cache-size = <32768>;
+			i-tlb-sets = <1>;
+			i-tlb-size = <32>;
+			mmu-type = "riscv,sv39";
+			reg = <1>;
+			riscv,isa = "rv64imafdc";
+			tlb-split;
+			status = "okay";
+			opensbi-domain = <&tdomain>;
+
+
+		};
+
+
+		cpu3: cpu@3 {
+			compatible = "sifive,u54-mc", "sifive,rocket0", "riscv";
+			d-cache-block-size = <64>;
+			d-cache-sets = <64>;
+			d-cache-size = <32768>;
+			d-tlb-sets = <1>;
+			d-tlb-size = <32>;
+			device_type = "cpu";
+			i-cache-block-size = <64>;
+			i-cache-sets = <64>;
+			i-cache-size = <32768>;
+			i-tlb-sets = <1>;
+			i-tlb-size = <32>;
+			mmu-type = "riscv,sv39";
+			reg = <3>;
+			riscv,isa = "rv64imafdc";
+			tlb-split;
+			status = "okay";
+			opensbi-domain = <&udomain>;
+		};
+
+		cpu4: cpu@4 {
+			compatible = "sifive,u54-mc", "sifive,rocket0", "riscv";
+			d-cache-block-size = <64>;
+			d-cache-sets = <64>;
+			d-cache-size = <32768>;
+			d-tlb-sets = <1>;
+			d-tlb-size = <32>;
+			device_type = "cpu";
+			i-cache-block-size = <64>;
+			i-cache-sets = <64>;
+			i-cache-size = <32768>;
+			i-tlb-sets = <1>;
+			i-tlb-size = <32>;
+			mmu-type = "riscv,sv39";
+			reg = <4>;
+			riscv,isa = "rv64imafdc";
+			tlb-split;
+			status = "okay";
+			opensbi-domain = <&udomain>;
+		};
+	};
+};
+	
