@@ -30,6 +30,10 @@
 #include <sbi/riscv_io.h>
 #include <sbi/riscv_encoding.h>
 #include <sbi/sbi_console.h>
+#include <sbi/sbi_domain.h>
+#include <sbi/sbi_error.h>
+#include <sbi/sbi_hartmask.h>
+#include <sbi/sbi_string.h>
 #include <sbi/sbi_platform.h>
 #include <sbi/sbi_init.h>
 #include <sbi/sbi_scratch.h>
@@ -51,6 +55,15 @@
 #define MPFS_PMP_DEFAULT_ADDR      0xfffffffff
 #define MPFS_PMP_DEFAULT_PERM      0x000000009f
 
+#define MPFS_DOMAIN_MAX_COUNT                4
+#define MPFS_DOMAIN_REGION_MAX_COUNT        12
+
+#define MPFS_SEL4_HART                1
+#define MPFS_LINUX_HART               3
+
+#define SEL4_BOOTADDRESS              CONFIG_MPFS_HART1_ENTRYPOINT
+#define LINUX_BOOTADDRESS             CONFIG_MPFS_HART3_ENTRYPOINT
+
 /* The following define is not accessible with assember.  Make sure it's in
  * sync with the assembler usage in mpfs_opensbi_utils.S.
  */
@@ -63,6 +76,10 @@
                                        MPFS_SYSREG_SOFT_RESET_CR_OFFSET)
 #define MPFS_SYSREG_SUBBLK_CLOCK_CR   (MPFS_SYSREG_BASE + \
                                        MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET)
+
+#if SEL4_BOOTADDRESS != 0xFFFFFFFFFFFFFFFF
+#define DOMAIN_INIT_ENABLED
+#endif
 
 /****************************************************************************
  * Private Types
@@ -94,6 +111,7 @@ static int  mpfs_opensbi_console_init(void);
 static int  mpfs_irqchip_init(bool cold_boot);
 static int  mpfs_ipi_init(bool cold_boot);
 static int  mpfs_timer_init(bool cold_boot);
+static int  mpfs_domains_init(void);
 
 /****************************************************************************
  * Extern Function Declarations
@@ -146,6 +164,9 @@ static const struct sbi_platform_operations platform_ops =
   .ipi_exit       = NULL,
   .timer_init     = mpfs_timer_init,
   .timer_exit     = NULL,
+#ifdef DOMAIN_INIT_ENABLED
+  .domains_init   = mpfs_domains_init,
+#endif
 };
 
 static struct aclint_mswi_data mpfs_mswi =
@@ -216,6 +237,14 @@ static const uint64_t sbi_entrypoints[] =
   CONFIG_MPFS_HART2_ENTRYPOINT,
   CONFIG_MPFS_HART3_ENTRYPOINT,
   CONFIG_MPFS_HART4_ENTRYPOINT
+};
+
+static struct sbi_domain mpfs_domains[MPFS_DOMAIN_MAX_COUNT];
+static struct sbi_hartmask mpfs_masks[MPFS_DOMAIN_MAX_COUNT];
+static struct sbi_domain_memregion
+  mpfs_regions[MPFS_DOMAIN_REGION_MAX_COUNT + 1] =
+{
+    0
 };
 
 /****************************************************************************
@@ -497,6 +526,99 @@ static void mpfs_opensbi_pmp_setup(void)
   csr_write(pmpaddr0, MPFS_PMP_DEFAULT_ADDR);
   csr_write(pmpcfg0, MPFS_PMP_DEFAULT_PERM);
   csr_write(pmpcfg2, 0);
+}
+
+/****************************************************************************
+ * Name: mpfs_domains_init
+ *
+ * Description:
+ *   Initializes the domain structures. Hard coded values
+ *   Domain 1: (SEL4)
+ *        Hart 1, Access (RWX) to all memory
+ *   Domain 2: (Linux)
+ *        Hart 3 and 4, Access (RWX) to all memory
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success.
+ *
+ ****************************************************************************/
+
+static int mpfs_domains_init(void)
+{
+  int err = -1;
+  int i = 1;
+  struct sbi_domain_memregion *reg;
+
+  const char sel4_domain_name[] = "Sel4-Tee-Domain";
+  const char linux_domain_name[] = "Linux-Ree-Domain";
+
+  /* Hard code Sel4 domain for hart 1 */
+
+  mpfs_domains[0].boot_hartid = MPFS_SEL4_HART;
+  sbi_strncpy(mpfs_domains[0].name,
+    sel4_domain_name, sizeof(sel4_domain_name));
+  mpfs_domains[0].next_addr = sbi_entrypoints[MPFS_SEL4_HART];
+  mpfs_domains[0].next_mode = PRV_S;
+  mpfs_domains[0].next_arg1 = 0;
+
+  /* All memory, all access */
+
+  sbi_domain_memregion_init(0, ~0UL,
+        (SBI_DOMAIN_MEMREGION_READABLE |
+          SBI_DOMAIN_MEMREGION_WRITEABLE |
+          SBI_DOMAIN_MEMREGION_EXECUTABLE),
+        &mpfs_regions[0]);
+
+  mpfs_domains[0].regions = mpfs_regions;
+  sbi_hartmask_set_hart(1, &mpfs_masks[0]);
+  mpfs_domains[0].possible_harts = &mpfs_masks[0];
+  mpfs_domains[0].system_reset_allowed = true;
+
+  /* Linux Domain, hart 3,4 */
+
+  mpfs_domains[1].boot_hartid = MPFS_LINUX_HART;
+  sbi_strncpy(mpfs_domains[1].name,
+    linux_domain_name, sizeof(linux_domain_name));
+  mpfs_domains[1].next_addr = sbi_entrypoints[MPFS_LINUX_HART];
+  mpfs_domains[1].next_mode = PRV_S;
+  mpfs_domains[1].next_arg1 = 0;
+
+  mpfs_domains[1].regions = mpfs_regions;
+  sbi_hartmask_set_hart(3, &mpfs_masks[1]);
+  sbi_hartmask_set_hart(4, &mpfs_masks[1]);
+  mpfs_domains[1].possible_harts = &mpfs_masks[1];
+
+  sbi_domain_root_add_memregion(&mpfs_regions[0]);
+
+  sbi_domain_for_each_memregion(&root, reg)
+    {
+  if ((reg->flags & SBI_DOMAIN_MEMREGION_READABLE) ||
+      (reg->flags & SBI_DOMAIN_MEMREGION_WRITEABLE) ||
+      (reg->flags & SBI_DOMAIN_MEMREGION_EXECUTABLE))
+    continue;
+  if (MPFS_DOMAIN_REGION_MAX_COUNT <= i)
+      return SBI_EINVAL;
+  sbi_memcpy(&mpfs_regions[i++], reg, sizeof(*reg));
+    }
+
+  err = sbi_domain_register(&mpfs_domains[0], &mpfs_masks[0]);
+  if (err)
+    {
+      sbi_printf("Sel4 Domain Register failed %d\n", err);
+      return err;
+    }
+
+  err = sbi_domain_register(&mpfs_domains[1], &mpfs_masks[1]);
+  if (err)
+    {
+      sbi_printf("Linux Domain Register failed %d\n", err);
+      return err;
+    }
+
+  return 0;
 }
 
 /****************************************************************************
