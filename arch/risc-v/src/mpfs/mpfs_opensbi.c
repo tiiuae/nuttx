@@ -105,6 +105,12 @@ static int  mpfs_timer_init(bool cold_boot);
 
 extern void riscv_lowputc(char ch);
 
+/* domains init implemented in board specific file */
+
+#ifdef CONFIG_BOARD_OPENSBI_DOMAINS
+extern int board_domains_init(void);
+#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -146,6 +152,9 @@ static const struct sbi_platform_operations platform_ops =
   .ipi_exit       = NULL,
   .timer_init     = mpfs_timer_init,
   .timer_exit     = NULL,
+#ifdef CONFIG_BOARD_OPENSBI_DOMAINS
+  .domains_init   = board_domains_init,
+#endif
 };
 
 static struct aclint_mswi_data mpfs_mswi =

@@ -32,6 +32,7 @@ config ARCH_CHIP_MPFS250T_FCSG536
 
 endchoice # MPFS Chip Selection
 
+
 config MPFS_ENABLE_DPFPU
 	bool "MPFS DP_FPU Support"
 	default n
@@ -57,6 +58,11 @@ config MPFS_OPENSBI
         default n
         ---help---
                 This uses a ld-envm-opensbi.script linker script and the mpfs_opensbi.c code to use external OpenSBI.
+
+config BOARD_OPENSBI_DOMAINS
+	bool "multiple boot domains"
+	depends on MPFS_OPENSBI
+	default n
 
 config MPFS_HART0_SBI
 	bool "HART0 boots via SBI"
