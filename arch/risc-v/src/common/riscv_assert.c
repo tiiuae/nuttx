@@ -295,7 +295,6 @@ static inline void riscv_showtasks(void)
 /****************************************************************************
  * Name: riscv_dumpstate
  ****************************************************************************/
-
 static void riscv_dumpstate(void)
 {
   struct tcb_s *rtcb = running_task();
@@ -399,6 +398,7 @@ static void riscv_dumpstate(void)
 }
 #else
 #  define riscv_dumpstate()
+#  define riscv_showtasks()
 #endif /* CONFIG_ARCH_STACKDUMP */
 
 /****************************************************************************

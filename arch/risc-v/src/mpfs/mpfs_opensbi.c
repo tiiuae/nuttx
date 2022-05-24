@@ -209,14 +209,15 @@ static const struct sbi_platform platform =
 
 /* This must go into l2_scratchpad region, starting at 0x0a000000. */
 
-static sbi_scratch_holder_t g_scratches[MPFS_MAX_NUM_HARTS] \
-               __attribute__((section(".l2_scratchpad")));
+extern uint64_t __l2_scratchpad_start;
+
+static sbi_scratch_holder_t *g_scratches = (sbi_scratch_holder_t *)&__l2_scratchpad_start;
+/*[MPFS_MAX_NUM_HARTS] \
+               __attribute__((section(".l2_scratchpad"))); */
 
 /* These stacks are used in the mpfs_opensbi_utils.S */
-
-uint8_t g_hart_stacks[SBI_PLATFORM_DEFAULT_HART_STACK_SIZE * \
-                      MPFS_HART_COUNT] \
-                      __attribute__((section(".ddrstorage"), aligned(16)));
+extern uint64_t __ddr_storage;
+uint8_t *g_hart_stacks = (uint8_t*)&__ddr_storage;
 
 static const uint64_t sbi_entrypoints[] =
 {
@@ -531,6 +532,11 @@ static void mpfs_opensbi_pmp_setup(void)
  *
  ****************************************************************************/
 
+
+
+
+
+
 void __attribute__((noreturn)) mpfs_opensbi_setup(void)
 {
   uint32_t hartid = current_hartid();
@@ -545,6 +551,7 @@ void __attribute__((noreturn)) mpfs_opensbi_setup(void)
   g_scratches[hartid].scratch.next_addr = sbi_entrypoints[hartid];
   g_scratches[hartid].scratch.next_arg1 = 0;
 
+  sbi_printf("OPENSBI INIT %u\n", hartid);
   sbi_init(&g_scratches[hartid].scratch);
 
   /* Will never get here */

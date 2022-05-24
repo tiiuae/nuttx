@@ -112,6 +112,10 @@ endif
 ifeq (${CONFIG_MPFS_OPENSBI},y)
 CHIP_ASRCS += mpfs_opensbi_utils.S
 CHIP_CSRCS += mpfs_opensbi.c
+CHIP_CSRCS += mpfs_sbi_init.c
+CHIP_CSRCS += mpfs_sbi_ecall.c
+CHIP_CSRCS += sbi_hart.c
+CHIP_CSRCS += riscv_asm.c
 endif
 
 ifeq ($(CONFIG_USBDEV),y)

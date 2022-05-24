@@ -52,6 +52,16 @@ config IRQ_NSTACKS
 	depends on MPFS_BOOTLOADER
 	default 5
 
+config SIGNED_SEL4
+	bool "Check Sel4 image signature"
+	depends on MPFS_OPENSBI
+	default n
+
+config SIGNED_UBOOT
+	bool "Check uboot image signature"
+	depends on MPFS_OPENSBI
+	default n
+
 config MPFS_OPENSBI
         bool "Use OpenSBI"
         depends on MPFS_BOOTLOADER && OPENSBI
