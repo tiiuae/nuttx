@@ -1,7 +1,7 @@
 /****************************************************************************
- * arch/risc-v/src/mpfs/mpfs_corepwm.h
+ * arch/riscv/src/mpfs/mpfs_fpga_canfd.h
  *
-  * Licensed to the Apache Software Foundation (ASF) under one or more
+ * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
  * ASF licenses this file to you under the Apache License, Version 2.0 (the
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_MPFS_COREPWM_H
-#define __ARCH_RISCV_SRC_MPFS_MPFS_MPFS_COREPWM_H
+#define __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
+#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
 
 /****************************************************************************
  * Included Files
@@ -33,16 +33,16 @@
 
 /* Configuration ************************************************************/
 
-/* Check if PWM support for any channel is enabled. */
+/* Check if CAN-FD support is enabled. */
 
-#ifdef CONFIG_MPFS_HAVE_COREPWM
+#ifdef CONFIG_MPFS_CANFD
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <arch/board/board.h>
-#include "hardware/mpfs_corepwm.h"
+#include "hardware/mpfs_fpga_canfd.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -72,22 +72,19 @@ extern "C"
  ****************************************************************************/
 
 /****************************************************************************
- * Name: mpfs_corepwm_init
+ * Name: mpfs_canfd_init
  *
  * Description:
- *   Initialize a CorePWM block.
- *
- * Input Parameters:
- *   pwmid - A number identifying the pwm block. The number of valid
- *           IDs varies depending on the configuration of the FPGA.
+ *   Initialize a CANFD block.
  *
  * Returned Value:
- *   On success, a pointer to the MPFS CorePWM lower half PWM driver is
- *   returned. NULL is returned on any failure.
+ *   OK on success, Negated errno on failure
  *
  ****************************************************************************/
 
-struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid);
+#ifdef CONFIG_NETDEV_LATEINIT
+int mpfs_canfd_init();
+#endif
 
 #undef EXTERN
 #if defined(__cplusplus)
@@ -95,5 +92,5 @@ struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid);
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* CONFIG_MPFS_HAVE_COREPWM */
-#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_MPFS_COREPWM_H */
+#endif /* CONFIG_MPFS_CANFD */
+#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H */
