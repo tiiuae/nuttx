@@ -230,6 +230,7 @@ config MPFS_HAVE_UART4
 	select UART4_SERIALDRIVER
 	select ARCH_HAVE_SERIAL_TERMIOS
 
+
 # These are the peripheral selections proper
 
 config MPFS_SPI0
@@ -471,6 +472,36 @@ config MPFS_COREPWM1_NCHANNELS
 	default 2
 	range 1 16
 	depends on MPFS_COREPWM1
+
+comments "CAN-FD Options"
+config ARCH_HAVE_CAN_ERRORS
+        bool
+        default n
+
+config MPFS_CANFD
+	bool "CAN FD"
+	select ARCH_HAVE_CAN_ERRORS
+	default n
+
+config CANFD_ARBI_BITRATE
+	int "CAN FD Arbitration phase bitrate"
+	depends on MPFS_CANFD
+	default 1000000
+
+config CANFD_ARBI_SAMPLEP
+	int "CAN FD Arbitration phase sample point"
+	depends on MPFS_CANFD
+	default 80
+
+config CANFD_DATA_BITRATE
+	int "CAN FD Arbitration phase bitrate"
+	depends on MPFS_CANFD
+	default 4000000
+
+config CANFD_DATA_SAMPLEP
+	int "CAN FD Arbitration phase sample point"
+	depends on MPFS_CANFD
+	default 90
 
 endmenu
 
