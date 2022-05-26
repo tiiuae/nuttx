@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/riscv/src/mpfs/hardware/mpfs_fpga_can.h
+ * arch/riscv/src/mpfs/hardware/mpfs_fpga_canfd.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,16 +18,12 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CAN_H
-#define __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CAN_H
+#ifndef __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CANFD_H
+#define __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CANFD_H
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-/* CAN-FD features *********************************************************/
-
-
 
 /* Register Offsets ********************************************************/
 
@@ -69,7 +65,7 @@
 
 #define MPFS_CANFD_FILTER_A_MASK_OFFSET                         (0x3C)
 
-#define MPFS_CANFD_FITLER_A_VAL_OFFSET                          (0x40)
+#define MPFS_CANFD_FILTER_A_VAL_OFFSET                          (0x40)
 
 #define MPFS_CANFD_FILTER_B_MASK_OFFSET                         (0x44)
 
@@ -359,7 +355,7 @@
 #define MPFS_CANFD_RX_STATUS_RXF                                (1 << 1)
 #define MPFS_CANFD_RX_STATUS_RXMOF                              (1 << 2)
 #define MPFS_CANFD_RX_STATUS_RXFRC_SHIFT                        (4)
-#define MPFS_CANFD_RX_STATUS_RXFRC                              (0x03FF << MPFS_CANFD_RX_STATUS_RXFRC_SHIFT)
+#define MPFS_CANFD_RX_STATUS_RXFRC                              (0x07FF << MPFS_CANFD_RX_STATUS_RXFRC_SHIFT)
 #define MPFS_CANFD_RX_STATUS_RTSOP                              (1 << 16)
 
 /*  RX_DATA registers */
@@ -470,4 +466,4 @@
 /*  TIMESTAMP_HIGH registers */
 #define MPFS_CANFD_TIMESTAMP_HIGH_TIMESTAMP_HIGH                (0xFFFFFFFF << 0)
 
-#endif /* __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CAN_H */
+#endif /* __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CANFD_H */
