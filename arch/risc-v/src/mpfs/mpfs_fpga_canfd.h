@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#define __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
-#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
+#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CANFD_H
+#define __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CANFD_H
 
 /****************************************************************************
  * Included Files
@@ -72,7 +72,7 @@ extern "C"
  ****************************************************************************/
 
 /****************************************************************************
- * Name: mpfs_canfd_init
+ * Name: mpfs_fpga_canfd_init
  *
  * Description:
  *   Initialize a CANFD block.
@@ -82,9 +82,7 @@ extern "C"
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NETDEV_LATEINIT
-int mpfs_canfd_init(void);
-#endif
+int mpfs_fpga_canfd_init(void);
 
 #undef EXTERN
 #if defined(__cplusplus)
@@ -93,4 +91,4 @@ int mpfs_canfd_init(void);
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_MPFS_CANFD */
-#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H */
+#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CANFD_H */
