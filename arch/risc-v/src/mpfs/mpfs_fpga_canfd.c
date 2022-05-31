@@ -95,39 +95,26 @@
 #define FLAGEFF                     (1 << 31) /* Extended frame format */
 #define FLAGRTR                     (1 << 30) /* Remote transmission request */
 
-#define RXMBCOUNT                   5
-#define TXMBCOUNT                   2
-#define TOTALMBCOUNT                RXMBCOUNT + TXMBCOUNT
-
-#define IFLAG1_RX                   ((1 << RXMBCOUNT)-1)
-#define IFLAG1_TX                   (((1 << TXMBCOUNT)-1) << RXMBCOUNT)
 
 #define CAN_FIFO_NE                 (1 << 5)
 #define CAN_FIFO_OV                 (1 << 6)
 #define CAN_FIFO_WARN               (1 << 7)
-#define CAN_EFF_FLAG                0x80000000 /* EFF/SFF is set in the MSB */
+
 
 #define POOL_SIZE                   1
 
 #define MSG_DATA                    sizeof(struct timeval)
 
-/* CAN bit timing values  */
-#define CLK_FREQ                    80000000
-#define PRESDIV_MAX                 256
 
-#define SEG_MAX                     8
-#define SEG_MIN                     1
-#define TSEG_MIN                    2
-#define TSEG1_MAX                   17
-#define TSEG2_MAX                   9
-#define NUMTQ_MAX                   26
+/* Special address description flags for the CAN_ID */
+#define CAN_EFF_FLAG                0x80000000  /* EFF/SFF is set in the MSB */
+#define CAN_RTR_FLAG                0x40000000  /* remote transmission request */
+#define CAN_ERR_FLAG                0x20000000  /* error message frame */
 
-#define SEG_FD_MAX                  32
-#define SEG_FD_MIN                  1
-#define TSEG_FD_MIN                 2
-#define TSEG1_FD_MAX                39
-#define TSEG2_FD_MAX                9
-#define NUMTQ_FD_MAX                49
+/* valid bits in CAN ID for frame formats */
+#define CAN_SFF_MASK                0x000007FF /* standard frame format (SFF) */
+#define CAN_EFF_MASK                0x1FFFFFFF /* extended frame format (EFF) */
+#define CAN_ERR_MASK                0x1FFFFFFF /* omit EFF, RTR, ERR flags */
 
 /* CAN control mode */
 #define CAN_CTRLMODE_LOOPBACK		    0x01	/* Loopback mode */
@@ -142,12 +129,31 @@
 #define CAN_CTRLMODE_TDC_AUTO		    0x200	/* CAN transiver automatically calculates TDCV */
 #define CAN_CTRLMODE_TDC_MANUAL     0x400	/* TDCV is manually set up by user */
 
-/* Interrupt flags for RX fifo */
-#define IFLAG1_RXFIFO               (CAN_FIFO_NE | CAN_FIFO_WARN | CAN_FIFO_OV)
 
 #define MPFS_CAN_STATE_TO_TEXT_ENTRY(st) #st
 
-static int peak_tx_mailbox_index_ = 0;
+
+/* Utils defs */
+#define MPFS_CAN_FD_TXTNF(priv) (!!(getreg32(priv->base + MPFS_CANFD_STATUS_OFFSET) & MPFS_CANFD_STATUS_TXNF))
+#define MPFS_CAN_FD_ENABLED(priv) (!!(getreg32(priv->base + MPFS_CANFD_MODE_OFFSET) & MPFS_CANFD_MODE_ENA))
+
+/* TXT buffer */
+enum mpfs_can_txtb_status {
+	TXT_NOT_EXIST       = 0x0,
+	TXT_RDY             = 0x1,
+	TXT_TRAN            = 0x2,
+	TXT_ABTP            = 0x3,
+	TXT_TOK             = 0x4,
+	TXT_ERR             = 0x6,
+	TXT_ABT             = 0x7,
+	TXT_ETY             = 0x8,
+};
+
+enum mpfs_can_txtb_command {
+	TXT_CMD_SET_EMPTY   = 0x01,
+	TXT_CMD_SET_READY   = 0x02,
+	TXT_CMD_SET_ABORT   = 0x04
+};
 
 /****************************************************************************
  * Private Types
@@ -233,12 +239,6 @@ struct mpfs_can_device_stats_s {
   uint32_t restarts;     /* CAN controller re-starts */
 };
 
-enum mpfs_can_mode_s {
-  CAN_MODE_STOP = 0,
-  CAN_MODE_START,
-  CAN_MODE_SLEEP
-};
-
 
 /*
  * CAN common private data
@@ -316,13 +316,13 @@ struct mb_s
  */
 /* CAN_Frame_format memory map */
 enum mpfs_canfd_can_frame_format {
-	MPFS_CANFD_FRAME_FORMAT_W       = 0x0,
-	MPFS_CANFD_IDENTIFIER_W         = 0x4,
-	MPFS_CANFD_TIMESTAMP_L_W        = 0x8,
-	MPFS_CANFD_TIMESTAMP_U_W        = 0xc,
-	MPFS_CANFD_DATA_1_4_W           = 0x10,
-	MPFS_CANFD_DATA_5_8_W           = 0x14,
-	MPFS_CANFD_DATA_61_64_W         = 0x4c,
+	MPFS_CANFD_FRAME_FORMAT_W_OFFSET       = 0x0,
+	MPFS_CANFD_IDENTIFIER_W_OFFSET         = 0x4,
+	MPFS_CANFD_TIMESTAMP_L_W_OFFSET        = 0x8,
+	MPFS_CANFD_TIMESTAMP_U_W_OFFSET        = 0xc,
+	MPFS_CANFD_DATA_1_4_W_OFFSET           = 0x10,
+	MPFS_CANFD_DATA_5_8_W_OFFSET           = 0x14,
+	MPFS_CANFD_DATA_61_64_W_OFFSET         = 0x4c,
 };
 /* CANFD_Frame_format memory region */
 
@@ -393,6 +393,12 @@ struct mpfs_driver_s
   uint32_t drv_flags;           /* driver flag */
 
 
+  /* tx */
+  unsigned int txb_head;
+	unsigned int txb_tail;
+	uint32_t txb_prio;
+	unsigned int ntxbufs;
+
   /* This holds the information visible to the NuttX network */
 
   struct net_driver_s dev;      /* Interface understood by the network */
@@ -439,7 +445,7 @@ static uint8_t g_rx_pool[(sizeof(struct canfd_frame) + MSG_DATA) * POOL_SIZE];
  *  None
  ****************************************************************************/
 
-static const char *can_state_to_str(enum can_state state)
+static const char *can_state_to_str(enum mpfs_can_state_e state)
 {
 	const char *txt = NULL;
 
@@ -451,13 +457,69 @@ static const char *can_state_to_str(enum can_state state)
 
 
 /****************************************************************************
+ * Function: mpfs_rotate_txb_prio
+ *
+ * Description:
+ *  Rotates priorities of TXT Buffers
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  None
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static void mpfs_can_rotate_txb_prio(FAR struct mpfs_driver_s *priv)
+{
+	uint32_t prio = priv->txb_prio;
+
+	prio = (prio << 4) | ((prio >> ((priv->ntxbufs - 1) * 4)) & 0xF);
+	priv->txb_prio = prio;
+  putreg32(prio, priv->base + MPFS_CANFD_TX_PRIORITY_OFFSET);
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_give_txtb_cmd
+ *
+ * Description:
+ *  Apply command on a TXT buffer
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *  cmd   - Cmd to give
+ *  buf   - The TXT buffer index (0-based)
+ *
+ * Returned Value:
+ *  None
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static void mpfs_can_give_txtb_cmd(FAR struct mpfs_driver_s *priv, enum mpfs_can_txtb_command cmd, 
+                                    uint8_t buf)
+{
+	uint32_t tx_cmd = cmd;
+
+	tx_cmd |= 1 << (buf + 8);
+	putreg32(tx_cmd, priv->base + MPFS_CANFD_TX_COMMAND_OFFSET);
+}
+
+
+/****************************************************************************
  * Function: mpfs_txdone
  *
  * Description:
- *  Check transmit interrupt flags and clear them
+ *  Tx done interrupt service rountine
  *
  * Input Parameters:
- *  priv  - Reference to the driver state structure
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
  *
  * Returned Value:
  *  None
@@ -469,56 +531,89 @@ static const char *can_state_to_str(enum can_state state)
 
 static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
 {
-  uint32_t flags;
-  uint32_t mbi;
-  uint32_t mb_bit;
+  bool first = true;
+  bool some_buffers_processed;
+  unsigned long flags;
+  enum mpfs_can_txtb_status txtb_status;
+  uint32_t txtb_id;
 
-  flags  = getreg32(priv->base + S32K1XX_CAN_IFLAG1_OFFSET);
-  flags &= IFLAG1_TX;
-
-  /* TODO First Process Error aborts */
-
-  /* Process TX completions */
-
-  mb_bit = 1 << RXMBCOUNT;
-  for (mbi = 0; flags && mbi < TXMBCOUNT; mbi++)
+  do
+  {
+    some_buffers_processed = false;
+    while((int)(priv->txb_head - priv->txb_tail) > 0)
     {
-      if (flags & mb_bit)
+      txtb_id = priv->txb_tail % priv->ntxbufs;
+      txtb_status = mpfs_can_get_tx_status(priv, txtb_id);
+      bool other_status = false;
+
+      switch (txtb_status)
+      {
+      case TXT_TOK:
+        ninfo("%s: TXT_OK\n", __func__);
+        break;
+      case TXT_ERR:
+        nwarn("%s: TXB in Error state\n", __func__);
+        break;
+      case TXT_ABT:
+        nwarn("%s: TXB in Aborted state\n", __func__);
+        break;
+      default:
+        other_status = true;
+
+        /* Bug only if the first buffer is not finished, otherwise it is
+				 * pretty much expected.
+				 */
+        if (first)
         {
-          putreg32(mb_bit, priv->base + S32K1XX_CAN_IFLAG1_OFFSET);
-          flags &= ~mb_bit;
-          NETDEV_TXDONE(&priv->dev);
-#ifdef TX_TIMEOUT_WQ
-          /* We are here because a transmission completed, so the
-           * corresponding watchdog can be canceled
-           * mailbox be set to inactive
-           */
-
-          wd_cancel(&priv->txtimeout[mbi]);
-          struct mb_s *mb = &priv->tx[mbi];
-          mb->cs.code = CAN_TXMB_INACTIVE;
-#endif
+          nerr("%s: BUG, TXB#%u not in a finished state (0x%x)!\n", __func__, txtb_id, txtb_status);
+          return;
         }
+        else
+        {
+          if (some_buffers_processed)
+          {
+            /* Clear the interrupt again. We do not want to receive again interrupt for
+            * the buffer already handled. If it is the last finished one then it would
+            * cause log of spurious interrupt.
+            */
+            putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+          }
+        }
+        break;
+      }
 
-      mb_bit <<= 1;
+      if (other_status)
+        break;
+      else
+      {  
+        priv->txb_tail++;
+        first = false;
+        some_buffers_processed = true;
+
+        /* Adjust priorities before marking the buffer as empty */
+        mpfs_can_rotate_txb_prio(priv);
+        mpfs_can_give_txtb_cmd(priv, TXT_CMD_SET_EMPTY, txtb_id);
+      }
     }
+  } while (some_buffers_processed);
 }
+
 
 /****************************************************************************
  * Function: mpfs_txdone_work
  *
  * Description:
- *   An interrupt was received indicating that the last TX packet(s) is done
+ *  An interrupt was received indicating that the last TX packet(s) is done
  *
  * Input Parameters:
- *   priv  - Reference to the driver state structure
- *Returned Value:
- *
- *    None
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ * 
+ * Returned Value:
+ *  None
  *
  * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *   We are not in an interrupt context so that we can lock the network.
+ *  Global interrupts are disabled by the watchdog logic.
+ *  We are not in an interrupt context so that we can lock the network.
  *
  ****************************************************************************/
 
@@ -526,12 +621,12 @@ static void mpfs_txdone_work(FAR void *arg)
 {
   FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)arg;
 
+  /* Clear TX interrupt flags */
   mpfs_txdone(priv);
 
   /* There should be space for a new TX in any event.  Poll the network for
    * new XMIT data
    */
-
   net_lock();
   devif_timer(&priv->dev, 0, mpfs_txpoll);
   net_unlock();
@@ -539,20 +634,20 @@ static void mpfs_txdone_work(FAR void *arg)
 
 
 /****************************************************************************
- * Function: mpfs_read_fault_state
+ * Function: mpfs_can_read_fault_state
  * 
  * Description:
  *    Reads FPGA CANFD fault confinement state 
  *    
  * Input Parameters:
- *    priv  - Reference to the driver state structure
+ *    priv  - Pointer to the private FPGA CANFD driver state structure
  *
  * Returned Value:
  *    Fault confinement state of controller
  *
  ****************************************************************************/
 
-static enum can_state mpfs_read_fault_state(FAR struct mpfs_driver_s *priv)
+static enum mpfs_can_state_e mpfs_can_read_fault_state(FAR struct mpfs_driver_s *priv)
 {
 	u_int32_t ewl_erp_fs_reg, rec_tec_reg, ew_limit, rec_val, tec_val;
 
@@ -587,7 +682,7 @@ static enum can_state mpfs_read_fault_state(FAR struct mpfs_driver_s *priv)
  *    Reads FPGA CANFD RX/TX error counter
  *    
  * Input Parameters:
- *    priv  - Reference to the driver state structure
+ *    priv  - Pointer to the private FPGA CANFD driver state structure
  *    bec   - Pointer to Error counter structure
  * 
  * Returned Value:
@@ -611,7 +706,7 @@ static void mpfs_get_rec_tec(FAR struct mpfs_driver_s *priv, struct mpfs_can_ber
  *    Error frame ISR
  *    
  * Input Parameters:
- *    priv  - Reference to the driver state structure
+ *    priv  - Pointer to the private FPGA CANFD driver state structure
  *    isr   - Interrupt status register value
  *
  * Returned Value:
@@ -628,8 +723,8 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
 	uint32_t err_capt_retr_ctr_alc_reg;
   uint32_t error_type, error_pos, alc_id_field, alc_bit;
 
-	ctucan_get_rec_tec(priv, &bec);
-	state = ctucan_read_fault_state(priv);
+	mpfs_can_get_rec_tec(priv, &bec);
+	state = mpfs_can_read_fault_state(priv);
 	err_capt_retr_ctr_alc_reg = getreg32(priv->base + MPFS_CANFD_ERR_CAPT_OFFSET);
 
   error_type = ((err_capt_retr_ctr_alc_reg & MPFS_CANFD_ERR_CAPT_ERR_TYPE) >> MPFS_CANFD_ERR_CAPT_ERR_TYPE_SHIFT);
@@ -693,7 +788,7 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
 	}
 
 	/* Check for Bus Error interrupt */
-	if (FIELD_GET(REG_INT_STAT_BEI, isr)) {
+	if (MPFS_CANFD_INT_STAT_BEI & isr) {
 		ninfo("%s: bus error\n", __func__);
     cf->can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
     cf->data[2] = CAN_ERR_PROT_UNSPEC;
@@ -734,7 +829,7 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
 static int mpfs_fpga_interrupt(int irq, FAR void *context,
                                      FAR void *arg)
 {
-  FAR struct mpfs_driver_s *priv = (struct mpfs_driver_s *)arg;
+  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)arg;
 
   uint32_t isr, icr, imask;
   int irq_loops;
@@ -799,6 +894,257 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context,
 
 
 /****************************************************************************
+ * Function: mpfs_get_tx_status
+ *
+ * Description:
+ *  Get status of txt buffer
+ * 
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *  buf   - txt buffer index to get status of (0-based)
+ *
+ * Returned Value:
+ *  Status of txt buffer
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static enum mpfs_can_txtb_status mpfs_can_get_tx_status(FAR struct mpfs_driver_s *priv, uint8_t buf)
+{
+	uint32_t tx_status = getreg32(priv->base + MPFS_CANFD_TX_STATUS_OFFSET);
+	enum mpfs_can_txtb_status status = (tx_status >> (buf * 4)) & 0xF;  /* TODO: 0x7 or 0xF ?? */
+
+	return status;
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_is_txt_buf_writable
+ *
+ * Description:
+ *  Check if frame can be inserted to TXT Buffer
+ * 
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *  buf   - txt buffer index to get status of (0-based)
+ *
+ * Returned Value:
+ *  True  - Frame can be inserted to txt buffer
+ *  False - If attempted, frame will not be inserted to txt buffer
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv, uint8_t buf)
+{
+	enum mpfs_can_txtb_status buf_status;
+
+	buf_status = mpfs_can_get_tx_status(priv, buf);
+	if (buf_status == TXT_RDY || buf_status == TXT_TRAN || buf_status == TXT_ABTP)
+		return false;
+
+	return true;
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_insert_frame
+ *
+ * Description:
+ *  Insert frame to txt buffer on the FPGA CANFD controller
+ * 
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *  cf    - Pointer to the CANFD frame to be inserted
+ *  buf   - txt buffer index to which the cf frame is inserted (0-based)
+ *
+ * Returned Value:
+ *  True  - Frame inserted successfully
+ *  False - Frame was not inserted due to one of:
+ *            1. Txt buffer is not writable (it is in a wrong state)
+ *            2. Invalid txt buffer index
+ *            3. Invalid frame length
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct canfd_frame *cf, uint8_t buf)
+{
+	uint32_t buf_base;
+	uint32_t ffw = 0;
+	uint32_t idw = 0;
+	unsigned int i;
+
+  /* Check for invalid txt buffer index */
+	if (buf >= priv->ntxbufs)
+		return false;
+
+  /* Check if it is possible to insert frame to txt buffer */
+	if (!mpfs_can_is_txt_buf_writable(priv, buf))
+		return false;
+
+  /* Check for invalid CANFD frame length */
+	if (cf->len > CANFD_MAX_DLEN)
+		return false;
+
+	/* Prepare Frame format */
+	if (cf->can_id & CAN_RTR_FLAG)  /* remote transmission request */
+		ffw |= MPFS_CANFD_FRAME_FORMAT_W_RTR;
+
+	if (cf->can_id & CAN_EFF_FLAG)  /* extended frame format (29 bit long id) */
+		ffw |= MPFS_CANFD_FRAME_FORMAT_W_IDE;
+
+  ffw |= MPFS_CANFD_FRAME_FORMAT_W_FDF; /* FD Frame */
+  if (cf->flags & CANFD_BRS)
+    ffw |= MPFS_CANFD_FRAME_FORMAT_W_BRS; /* Bit rate switch */
+
+
+  ffw |= MPFS_CANFD_FRAME_FORMAT_W_DLC & (len_to_can_dlc[cf->len] << MPFS_CANFD_FRAME_FORMAT_W_DLC_SHIFT);
+
+	/* Prepare identifier */
+	if (cf->can_id & CAN_EFF_FLAG)
+		idw = cf->can_id & CAN_EFF_MASK;
+	else
+    idw = MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE &
+          ((cf->can_id & CAN_SFF_MASK) << MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE);
+  
+
+	/* Write ID, Frame format, Don't write timestamp -> Time triggered transmission disabled */
+	buf_base = (buf + 1) * 0x100;
+  putreg(ffw, priv->base + buf_base + MPFS_CANFD_FRAME_FORMAT_W_OFFSET);
+  putreg(idw, priv->base + buf_base + MPFS_CANFD_IDENTIFIER_W_OFFSET);
+  
+	/* Write Data payload */
+	if (!(cf->can_id & CAN_RTR_FLAG))
+  {
+		for (i = 0; i < cf->len; i += 4)
+    {
+      uint32_t data = *(uint32_t *)(cf->data + i);
+			putreg32(data, priv->base + buf_base + MPFS_CANFD_DATA_1_4_W_OFFSET + i);
+		}
+	}
+
+	return true;
+}
+
+
+/****************************************************************************
+ * Function: mpfs_transmit
+ *
+ * Description:
+ *  Start hardware transmission.  Called either from the txdone interrupt
+ *  handling or from watchdog based polling.
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  OK on success; a negated errno on failure
+ *
+ * Assumptions:
+ *  May or may not be called from an interrupt handler.  In either case,
+ *  global interrupts are disabled, either explicitly or indirectly through
+ *  interrupt handling logic.
+ *
+ ****************************************************************************/
+
+static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
+{
+  uint32_t txtb_id;
+  bool ok;
+  unsigned long flags;
+
+  /* Retrieve the CANFD frame from network device buffer */
+  struct canfd_frame *cf = (struct canfd_frame *)priv->dev.d_buf;
+  
+  /* TODO: drop invalid buffer dev.d_buf if it contains invalid can frame?? */
+
+  /* Get the current txt buffer ID */
+  txtb_id = priv->txb_head % priv->ntxbufs;
+  ninfo("%s: using TXB#%u\n", __func__, txtb_id);
+
+  /* Insert CANFD frame into controller txt buffer at txtb_id */
+  ok = mpfs_can_insert_frame(priv, cf, txtb_id);
+  if(!ok)
+  {
+    nerr("%s: BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n", __func__);
+    NETDEV_TXERRORS(&priv->dev);
+    return OK;
+  }
+  
+  /* Now, write to txt buffer seems ok, use txt command to set buffer state to READY for xmit */
+  mpfs_can_give_txtb_cmd(priv, TXT_CMD_SET_READY, txtb_id);
+  priv->txb_head++;
+
+  /* Increment statistics */
+  NETDEV_TXPACKETS(&priv->dev);
+
+  return OK;
+}
+
+/****************************************************************************
+ * Function: mpfs_txpoll
+ *
+ * Description:
+ *   The transmitter is available, check if the network has any outgoing
+ *   packets ready to send.  This is a callback from devif_poll().
+ *   devif_poll() may be called:
+ *
+ *   1. When the preceding TX packet send is complete,
+ *   2. When the preceding TX packet send timesout and the interface is reset (TODO: support latter)
+ *   3. During normal TX polling
+ *
+ * Input Parameters:
+ *   dev  - Reference to the NuttX driver state structure
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno on failure
+ *
+ * Assumptions:
+ *   May or may not be called from an interrupt handler.  In either case,
+ *   global interrupts are disabled, either explicitly or indirectly through
+ *   interrupt handling logic.
+ *
+ ****************************************************************************/
+
+static int mpfs_txpoll(struct net_driver_s *dev)
+{
+  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+
+  /* If the polling resulted in data that should be sent out on the network,
+   * the field d_len is set to a value > 0.
+   */
+  if (priv->dev.d_len > 0)
+  {
+    if (!devif_loopback(&priv->dev))
+    {
+      /* Send the packet */
+      mpfs_transmit(priv);
+
+      /* Check if there is room in the device to hold another packet. If
+        * not, return a non-zero value to terminate the poll.
+        */
+
+      if (!MPFS_CAN_FD_TXTNF(priv))
+        return -EBUSY;
+    }
+  }
+
+  /* If zero is returned, the polling will continue until all connections
+   * have been examined.
+   */
+
+  return OK;
+}
+
+
+/****************************************************************************
  * Function: mpfs_txavail_work
  *
  * Description:
@@ -820,27 +1166,21 @@ static void mpfs_txavail_work(FAR void *arg)
   FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)arg;
 
   /* Ignore the notification if the interface is not yet up */
-
-  net_lock();
   if (priv->bifup)
+  {
+    /*
+     * Check if there is room in the controller to hold another outgoing packet
+     */
+    if (MPFS_CAN_FD_TXTNF(priv))
     {
-      /* Check if there is room in the hardware to hold another outgoing
-       * packet.
+      /*
+       * Yes, there is, poll the network for new TXT transmit
        */
-
-      if (mpfs_waitesr2_change(priv->base,
-                             (CAN_ESR2_IMB | CAN_ESR2_VPS),
-                             (CAN_ESR2_IMB | CAN_ESR2_VPS)))
-        {
-          /* No, there is space for another transfer.  Poll the network for
-           * new XMIT data.
-           */
-
-          devif_timer(&priv->dev, 0, mpfs_txpoll);
-        }
+      net_lock();
+      devif_timer(&priv->dev, 0, mpfs_txpoll);
+      net_unlock();
     }
-
-  net_unlock();
+  }
 }
 
 
@@ -848,18 +1188,18 @@ static void mpfs_txavail_work(FAR void *arg)
  * Function: mpfs_txavail
  *
  * Description:
- *   Driver callback invoked when new TX data is available.  This is a
- *   stimulus perform an out-of-cycle poll and, thereby, reduce the TX
- *   latency.
+ *  Driver callback invoked when new TX data is available.  This is a
+ *  stimulus perform an out-of-cycle poll and, thereby, reduce the TX
+ *  latency.
  *
  * Input Parameters:
- *   dev  - Reference to the NuttX driver state structure
+ *  dev  - Reference to the NuttX driver state structure
  *
  * Returned Value:
- *   None
+ *  0 - OK
  *
  * Assumptions:
- *   Called in normal user mode
+ *  Called in normal user mode
  *
  ****************************************************************************/
 
@@ -885,16 +1225,359 @@ static int mpfs_txavail(struct net_driver_s *dev)
 
 
 /****************************************************************************
+ * Function: mpfs_can_btr
+ *
+ * Description:
+ *  Set FPGA CAN controller data bittiming
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  Zero (OK) on success, -%EPERM if controller is enabled
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv, struct mpfs_can_bittiming_s *bt, bool nominal)
+{
+	int max_ph1_len = 31;
+	uint32_t btr = 0;
+
+	if (MPFS_CAN_FD_ENABLED(priv))
+  {
+		nerr("%s: BUG! Cannot set bittiming - CAN is enabled\n", __func__);
+		return -EPERM;
+	}
+
+	if (nominal)
+		max_ph1_len = 63;
+
+	/* The timing calculation functions have only constraints on tseg1, which is prop_seg +
+	 * phase1_seg combined. tseg1 is then split in half and stored into prog_seg and phase_seg1.
+	 * In FPGA CAN FD controller, PROP is 6 bits wide but PH1 only 5, so we must re-distribute
+   * the values here.
+	 */
+	if (bt->phase_seg1 > max_ph1_len)
+  {
+		bt->prop_seg += bt->phase_seg1 - max_ph1_len;
+		bt->phase_seg1 = max_ph1_len;
+	}
+
+	if (nominal)
+  {
+    btr = bt->prop_seg << MPFS_CANFD_BTR_PROP_SHIFT;
+    btr |= bt->phase_seg1 << MPFS_CANFD_BTR_PH1_SHIFT;
+    btr |= bt->phase_seg2 << MPFS_CANFD_BTR_PH2_SHIFT;
+    btr |= bt->brp << MPFS_CANFD_BTR_BRP_SHIFT;
+    btr |= bt->sjw << MPFS_CANFD_BTR_SJW_SHIFT;
+
+    putseg32(btr, priv->base + MPFS_CANFD_BTR_OFFSET);	
+	}
+  else
+  {
+    btr = bt->prop_seg << MPFS_CANFD_BTR_FD_PROP_FD_SHIFT;
+    btr |= bt->phase_seg1 << MPFS_CANFD_BTR_FD_PH1_FD_SHIFT;
+    btr |= bt->phase_seg2 << MPFS_CANFD_BTR_FD_PH2_FD_SHIFT;
+    btr |= bt->brp << MPFS_CANFD_BTR_FD_BRP_FD_SHIFT;
+    btr |= bt->sjw << MPFS_CANFD_BTR_FD_SJW_FD_SHIFT;
+
+    putseg32(btr, priv->base + MPFS_CANFD_BTR_FD_OFFSET);	
+	}
+
+	return OK;
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_set_bittiming
+ *
+ * Description:
+ *  Set FPGA CAN controller nominal (arbitration) bittiming
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  Zero (OK) on success, -%EPERM if controller is enabled
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static int mpfs_can_set_bittiming(FAR struct mpfs_driver_s *priv)
+{
+	struct can_bittiming *bt = &priv->can.bittiming;
+
+	/* Note that bt may be modified here */
+	return mpfs_can_set_btr(priv, bt, true);
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_set_data_bittiming
+ *
+ * Description:
+ *  Set FPGA CAN controller data bittiming
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  Zero (OK) on success, -%EPERM if controller is enabled
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static int mpfs_can_set_data_bittiming(FAR struct mpfs_driver_s *priv)
+{
+	struct mpfs_can_bittiming_s *dbt = &priv->can.data_bittiming;
+
+	/* Note that dbt may be modified here */
+	return mpfs_can_set_btr(priv, dbt, false);
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_set_secondary_sample_point
+ *
+ * Description:
+ *  Set FPGA CAN controller secondary sample point.
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  Zero (OK) on success, -%EPERM if controller is enabled
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static int mpfs_can_set_secondary_sample_point(FAR struct mpfs_driver_s *priv)
+{
+	struct mpfs_can_bittiming_s *dbt = &priv->can.data_bittiming;
+	int ssp_offset = 0;
+	uint32_t ssp_cfg = 0; /* No SSP by default */
+
+	if (MPFS_CAN_FD_ENABLED(priv))
+  {
+		nerr("%s: BUG! Cannot set SSP - CAN is enabled\n", __func__);
+		return -EPERM;
+	}
+
+	/* Use SSP for bit-rates above 1 Mbits/s */
+	if (dbt->bitrate > 1000000)
+  {
+
+		/* Calculate SSP in minimal time quanta */
+		ssp_offset = (priv->can.clock.freq / 1000) * dbt->sample_point / dbt->bitrate;
+
+		if (ssp_offset > 127) {
+			nwarn("%s: SSP offset saturated to 127\n", __func__);
+			ssp_offset = 127;
+		}
+
+    ssp_cfg = ssp_offset << MPFS_CANFD_TRV_DELAY_SSP_OFFSET_SHIFT;
+		ssp_cfg |= 0x1 << MPFS_CANFD_TRV_DELAY_SSP_SRC_SHIFT;
+	}
+
+	putreg32(ssp_cfg, priv->base + MPFS_CANFD_TRV_DELAY_OFFSET);
+
+	return OK;
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_set_mode
+ *
+ * Description:
+ *  Set FPGA CAN FD controller mode
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *  mode  - Pointer to controller modes to be set 
+ *
+ * Returned Value:
+ *  None
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static void mpfs_can_set_mode(FAR struct mpfs_driver_s *priv, const struct mpfs_can_ctrlmode_s *mode)
+{
+	uint32_t mode_reg = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
+
+	mode_reg = (mode->flags & CAN_CTRLMODE_LOOPBACK) ?
+			(mode_reg | MPFS_CANFD_MODE_ILBP) :
+			(mode_reg & ~MPFS_CANFD_MODE_ILBP);
+
+	mode_reg = (mode->flags & CAN_CTRLMODE_LISTENONLY) ?
+			(mode_reg | MPFS_CANFD_MODE_BMM) :
+			(mode_reg & ~MPFS_CANFD_MODE_BMM);
+
+	mode_reg = (mode->flags & CAN_CTRLMODE_FD) ?
+			(mode_reg | MPFS_CANFD_MODE_FDE) :
+			(mode_reg & ~MPFS_CANFD_MODE_FDE);
+
+	mode_reg = (mode->flags & CAN_CTRLMODE_PRESUME_ACK) ?
+			(mode_reg | MPFS_CANFD_MODE_ACF) :
+			(mode_reg & ~MPFS_CANFD_MODE_ACF);
+
+	mode_reg = (mode->flags & CAN_CTRLMODE_FD_NON_ISO) ?
+			(mode_reg | MPFS_CANFD_MODE_NISOFD) :
+			(mode_reg & ~MPFS_CANFD_MODE_NISOFD);
+
+	/* One shot mode supported indirectly via Retransmit limit */
+  mode_reg &= ~MPFS_CANFD_MODE_RTRTH;
+	mode_reg = (mode->flags & CAN_CTRLMODE_ONE_SHOT) ?
+			(mode_reg | MPFS_CANFD_MODE_RTRLE) :
+			(mode_reg & ~MPFS_CANFD_MODE_RTRLE);
+
+	/* Some bits fixed:
+	 *  TSTM  - Off, User shall not be able to change REC/TEC by hand during operation
+	 */
+	mode_reg &= ~MPFS_CANFD_MODE_TSTM;
+
+  putreg32(mode_reg, priv->base + MPFS_CANFD_MODE_OFFSET);
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_chip_start
+ *
+ * Description:
+ *  This routine starts the driver. Routine expects that chip is in reset state. It setups initial
+ *  Tx buffers for FIFO priorities, sets bittiming, enables interrupts,
+ *  switches core to operational mode and changes controller
+ *  state to %CAN_STATE_STOPPED.
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  Zero (OK) on success and failure value on error
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
+{
+	uint32_t int_ena, int_msk;
+	uint32_t mode_reg;
+	int err;
+	struct mpfs_can_ctrlmode_s mode;
+
+  /* Initialize txt buffer head tail marker values */
+	priv->txb_head = 0;
+	priv->txb_tail = 0;
+
+  /* Configure TXT buffers priority */
+	priv->txb_prio = 0x01234567;
+  putreg32(priv->base, priv->base + MPFS_CANFD_TX_PRIORITY_OFFSET);
+
+	/* Configure bit-rates and ssp */
+	err = mpfs_can_set_bittiming(priv);
+	if (err < 0)
+		return err;
+
+	err = mpfs_can_set_data_bittiming(priv);
+	if (err < 0)
+		return err;
+
+	err = mpfs_can_set_secondary_sample_point(priv);
+	if (err < 0)
+		return err;
+
+	/* Configure modes */
+	mode.flags = priv->can.ctrlmode;
+	mode.mask = 0xFFFFFFFF;
+	mpfs_can_set_mode(priv, &mode);
+
+	/* Configure interrupts */
+	int_ena = MPFS_CANFD_INT_STAT_RBNEI | MPFS_CANFD_INT_STAT_TXBHCI |
+            MPFS_CANFD_INT_STAT_EWLI | MPFS_CANFD_INT_STAT_FCSI;
+
+	/* Bus error reporting -> Allow Error/Arb.lost interrupts */
+	if (priv->can.ctrlmode & CAN_CTRLMODE_BERR_REPORTING)
+		int_ena |= MPFS_CANFD_INT_STAT_ALI | MPFS_CANFD_INT_STAT_BEI;
+
+	int_msk = ~int_ena; /* Mask all disabled interrupts */
+
+	/* It's after reset, so there is no need to clear anything */
+	putreg32(int_msk, priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
+	putreg32(int_ena, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
+
+	/* Put CAN driver to STOPPED state first, CAN controller will enters ERROR_ACTIVE on initial FCSI */
+	priv->can.state = CAN_STATE_STOPPED;
+
+	/* Enable the CAN controller */
+  mode_reg = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
+	mode_reg |= MPFS_CANFD_MODE_ENA;
+	putreg32(mode_reg, priv->base + MPFS_CANFD_MODE_OFFSET);
+
+	return OK;
+}
+
+
+/****************************************************************************
+ * Function: mpfs_can_chip_stop
+ *
+ * Description:
+ *  This routine stops the driver. This is the drivers stop routine. It will disable the
+ * interrupts and disable the controller
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  None
+ * 
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+
+static void mpfs_can_chip_stop(FAR struct mpfs_driver_s *priv)
+{
+	uint32_t mask = 0xFFFFFFFF;
+	uint32_t mode;
+
+	/* Disable interrupts */
+	putreg32(mask, priv->base + MPFS_CANFD_INT_ENA_CLR_OFFSET);
+	putreg32(mask, priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
+	
+  /* Disable the CAN controller */
+  mode = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
+	mode &= ~MPFS_CANFD_MODE_ENA;
+	putreg32(mode, priv->base + MPFS_CANFD_MODE_OFFSET);
+
+  /* Set CAN driver state to STOPPED */
+	priv->can.state = CAN_STATE_STOPPED;
+}
+
+
+/****************************************************************************
  * Function: mpfs_reset
  *
  * Description:
- *   Put the EMAC in the non-operational, reset state
+ *  Put the EMAC in the non-operational, reset state
  *
  * Input Parameters:
- *   priv - Reference to the private FPGA CANFD driver state structure
- *
+ *  priv - Pointer to the private FPGA CANFD driver state structure
+ *  
  * Returned Value:
- *   OK for success and -ETIMEDOUT for failure
+ *  OK for success and -ETIMEDOUT for failure
  *
  * Assumptions:
  *
@@ -937,14 +1620,14 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
  * Function: mpfs_ifup
  *
  * Description:
- *   NuttX Callback: Bring up the Ethernet interface when an IP address is
- *   provided
+ *  NuttX Callback: Bring up the Ethernet interface when an IP address is
+ *  provided
  *
  * Input Parameters:
- *   dev  - Reference to the NuttX driver state structure
+ *  dev  - Reference to the NuttX driver state structure
  *
  * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure
+ *  Zero (OK) on success; a negated errno value on failure
  *
  * Assumptions:
  *
@@ -955,7 +1638,7 @@ static int mpfs_ifup(struct net_driver_s *dev)
   FAR struct mpfs_driver_s *priv =
     (FAR struct mpfs_driver_s *)dev->d_private;
 
-  if (mpfs_chip_start(priv) < 0)
+  if (mpfs_can_chip_start(priv) < 0)
     {
       nerr("chip start failed");
       return -1;
@@ -978,15 +1661,16 @@ static int mpfs_ifup(struct net_driver_s *dev)
  * Function: mpfs_ifdown
  *
  * Description:
- *   NuttX Callback: Stop the interface.
+ *  NuttX Callback: Stop the interface.
  *
  * Input Parameters:
- *   dev  - Reference to the NuttX driver state structure
+ *  dev  - Reference to the NuttX driver state structure
  *
  * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure
+ *  Zero (OK) on success; a negated errno value on failure
  *
  * Assumptions:
+ *  None
  *
  ****************************************************************************/
 
@@ -996,7 +1680,7 @@ static int mpfs_ifdown(struct net_driver_s *dev)
     (FAR struct mpfs_driver_s *)dev->d_private;
 
   // Stop chip
-  mpfs_chip_stop(priv);
+  mpfs_can_chip_stop(priv);
   
   priv->bifup = false;
   return OK;
@@ -1007,17 +1691,18 @@ static int mpfs_ifdown(struct net_driver_s *dev)
  * Function: mpfs_ioctl
  *
  * Description:
- *   PHY ioctl command handler
+ *  PHY ioctl command handler
  *
  * Input Parameters:
- *   dev  - Reference to the NuttX driver state structure
- *   cmd  - ioctl command
- *   arg  - Argument accompanying the command
+ *  dev  - Reference to the NuttX driver state structure
+ *  cmd  - ioctl command
+ *  arg  - Argument accompanying the command
  *
  * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
+ *  Zero (OK) on success; a negated errno value on failure.
  *
  * Assumptions:
+ *  None
  *
  ****************************************************************************/
 
@@ -1025,71 +1710,66 @@ static int mpfs_ifdown(struct net_driver_s *dev)
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd,
                          unsigned long arg)
 {
-  FAR struct mpfs_driver_s *priv =
-      (FAR struct mpfs_driver_s *)dev->d_private;
+  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
 
   int ret;
 
   switch (cmd)
-    {
-      case SIOCGCANBITRATE: /* Get bitrate from a CAN controller */
-        {
-          struct can_ioctl_data_s *req =
-              (struct can_ioctl_data_s *)((uintptr_t)arg);
-          req->arbi_bitrate = priv->arbi_timing.bitrate / 1000; /* kbit/s */
-          req->arbi_samplep = priv->arbi_timing.samplep;
+  {
+  case SIOCGCANBITRATE: /* Get bitrate from a CAN controller */
+  {
+    struct can_ioctl_data_s *req =
+        (struct can_ioctl_data_s *)((uintptr_t)arg);
+    req->arbi_bitrate = priv->arbi_timing.bitrate / 1000; /* kbit/s */
+    req->arbi_samplep = priv->arbi_timing.samplep;
 #ifdef CONFIG_NET_CAN_CANFD
-          req->data_bitrate = priv->data_timing.bitrate / 1000; /* kbit/s */
-          req->data_samplep = priv->data_timing.samplep;
+    req->data_bitrate = priv->data_timing.bitrate / 1000; /* kbit/s */
+    req->data_samplep = priv->data_timing.samplep;
 #else
-          req->data_bitrate = 0;
-          req->data_samplep = 0;
+    req->data_bitrate = 0;
+    req->data_samplep = 0;
 #endif
-          ret = OK;
-        }
-        break;
+    ret = OK;
+  }
+  break;
 
-      case SIOCSCANBITRATE: /* Set bitrate of a CAN controller */
-        {
-          struct can_ioctl_data_s *req =
-              (struct can_ioctl_data_s *)((uintptr_t)arg);
+  case SIOCSCANBITRATE: /* Set bitrate of a CAN controller */
+  {
+    struct can_ioctl_data_s *req =
+        (struct can_ioctl_data_s *)((uintptr_t)arg);
 
-          struct flexcan_timeseg arbi_timing;
-          arbi_timing.bitrate = req->arbi_bitrate * 1000;
-          arbi_timing.samplep = req->arbi_samplep;
+    struct flexcan_timeseg arbi_timing;
+    arbi_timing.bitrate = req->arbi_bitrate * 1000;
+    arbi_timing.samplep = req->arbi_samplep;
 
-          if (mpfs_bitratetotimeseg(&arbi_timing, 10, 0))
-            {
-              ret = OK;
-            }
-          else
-            {
-              ret = -EINVAL;
-            }
+    if (mpfs_bitratetotimeseg(&arbi_timing, 10, 0))
+      {
+        ret = OK;
+      }
+    else
+      {
+        ret = -EINVAL;
+      }
 
-#ifdef CONFIG_NET_CAN_CANFD
-          struct flexcan_timeseg data_timing;
-          data_timing.bitrate = req->data_bitrate * 1000;
-          data_timing.samplep = req->data_samplep;
+    struct flexcan_timeseg data_timing;
+    data_timing.bitrate = req->data_bitrate * 1000;
+    data_timing.samplep = req->data_samplep;
 
-          if (ret == OK && mpfs_bitratetotimeseg(&data_timing, 10, 1))
-            {
-              ret = OK;
-            }
-          else
-            {
-              ret = -EINVAL;
-            }
-#endif
+    if (ret == OK && mpfs_bitratetotimeseg(&data_timing, 10, 1))
+      {
+        ret = OK;
+      }
+    else
+      {
+        ret = -EINVAL;
+      }
 
           if (ret == OK)
             {
               /* Reset CAN controller and start with new timings */
 
               priv->arbi_timing = arbi_timing;
-#ifdef CONFIG_NET_CAN_CANFD
               priv->data_timing = data_timing;
-#endif
               mpfs_ifup(dev);
             }
         }
@@ -1113,13 +1793,14 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd,
  * Function: mpfs_canfd_init
  *
  * Description:
- *   Initialize the CAN controller and driver
+ *  Initialize the CAN controller and driver
  *
  * Returned Value:
- *   On success, a pointer to the MPFS CAN-FD driver is
- *   returned. NULL is returned on any failure.
+ *  On success, a pointer to the MPFS CAN-FD driver is
+ *  returned. NULL is returned on any failure.
  *
  * Assumptions:
+ *  None
  *
  ****************************************************************************/
 
@@ -1129,7 +1810,7 @@ int mpfs_canfd_init()
 
   priv         = &g_canfd;
   memset(priv, 0, sizeof(struct mpfs_driver_s));
-  priv->base   = MPFS_CANFD_BASE;
+  priv->base   = CONFIG_MPFS_CANFD_BASE;
   priv->config = &mpfs_fpga_canfd_config;
 
   /* TODO: Default bitrate configuration?? */
@@ -1179,22 +1860,13 @@ int mpfs_canfd_init()
   priv->dev.d_ioctl   = mpfs_ioctl;     /* Support CAN ioctl() calls */
 #endif
   priv->dev.d_private = priv;              /* Used to recover private state from dev */
-  priv->rx            = (struct mb_s *)(priv->base + mpfs_CAN_MB_OFFSET); // todo
+  priv->rx            = (struct mb_s *)(priv->base + mpfs_CAN_MB_OFFSET); // TODO
   priv->tx            = (struct mb_s *)(priv->base + mpfs_CAN_MB_OFFSET +
-                          (sizeof(struct mb_s) * RXMBCOUNT));             // todo
+                          (sizeof(struct mb_s) * RXMBCOUNT));             // TODO
 
 
 	/* Getting the can_clk info */
-	if (!can_clk_rate) {
-		priv->can_clk = devm_clk_get(dev, NULL);
-		if (IS_ERR(priv->can_clk)) {
-			dev_err(dev, "Device clock not found.\n");
-			ret = PTR_ERR(priv->can_clk);
-			goto err_free;
-		}
-		can_clk_rate = clk_get_rate(priv->can_clk);
-	}
-	priv->can.clock.freq = can_clk_rate;
+	priv->can.clock.freq = CONFIG_MPFS_CANFD_BASE;
 
 
   /* Reset chip */
@@ -1219,10 +1891,10 @@ int mpfs_canfd_init()
  * Name: riscv_netinitialize
  *
  * Description:
- *   Initialize the enabled CAN device interfaces.  If there are more
- *   different network devices in the chip, then board-specific logic will
- *   have to provide this function to determine which, if any, network
- *   devices should be initialized.
+ *  Initialize the enabled CAN device interfaces.  If there are more
+ *  different network devices in the chip, then board-specific logic will
+ *  have to provide this function to determine which, if any, network
+ *  devices should be initialized.
  *
  ****************************************************************************/
 
