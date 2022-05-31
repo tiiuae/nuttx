@@ -478,27 +478,19 @@ comment "CAN-FD Options"
 config MPFS_CANFD
 	bool "CAN FD"
 	select ARCH_HAVE_CAN_ERRORS
+	select NET_CAN_HAVE_CANFD
 	default n
 
-config CANFD_ARBI_BITRATE
-	int "CAN FD Arbitration phase bitrate"
+config MPFS_CANFD_BASE
+	hex "Base address for the instance"
+	default 0x28126000
 	depends on MPFS_CANFD
-	default 1000000
 
-config CANFD_ARBI_SAMPLEP
-	int "CAN FD Arbitration phase sample point"
+config MPFS_CANFD_CLK
+	int "Clock frequency of the CANFD block (Hz)"
+	default 62500000
+	range 1000000 100000000
 	depends on MPFS_CANFD
-	default 80
-
-config CANFD_DATA_BITRATE
-	int "CAN FD Arbitration phase bitrate"
-	depends on MPFS_CANFD
-	default 4000000
-
-config CANFD_DATA_SAMPLEP
-	int "CAN FD Arbitration phase sample point"
-	depends on MPFS_CANFD
-	default 90
 
 endmenu
 
