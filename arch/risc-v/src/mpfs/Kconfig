@@ -469,6 +469,16 @@ config MPFS_CANFD_CLK
 	range 1000000 100000000
 	depends on MPFS_CANFD
 
+config MPFS_CANFD_ARBI_BITRATE
+	int "CAN FD Arbitration phase bitrate"
+	default 1000000
+	depends on MPFS_CANFD
+	
+config MPFS_CANFD_DATA_BITRATE
+	int "CAN FD Arbitration phase bitrate"
+	default 4000000
+	depends on MPFS_CANFD
+
 endmenu
 
 config MPFS_DMA
