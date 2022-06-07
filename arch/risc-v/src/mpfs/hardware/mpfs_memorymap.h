@@ -111,7 +111,6 @@
 #define MPFS_IOSCB_BANK_SGMII_BASE     (0x3e400000UL)
 #define MPFS_IOSCB_IO_CALIB_SGMII_BASE (0x3e800000UL)
 
-
 /* TODO: How to select if peripheral is on HI base address kconfig?
  *
  * On PolarFire SoC an AXI switch forms a bus matrix interconnect among
