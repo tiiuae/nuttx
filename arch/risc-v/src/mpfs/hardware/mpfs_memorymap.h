@@ -111,8 +111,6 @@
 #define MPFS_IOSCB_BANK_SGMII_BASE     (0x3e400000UL)
 #define MPFS_IOSCB_IO_CALIB_SGMII_BASE (0x3e800000UL)
 
-// todo: change to correct register address for canfd fpga ip block
-#define MPFS_CANFD_BASE           (0x40024000UL)
 
 /* TODO: How to select if peripheral is on HI base address kconfig?
  *
