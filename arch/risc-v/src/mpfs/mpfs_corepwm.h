@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_MPFS_COREPWM_H
-#define __ARCH_RISCV_SRC_MPFS_MPFS_MPFS_COREPWM_H
+#ifndef __ARCH_RISCV_SRCMPFS_MPFS_MPFS_COREPWM_H
+#define __ARCH_RISCV_SRCMPFS_MPFS_MPFS_COREPWM_H
 
 /****************************************************************************
  * Included Files
@@ -96,4 +96,4 @@ struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid);
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_MPFS_HAVE_COREPWM */
-#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_MPFS_COREPWM_H */
+#endif /* __ARCH_RISCV_SRCMPFS_MPFS_MPFS_COREPWM_H */
