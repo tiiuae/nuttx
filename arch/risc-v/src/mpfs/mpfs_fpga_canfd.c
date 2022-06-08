@@ -440,7 +440,8 @@ static enum mpfs_can_txtb_status mpfs_can_get_tx_status(FAR struct mpfs_driver_s
 static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv, uint8_t buf);
 static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
                                   const struct canfd_frame *cf,
-                                  uint8_t buf);
+                                  uint8_t buf,
+                                  bool is_ccf);
 static int mpfs_transmit(FAR struct mpfs_driver_s *priv);
 static int mpfs_txpoll(struct net_driver_s *dev);
 static void mpfs_txavail_work(FAR void *arg);
@@ -756,7 +757,8 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv, struct canfd_
 	cf->len = len;
   if (expect_false(len > data_wc * 4))
     len = data_wc * 4;
-  
+  ninfo("%s: Frame data len is %d", __func__, len);
+
 	/* Timestamp - Read and throw away */
   getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
 	getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
@@ -767,7 +769,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv, struct canfd_
 		*(uint32_t *)(cf->data + i) = data;
 	}
 
-  /* */
+  /* Read and discard exceeding data that does not fit any frame */
 	while (expect_false(i < data_wc * 4))
   {
     getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
@@ -798,7 +800,7 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
   uint32_t status;
   uint32_t frame_count;
   int work_done = 0;
-  bool rtr_frame = false;
+  bool is_classical_can_frame = false;
 
   frame_count = (getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET) & MPFS_CANFD_RX_STATUS_RXFRC)
                 >> MPFS_CANFD_RX_STATUS_RXFRC_SHIFT;
@@ -814,30 +816,27 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
       nerr("%s: rx word count is 0\n", __func__);
       break;
     }
-      
+    
     if (!(MPFS_CANFD_FRAME_FORMAT_W_FDF & ffw))
     { 
       if (MPFS_CANFD_FRAME_FORMAT_W_RTR & ffw)
-      {
-        ninfo("%s: Remote Frame is received\n", __func__);
-        rtr_frame = true;
-      }
+        ninfo("%s: Remote Frame received\n", __func__);
       else
-      {
-        nerr("%s: frame format is not CANFD\n", __func__);
-        break;
-      }
+        ninfo("%s: Classical CAN Frame received\n", __func__);
+      is_classical_can_frame = true;
     }
+    else
+      ninfo("%s: CANFD Frame received\n", __func__);
 
-    /* Read the frame contents */
+    /* Read the classical or CANFD or remote frame */ 
     mpfs_can_read_rx_frame(priv, cf, ffw);
-    
+
     /* Copy the buffer pointer to priv->dev..  Set amount of data
       * in priv->dev.d_len
       */
-    priv->dev.d_len = rtr_frame ? sizeof(struct can_frame) : sizeof(struct canfd_frame);
+    priv->dev.d_len = is_classical_can_frame ? sizeof(struct can_frame) : sizeof(struct canfd_frame);
     priv->dev.d_buf = (uint8_t *)cf;
-    
+
     /* Send to socket interface */
     NETDEV_RXPACKETS(&priv->dev);
     can_input(&priv->dev);
@@ -1411,6 +1410,7 @@ static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv, uint8_t
  *  priv  - Pointer to the private FPGA CANFD driver state structure
  *  cf    - Pointer to the CANFD frame to be inserted
  *  buf   - txt buffer index to which the cf frame is inserted (0-based)
+ *  is_ccf- is classical can frame (bool)
  *
  * Returned Value:
  *  True  - Frame inserted successfully
@@ -1424,7 +1424,8 @@ static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv, uint8_t
  *
  ****************************************************************************/
 
-static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct canfd_frame *cf, uint8_t buf)
+static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct canfd_frame *cf,
+                                  uint8_t buf, bool is_ccf)
 {
 	uint32_t buf_base;
 	uint32_t ffw = 0;
@@ -1450,10 +1451,13 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct c
 	if (cf->can_id & CAN_EFF_FLAG)  /* extended frame format (29 bit long id) */
 		ffw |= MPFS_CANFD_FRAME_FORMAT_W_IDE;
 
-  ffw |= MPFS_CANFD_FRAME_FORMAT_W_FDF; /* FD Frame */
-  if (cf->flags & CANFD_BRS)
-    ffw |= MPFS_CANFD_FRAME_FORMAT_W_BRS; /* Bit rate switch */
-
+  if(!is_ccf)
+  {
+    ffw |= MPFS_CANFD_FRAME_FORMAT_W_FDF; /* FD Frame */
+    if (cf->flags & CANFD_BRS)
+      ffw |= MPFS_CANFD_FRAME_FORMAT_W_BRS; /* Bit rate switch */
+  }
+  
 
   ffw |= MPFS_CANFD_FRAME_FORMAT_W_DLC & (len_to_can_dlc[cf->len] << MPFS_CANFD_FRAME_FORMAT_W_DLC_SHIFT);
 
@@ -1507,9 +1511,10 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct c
 static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
 {
   uint32_t txtb_id;
-  bool ok;
+  bool ok, is_classical_can_frame;
 
-  /* Retrieve the CANFD frame from network device buffer */
+  /* Retrieve the classical CAN / CANFD frame from network device buffer */
+  is_classical_can_frame = priv->dev.d_len <= sizeof(struct can_frame) ? true : false;
   struct canfd_frame *cf = (struct canfd_frame *)priv->dev.d_buf;
   
   /* TODO: drop invalid buffer dev.d_buf if it contains invalid can frame?? */
@@ -1518,8 +1523,8 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
   txtb_id = priv->txb_head % priv->ntxbufs;
   ninfo("%s: using TXB#%u\n", __func__, txtb_id);
 
-  /* Insert CANFD frame into controller txt buffer at txtb_id */
-  ok = mpfs_can_insert_frame(priv, cf, txtb_id);
+  /* Insert classical CAN / CANFD frame into controller txt buffer at txtb_id */
+  ok = mpfs_can_insert_frame(priv, cf, txtb_id, is_classical_can_frame);
   if(!ok)
   {
     nerr("%s: BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n", __func__);
