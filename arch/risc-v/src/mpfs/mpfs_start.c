@@ -153,7 +153,10 @@ void __mpfs_start(uint64_t mhartid)
 #endif
 
 #ifdef CONFIG_MPFS_DDR_INIT
-  mpfs_ddr_init();
+  while (mpfs_ddr_init() != 0)
+    {
+      showprogress('X');
+    }
 #endif
 
   showprogress('B');
