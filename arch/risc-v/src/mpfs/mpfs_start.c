@@ -153,9 +153,18 @@ void __mpfs_start(uint64_t mhartid)
 #endif
 
 #ifdef CONFIG_MPFS_DDR_INIT
-  while (mpfs_ddr_init() != 0)
+  if (mpfs_ddr_init() != 0)
     {
+      /* We don't allow booting, ddr training failure will cause random
+       * behaviour
+       */
+
       showprogress('X');
+
+      /* Reset, but let the progress come out of the uart first */
+
+      up_udelay(1000);
+      up_systemreset();
     }
 #endif
 
