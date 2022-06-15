@@ -38,7 +38,6 @@
 #include <nuttx/can.h>
 #include <nuttx/wdog.h>
 #include <nuttx/irq.h>
-#include <nuttx/spinlock.h>
 #include <nuttx/arch.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/signal.h>
@@ -1246,7 +1245,6 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
   priv->dev.d_buf = (uint8_t *)cf;
   NETDEV_RXPACKETS(&priv->dev);
   int ret = can_input(&priv->dev);
-  ninfo("return from can input %u\n", ret);
 
   /* Point the packet buffer back to the next Tx buffer that will be
    * used during the next write. 
@@ -1279,12 +1277,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
   uint32_t isr, icr, imask;
   int irq_loops;
-
-
-  irqstate_t flags;
-  flags = spin_unlock_irqsave(NULL, flags);
-
-
+  
   for (irq_loops = 0; irq_loops < 10000; irq_loops++)
   {
     /* Get the interrupt status */
@@ -1350,8 +1343,6 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_CLR_INT_ENA_CLR);
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_INT_ENA_SET);      
 
-  spin_unlock_irqrestore(NULL, flags);
-  
   return OK;
 }
 
@@ -1591,7 +1582,7 @@ static int mpfs_txpoll(struct net_driver_s *dev)
   if (priv->dev.d_len > 0)
   {
     if (!devif_loopback(&priv->dev))
-    {
+    {      
       /* Send the packet */
       mpfs_transmit(priv);
 
