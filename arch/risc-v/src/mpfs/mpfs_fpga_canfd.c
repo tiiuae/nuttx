@@ -38,6 +38,7 @@
 #include <nuttx/can.h>
 #include <nuttx/wdog.h>
 #include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/arch.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/signal.h>
@@ -72,6 +73,12 @@
 #  error This should not be compiled as CAN-FD driver relies on socket CAN 
 #endif
 
+/* Clock reset and enabling */
+#define MPFS_SYSREG_SOFT_RESET_CR     (MPFS_SYSREG_BASE + \
+                                       MPFS_SYSREG_SOFT_RESET_CR_OFFSET)
+#define MPFS_SYSREG_SUBBLK_CLOCK_CR   (MPFS_SYSREG_BASE + \
+                                       MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET)
+
 
 #define CANWORK                     LPWORK
 
@@ -79,7 +86,7 @@
 
 /* For allocating the tx and rx CAN-FD frame buffer */
 #define POOL_SIZE                   1
-#define MSG_DATA                    sizeof(struct timeval)
+#define TIMESTAMP_SIZE              sizeof(struct timeval)  /* To support timestamping frame */
 
 /* For bittiming calculation */
 #define CAN_CALC_MAX_ERROR          50 /* in one-tenth of a percent */
@@ -390,8 +397,8 @@ struct mpfs_driver_s
 
 static struct mpfs_driver_s g_canfd;
 
-static uint8_t g_tx_pool[(sizeof(struct canfd_frame) + MSG_DATA) * POOL_SIZE];
-static uint8_t g_rx_pool[(sizeof(struct canfd_frame) + MSG_DATA) * POOL_SIZE];
+static uint8_t g_tx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) * POOL_SIZE];
+static uint8_t g_rx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) * POOL_SIZE];
 
 
 /****************************************************************************
@@ -1238,7 +1245,8 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
   priv->dev.d_len = sizeof(struct canfd_frame);
   priv->dev.d_buf = (uint8_t *)cf;
   NETDEV_RXPACKETS(&priv->dev);
-  can_input(&priv->dev);
+  int ret = can_input(&priv->dev);
+  ninfo("return from can input %u\n", ret);
 
   /* Point the packet buffer back to the next Tx buffer that will be
    * used during the next write. 
@@ -1271,6 +1279,11 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
   uint32_t isr, icr, imask;
   int irq_loops;
+
+
+  irqstate_t flags;
+  flags = spin_unlock_irqsave(NULL, flags);
+
 
   for (irq_loops = 0; irq_loops < 10000; irq_loops++)
   {
@@ -1337,6 +1350,8 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_CLR_INT_ENA_CLR);
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_INT_ENA_SET);      
 
+  spin_unlock_irqrestore(NULL, flags);
+  
   return OK;
 }
 
@@ -1962,7 +1977,7 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
 
 	/* Configure interrupts */
 	int_ena = MPFS_CANFD_INT_STAT_RBNEI | MPFS_CANFD_INT_STAT_TXBHCI |
-            MPFS_CANFD_INT_STAT_EWLI | MPFS_CANFD_INT_STAT_FCSI;
+            MPFS_CANFD_INT_STAT_EWLI | MPFS_CANFD_INT_STAT_FCSI | MPFS_CANFD_INT_STAT_DOI;
 
 	/* Bus error reporting -> Allow Error/Arb.lost interrupts */
 	if (priv->can.ctrlmode & CAN_CTRLMODE_BERR_REPORTING)
@@ -1971,6 +1986,8 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
 	int_msk = ~int_ena; /* Mask all disabled interrupts */
 
 	/* It's after reset, so there is no need to clear anything */
+  uint32_t mask = 0xFFFFFFFF;
+  putreg32(mask, priv->base + MPFS_CANFD_INT_MASK_CLR_OFFSET);
 	putreg32(int_msk, priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
 	putreg32(int_ena, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
 
@@ -2044,16 +2061,19 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
   uint32_t i = 100;
   uint32_t yolo_reg, device_id;
 
+  /* Reset FPGA and FIC3, enable clock for FIC3 before RD WR */
+  modifyreg32(MPFS_SYSREG_SOFT_RESET_CR, SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3, 0);
+  modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, SYSREG_SUBBLK_CLOCK_CR_FIC3);
+
   /* Reset FPGA CANFD device */
   putreg32(MPFS_CANFD_MODE_RST, priv->base + MPFS_CANFD_MODE_OFFSET);
   
   /* Check if the device is up again */
 	do {
-    yolo_reg = getreg32(priv->base + MPFS_CANFD_YOLO_OFFSET);
-    ninfo("YOLO register is 0x%08x\n", yolo_reg);
 		device_id = (getreg32(priv->base + MPFS_CANFD_DEVICE_ID_OFFSET) & 
                   MPFS_CANFD_DEVICE_ID_DEVICE_ID) >> MPFS_CANFD_DEVICE_ID_DEVICE_ID_SHIFT;
-		if (device_id == MPFS_CANFD_ID)
+    
+    if (device_id == MPFS_CANFD_ID)
 			return OK;
 		if (!i--) {
 			nwarn("device did not leave reset\n");
@@ -2098,6 +2118,45 @@ static int mpfs_ifup(struct net_driver_s *dev)
   priv->rxdesc = (struct canfd_frame *)&g_rx_pool;
 
   priv->dev.d_buf = (uint8_t *)priv->txdesc;
+
+
+  /* debug */
+  uint32_t reg_val;
+
+  for(int i = 0; i < 10; i++)
+  {
+    reg_val = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
+    ninfo("get MODE reg value : 0x%08x\n", reg_val);
+    
+    reg_val = getreg32(priv->base + MPFS_CANFD_STATUS_OFFSET);
+    ninfo("get STATUS reg value : 0x%08x\n", reg_val);
+
+    reg_val = getreg32(priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+    ninfo("get INT_STAT reg value : 0x%08x\n", reg_val);
+  
+    reg_val = getreg32(priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
+    ninfo("get INT_ENA_SET reg value : 0x%08x\n", reg_val);
+
+    reg_val = getreg32(priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
+    ninfo("get INT_MASK_SET reg value : 0x%08x\n", reg_val);
+
+    reg_val = getreg32(priv->base + MPFS_CANFD_BTR_OFFSET);
+    ninfo("get BTR reg value : 0x%08x\n", reg_val);
+    
+    reg_val = getreg32(priv->base + MPFS_CANFD_BTR_FD_OFFSET);
+    ninfo("get BTR_FD reg value : 0x%08x\n", reg_val);
+    
+    reg_val = getreg32(priv->base + MPFS_CANFD_EWL_OFFSET);
+    ninfo("get EWL reg value : 0x%08x\n", reg_val);
+    
+    reg_val = getreg32(priv->base + MPFS_CANFD_REC_OFFSET);
+    ninfo("get REC reg value : 0x%08x\n", reg_val);
+    
+    reg_val = getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET);
+    ninfo("get RX_STATUS reg value : 0x%08x\n", reg_val);
+
+    ninfo("\n\n");
+	} 
 
   /* Set interrupts */
   up_enable_irq(priv->config->canfd_fpga_irq);
@@ -2219,14 +2278,19 @@ int mpfs_canfd_init(void)
   
   priv->can.bittiming_const = &mpfs_can_bit_timing_max;
 	priv->can.data_bittiming_const = &mpfs_can_bit_timing_data_max;
-	
+
+  /* Get the can_clk info */
+	priv->can.clock.freq = CONFIG_MPFS_CANFD_CLK;
+
   /* Needed for timing adjustment to be performed as soon as possible */
   priv->can.bittiming.bitrate = CONFIG_MPFS_CANFD_ARBI_BITRATE;
   priv->can.data_bittiming.bitrate = CONFIG_MPFS_CANFD_DATA_BITRATE;
 
+  /* Calculate nominal and data bit timing */
   mpfs_can_calc_bittiming(priv, &priv->can.bittiming, priv->can.bittiming_const);
   mpfs_can_calc_bittiming(priv, &priv->can.data_bittiming, priv->can.data_bittiming_const);
 
+  /* Set CAN control modes */
   priv->can.ctrlmode = CAN_CTRLMODE_LOOPBACK		
                       | CAN_CTRLMODE_LISTENONLY
                       | CAN_CTRLMODE_FD
@@ -2243,7 +2307,6 @@ int mpfs_canfd_init(void)
     return -EAGAIN;
   }
 
-
   /* Initialize the driver structure */
   priv->dev.d_ifup    = mpfs_ifup;      /* I/F up (new IP address) callback */
   priv->dev.d_ifdown  = mpfs_ifdown;    /* I/F down callback */
@@ -2253,22 +2316,15 @@ int mpfs_canfd_init(void)
 #endif
   priv->dev.d_private = priv;           /* Used to recover private state from dev */
 
-
-	/* Getting the can_clk info */
-	priv->can.clock.freq = CONFIG_MPFS_CANFD_CLK;
-
-
   /* Reset chip */
-  if (!mpfs_reset(priv))
+  if (mpfs_reset(priv) < 0)
     return -1;
   ninfo("CAN-FD driver init done\n");
-
   
   /* Put the interface in the down state.  This usually amounts to resetting
    * the device and/or calling mpfs_ifdown().
    */
   mpfs_ifdown(&priv->dev);
-
 
   /* Register the device with the OS so that socket IOCTLs can be performed */
   netdev_register(&priv->dev, NET_LL_CAN);
