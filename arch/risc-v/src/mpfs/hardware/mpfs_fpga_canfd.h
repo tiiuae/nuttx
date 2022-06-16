@@ -359,7 +359,7 @@
 #define MPFS_CANFD_RX_STATUS_RXF                                (1 << 1)
 #define MPFS_CANFD_RX_STATUS_RXMOF                              (1 << 2)
 #define MPFS_CANFD_RX_STATUS_RXFRC_SHIFT                        (4)
-#define MPFS_CANFD_RX_STATUS_RXFRC                              (0x03FF << MPFS_CANFD_RX_STATUS_RXFRC_SHIFT)
+#define MPFS_CANFD_RX_STATUS_RXFRC                              (0x07FF << MPFS_CANFD_RX_STATUS_RXFRC_SHIFT)
 #define MPFS_CANFD_RX_STATUS_RTSOP                              (1 << 16)
 
 /*  RX_DATA registers */

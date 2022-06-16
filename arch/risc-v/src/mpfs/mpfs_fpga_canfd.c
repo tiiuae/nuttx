@@ -772,7 +772,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv, struct canfd_
 	/* Data */
 	for (i = 0; i < len; i += 4) {
     uint32_t data = getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
-		*(uint32_t *)(cf->data + i) = data;
+    *(uint32_t *)(cf->data + i) = data;
 	}
 
   /* Read and discard exceeding data that does not fit any frame */
@@ -1244,7 +1244,7 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
   priv->dev.d_len = sizeof(struct canfd_frame);
   priv->dev.d_buf = (uint8_t *)cf;
   NETDEV_RXPACKETS(&priv->dev);
-  int ret = can_input(&priv->dev);
+  can_input(&priv->dev);
 
   /* Point the packet buffer back to the next Tx buffer that will be
    * used during the next write. 
@@ -1277,7 +1277,41 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
   uint32_t isr, icr, imask;
   int irq_loops;
+
+  // uint32_t reg_val;
   
+  // reg_val = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
+  // ninfo("get MODE reg value : 0x%08x\n", reg_val);
+  
+  // reg_val = getreg32(priv->base + MPFS_CANFD_STATUS_OFFSET);
+  // ninfo("get STATUS reg value : 0x%08x\n", reg_val);
+
+  // reg_val = getreg32(priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+  // ninfo("get INT_STAT reg value : 0x%08x\n", reg_val);
+
+  // reg_val = getreg32(priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
+  // ninfo("get INT_ENA_SET reg value : 0x%08x\n", reg_val);
+
+  // reg_val = getreg32(priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
+  // ninfo("get INT_MASK_SET reg value : 0x%08x\n", reg_val);
+
+  // reg_val = getreg32(priv->base + MPFS_CANFD_BTR_OFFSET);
+  // ninfo("get BTR reg value : 0x%08x\n", reg_val);
+  
+  // reg_val = getreg32(priv->base + MPFS_CANFD_BTR_FD_OFFSET);
+  // ninfo("get BTR_FD reg value : 0x%08x\n", reg_val);
+  
+  // reg_val = getreg32(priv->base + MPFS_CANFD_EWL_OFFSET);
+  // ninfo("get EWL reg value : 0x%08x\n", reg_val);
+  
+  // reg_val = getreg32(priv->base + MPFS_CANFD_REC_OFFSET);
+  // ninfo("get REC reg value : 0x%08x\n", reg_val);
+  
+  // reg_val = getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET);
+  // ninfo("get RX_STATUS reg value : 0x%08x\n", reg_val);
+
+  // ninfo("\n\n");
+
   for (irq_loops = 0; irq_loops < 10000; irq_loops++)
   {
     /* Get the interrupt status */
@@ -1326,7 +1360,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
   /* Now, it seems that there are still some interrupt flags that remain stuck in INT_STAT reg */
   nerr("Stuck interrupt (isr=%08x)\n", isr);
 
-  /* Check if the any of stuck one belongs to txb status */
+  /* Check if the any of the stuck one belongs to txb status */
   if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
   {
     nerr("txb_head=0x%08x txb_tail=0x%08x\n", priv->txb_head, priv->txb_tail);
@@ -2050,7 +2084,7 @@ static void mpfs_can_chip_stop(FAR struct mpfs_driver_s *priv)
 static int mpfs_reset(struct mpfs_driver_s *priv)
 {
   uint32_t i = 100;
-  uint32_t yolo_reg, device_id;
+  uint32_t device_id;
 
   /* Reset FPGA and FIC3, enable clock for FIC3 before RD WR */
   modifyreg32(MPFS_SYSREG_SOFT_RESET_CR, SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3, 0);
@@ -2266,7 +2300,7 @@ int mpfs_canfd_init(void)
 
   /* Initialize the CAN common private data structure */
   priv->can.state = CAN_STATE_ERROR_ACTIVE;
-  
+  priv->ntxbufs = 2;
   priv->can.bittiming_const = &mpfs_can_bit_timing_max;
 	priv->can.data_bittiming_const = &mpfs_can_bit_timing_data_max;
 
@@ -2282,13 +2316,16 @@ int mpfs_canfd_init(void)
   mpfs_can_calc_bittiming(priv, &priv->can.data_bittiming, priv->can.data_bittiming_const);
 
   /* Set CAN control modes */
-  priv->can.ctrlmode = CAN_CTRLMODE_LOOPBACK		
-                      | CAN_CTRLMODE_LISTENONLY
-                      | CAN_CTRLMODE_FD
-                      | CAN_CTRLMODE_PRESUME_ACK
-                      | CAN_CTRLMODE_BERR_REPORTING
-                      | CAN_CTRLMODE_FD_NON_ISO
-                      | CAN_CTRLMODE_ONE_SHOT;
+  // priv->can.ctrlmode = CAN_CTRLMODE_LOOPBACK		
+  //                     | CAN_CTRLMODE_LISTENONLY
+  //                     | CAN_CTRLMODE_FD
+  //                     | CAN_CTRLMODE_PRESUME_ACK
+  //                     | CAN_CTRLMODE_BERR_REPORTING
+  //                     | CAN_CTRLMODE_FD_NON_ISO
+  //                     | CAN_CTRLMODE_ONE_SHOT;
+  
+  priv->can.ctrlmode = CAN_CTRLMODE_FD
+                      | CAN_CTRLMODE_BERR_REPORTING;
 
   /* Attach the interrupt handler */
   if (irq_attach(priv->config->canfd_fpga_irq, mpfs_fpga_interrupt, priv))
