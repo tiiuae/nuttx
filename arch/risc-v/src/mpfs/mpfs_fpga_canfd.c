@@ -978,11 +978,13 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
   bool some_buffers_processed;
   enum mpfs_can_txtb_status txtb_status;
   uint8_t txtb_id;
+  irqstate_t flags;
 
   do
   {
+    flags = up_irq_save();
     some_buffers_processed = false;
-    while((int)(priv->txb_head - priv->txb_tail) > 0)
+    while((int)(priv->txb_head - priv->txb_tail) > 0 || priv->txb_head == 0 && priv->txb_tail > 0)
     {
       txtb_id = priv->txb_tail % priv->ntxbufs;
       txtb_status = mpfs_can_get_tx_status(priv, txtb_id);
@@ -1008,18 +1010,8 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
         if (first)
         {
           nerr("BUG, TXB#%u not in a finished state (0x%x)!\n", txtb_id, txtb_status);
+          up_irq_restore(flags);
           return;
-        }
-        else
-        {
-          if (some_buffers_processed)
-          {
-            /* Clear the interrupt again. We do not want to receive again interrupt for
-            * the buffer already handled. If it is the last finished one then it would
-            * cause log of spurious interrupt.
-            */
-            putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
-          }
         }
         break;
       }
@@ -1036,6 +1028,16 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
         mpfs_can_rotate_txb_prio(priv);
         mpfs_can_give_txtb_cmd(priv, TXT_CMD_SET_EMPTY, txtb_id);
       }
+    }
+
+    up_irq_restore(flags);
+    if (some_buffers_processed)
+    {
+      /* Clear the interrupt again. We do not want to receive again interrupt for
+      * the buffer already handled. If it is the last finished one then it would
+      * cause log of spurious interrupt.
+      */
+      putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
     }
   } while (some_buffers_processed);
 }
@@ -1062,9 +1064,6 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
 static void mpfs_txdone_work(FAR void *arg)
 {
   FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)arg;
-
-  /* Clear TX interrupt flags */
-  mpfs_txdone(priv);
 
   /* There should be space for a new TX in any event.  Poll the network for
    * new XMIT data
@@ -1277,41 +1276,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
   uint32_t isr, icr, imask;
   int irq_loops;
-
-  // uint32_t reg_val;
   
-  // reg_val = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
-  // ninfo("get MODE reg value : 0x%08x\n", reg_val);
-  
-  // reg_val = getreg32(priv->base + MPFS_CANFD_STATUS_OFFSET);
-  // ninfo("get STATUS reg value : 0x%08x\n", reg_val);
-
-  // reg_val = getreg32(priv->base + MPFS_CANFD_INT_STAT_OFFSET);
-  // ninfo("get INT_STAT reg value : 0x%08x\n", reg_val);
-
-  // reg_val = getreg32(priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
-  // ninfo("get INT_ENA_SET reg value : 0x%08x\n", reg_val);
-
-  // reg_val = getreg32(priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
-  // ninfo("get INT_MASK_SET reg value : 0x%08x\n", reg_val);
-
-  // reg_val = getreg32(priv->base + MPFS_CANFD_BTR_OFFSET);
-  // ninfo("get BTR reg value : 0x%08x\n", reg_val);
-  
-  // reg_val = getreg32(priv->base + MPFS_CANFD_BTR_FD_OFFSET);
-  // ninfo("get BTR_FD reg value : 0x%08x\n", reg_val);
-  
-  // reg_val = getreg32(priv->base + MPFS_CANFD_EWL_OFFSET);
-  // ninfo("get EWL reg value : 0x%08x\n", reg_val);
-  
-  // reg_val = getreg32(priv->base + MPFS_CANFD_REC_OFFSET);
-  // ninfo("get REC reg value : 0x%08x\n", reg_val);
-  
-  // reg_val = getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET);
-  // ninfo("get RX_STATUS reg value : 0x%08x\n", reg_val);
-
-  // ninfo("\n\n");
-
   for (irq_loops = 0; irq_loops < 10000; irq_loops++)
   {
     /* Get the interrupt status */
@@ -1340,6 +1305,11 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
     if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
     {
       ninfo("TXBHCI interrupt\n");
+      
+      /* Clear TX interrupt flags */
+      mpfs_txdone(priv);
+      
+      /* Schedule work to poll for next available tx frame from the network */
       work_queue(CANWORK, &priv->irqwork, mpfs_txdone_work, priv, 0);
     }
 
@@ -1363,19 +1333,19 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
   /* Check if the any of the stuck one belongs to txb status */
   if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
   {
-    nerr("txb_head=0x%08x txb_tail=0x%08x\n", priv->txb_head, priv->txb_tail);
+    ninfo("txb_head=0x%08x txb_tail=0x%08x\n", priv->txb_head, priv->txb_tail);
     for (int i = 0; i < priv->ntxbufs; i++)
     {
       uint32_t status = mpfs_can_get_tx_status(priv, i);
-      nerr("txb[%d] txb status=0x%08x\n", i, status);
+      ninfo("txb[%d] txb status=0x%08x\n", i, status);
     }
   }
 
   /* Clear and reset all interrupt */
-  nerr("Reset all interrupts...\n");
+  ninfo("Reset all interrupts...\n");
   imask = 0xFFFFFFFF;
-  putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_CLR_INT_ENA_CLR);
-  putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_INT_ENA_SET);      
+  putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_CLR_OFFSET);
+  putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);      
 
   return OK;
 }
@@ -1479,8 +1449,8 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct c
 	if (!mpfs_can_is_txt_buf_writable(priv, buf))
 		return false;
 
-  /* Check for invalid CANFD frame length */
-	if (cf->len > CANFD_MAX_DLEN)
+  /* Check for invalid classical CAN / CANFD frame length */
+	if (cf->len > CANFD_MAX_DLEN || (cf->len > CAN_MAX_DLEN && is_ccf))
 		return false;
 
 	/* Prepare Frame format */
