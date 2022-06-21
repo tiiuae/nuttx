@@ -525,7 +525,7 @@ static int mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s 
 		}
 
 		sample_point = 1000 * (tseg + CAN_CALC_SYNC_SEG - tseg2) / (tseg + CAN_CALC_SYNC_SEG);
-		sample_point_error = abs(sample_point_nominal - sample_point);
+		sample_point_error = sample_point_nominal - sample_point;
 
 		if (sample_point <= sample_point_nominal && sample_point_error < best_sample_point_error)
     {
@@ -606,7 +606,7 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv, struct mpfs_c
 			continue;
 
 		bitrate = priv->can.clock.freq / (brp * tsegall);
-		bitrate_error = abs(bt->bitrate - bitrate);
+		bitrate_error = bt->bitrate - bitrate;
 
 		/* tseg brp biterror */
 		if (bitrate_error > best_bitrate_error)
@@ -733,6 +733,8 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv, struct canfd_
 	else
 		cf->can_id = (idw >> MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT) & CAN_SFF_MASK;
 
+  ninfo("CAN ID is 0x%08x\n", cf->can_id);
+      
 	/* BRS, ESI, RTR Flags */
 	cf->flags = 0;
 	if (MPFS_CANFD_FRAME_FORMAT_W_FDF & ffw)
@@ -772,6 +774,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv, struct canfd_
 	/* Data */
 	for (i = 0; i < len; i += 4) {
     uint32_t data = getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
+    ninfo("RX data 0x%08x\n", data);  
     *(uint32_t *)(cf->data + i) = data;
 	}
 
@@ -984,7 +987,7 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
   {
     flags = up_irq_save();
     some_buffers_processed = false;
-    while((int)(priv->txb_head - priv->txb_tail) > 0 || priv->txb_head == 0 && priv->txb_tail > 0)
+    while((int)(priv->txb_head - priv->txb_tail) > 0 || (priv->txb_head == 0 && priv->txb_tail > 0))
     {
       txtb_id = priv->txb_tail % priv->ntxbufs;
       txtb_status = mpfs_can_get_tx_status(priv, txtb_id);
