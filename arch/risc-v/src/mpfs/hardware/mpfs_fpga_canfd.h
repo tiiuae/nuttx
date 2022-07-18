@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/riscv/src/mpfs/hardware/mpfs_fpga_can.h
+ * arch/riscv/src/mpfs/hardware/mpfs_fpga_canfd.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with

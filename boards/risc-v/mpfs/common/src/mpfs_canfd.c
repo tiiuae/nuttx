@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/riscv/src/mpfs/mpfs_fpga_canfd.h
+ * boards/risc-v/mpfs/common/src/mpfs_canfd.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,79 +18,40 @@
  *
  ****************************************************************************/
 
-#define __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
-#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
-
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
 
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/* Configuration ************************************************************/
-
-/* Check if CAN-FD support is enabled. */
-
-#ifdef CONFIG_MPFS_CANFD
-
-/****************************************************************************
- * Included Files
- ****************************************************************************/
+#include <errno.h>
+#include <stddef.h>
+#include <debug.h>
+#include <string.h>
+#include <limits.h>
 
 #include <arch/board/board.h>
-#include "hardware/mpfs_fpga_canfd.h"
+#include "mpfs_fpga_canfd.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
 /****************************************************************************
- * Public Types
+ * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Public Data
- ****************************************************************************/
-
-#ifndef __ASSEMBLY__
-
-#undef EXTERN
-#if defined(__cplusplus)
-#define EXTERN extern "C"
-extern "C"
-{
-#else
-#define EXTERN extern
-#endif
-
-/****************************************************************************
- * Public Function Prototypes
- ****************************************************************************/
-
-/****************************************************************************
- * Name: mpfs_fpga_canfd_init
+ * Name: mpfs_canfd_setup
  *
  * Description:
- *   Initialize a CANFD block.
  *
- * Returned Value:
- *   OK on success, Negated errno on failure
+ *   Initialize FPGA CANFD driver
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NETDEV_LATEINIT
-int mpfs_fpga_canfd_init(void);
-#endif
-
-#undef EXTERN
-#if defined(__cplusplus)
+int mpfs_canfd_setup(void)
+{
+  int ret = mpfs_fpga_canfd_init();
+  return ret;
 }
-#endif
-
-#endif /* __ASSEMBLY__ */
-#endif /* CONFIG_MPFS_CANFD */
-#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H */

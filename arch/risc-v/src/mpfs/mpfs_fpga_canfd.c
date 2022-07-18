@@ -480,7 +480,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg);
  ****************************************************************************/
 
 /****************************************************************************
- * Function: 
+ * Name: mpfs_can_update_sample_point
  *
  * Description:
  *  Update sample point
@@ -544,7 +544,7 @@ static int mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s 
 
 
 /****************************************************************************
- * Function: mpfs_calc_bittiming
+ * Name: mpfs_calc_bittiming
  *
  * Description:
  *  Calculate bittiming params from bittiming const params
@@ -676,7 +676,7 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv, struct mpfs_c
 
 
 /****************************************************************************
- * Function: can_state_to_str
+ * Name: can_state_to_str
  *
  * Description:
  *  Converts CAN controller state code to corresponding text
@@ -703,7 +703,7 @@ static const char *can_state_to_str(enum mpfs_can_state_e state)
 
 
 /****************************************************************************
- * Function: mpfs_can_read_rx_frame
+ * Name: mpfs_can_read_rx_frame
  *
  * Description:
  *  Read frame from RX FIFO
@@ -788,7 +788,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv, struct canfd_
 
 
 /****************************************************************************
- * Function: mpfs_receive
+ * Name: mpfs_receive
  *
  * Description:
  *  An interrupt was received indicating the availability of a new RX packet
@@ -903,7 +903,7 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_rotate_txb_prio
+ * Name: mpfs_rotate_txb_prio
  *
  * Description:
  *  Rotates priorities of TXT Buffers
@@ -930,7 +930,7 @@ static void mpfs_can_rotate_txb_prio(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_can_give_txtb_cmd
+ * Name: mpfs_can_give_txtb_cmd
  *
  * Description:
  *  Apply command on a TXT buffer
@@ -959,7 +959,7 @@ static void mpfs_can_give_txtb_cmd(FAR struct mpfs_driver_s *priv, enum mpfs_can
 
 
 /****************************************************************************
- * Function: mpfs_txdone
+ * Name: mpfs_txdone
  *
  * Description:
  *  Tx done interrupt service rountine
@@ -1047,7 +1047,7 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_txdone_work
+ * Name: mpfs_txdone_work
  *
  * Description:
  *  An interrupt was received indicating that the last TX packet(s) is done
@@ -1078,7 +1078,7 @@ static void mpfs_txdone_work(FAR void *arg)
 
 
 /****************************************************************************
- * Function: mpfs_can_read_fault_state
+ * Name: mpfs_can_read_fault_state
  * 
  * Description:
  *    Reads FPGA CANFD fault confinement state 
@@ -1120,7 +1120,7 @@ static enum mpfs_can_state_e mpfs_can_read_fault_state(FAR struct mpfs_driver_s 
 
 
 /****************************************************************************
- * Function: mpfs_read_rec_tec
+ * Name: mpfs_read_rec_tec
  * 
  * Description:
  *    Reads FPGA CANFD RX/TX error counter
@@ -1144,7 +1144,7 @@ static void mpfs_can_get_rec_tec(FAR struct mpfs_driver_s *priv, struct mpfs_can
 
 
 /****************************************************************************
- * Function: mpfs_err_interrupt
+ * Name: mpfs_err_interrupt
  * 
  * Description:
  *    Error frame ISR
@@ -1256,7 +1256,7 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
 
 
 /****************************************************************************
- * Function: mpfs_fpga_interrupt
+ * Name: mpfs_fpga_interrupt
  *
  * Description:
  *   Three interrupt sources will vector to this function:
@@ -1355,7 +1355,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
 
 /****************************************************************************
- * Function: mpfs_get_tx_status
+ * Name: mpfs_get_tx_status
  *
  * Description:
  *  Get status of txt buffer
@@ -1382,7 +1382,7 @@ static enum mpfs_can_txtb_status mpfs_can_get_tx_status(FAR struct mpfs_driver_s
 
 
 /****************************************************************************
- * Function: mpfs_can_is_txt_buf_writable
+ * Name: mpfs_can_is_txt_buf_writable
  *
  * Description:
  *  Check if frame can be inserted to TXT Buffer
@@ -1413,7 +1413,7 @@ static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv, uint8_t
 
 
 /****************************************************************************
- * Function: mpfs_can_insert_frame
+ * Name: mpfs_can_insert_frame
  *
  * Description:
  *  Insert frame to txt buffer on the FPGA CANFD controller
@@ -1501,7 +1501,7 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv, const struct c
 
 
 /****************************************************************************
- * Function: mpfs_transmit
+ * Name: mpfs_transmit
  *
  * Description:
  *  Start hardware transmission.  Called either from the txdone interrupt
@@ -1555,7 +1555,7 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
 }
 
 /****************************************************************************
- * Function: mpfs_txpoll
+ * Name: mpfs_txpoll
  *
  * Description:
  *   The transmitter is available, check if the network has any outgoing
@@ -1611,7 +1611,7 @@ static int mpfs_txpoll(struct net_driver_s *dev)
 
 
 /****************************************************************************
- * Function: mpfs_txavail_work
+ * Name: mpfs_txavail_work
  *
  * Description:
  *   Perform an out-of-cycle poll on the worker thread.
@@ -1651,7 +1651,7 @@ static void mpfs_txavail_work(FAR void *arg)
 
 
 /****************************************************************************
- * Function: mpfs_txavail
+ * Name: mpfs_txavail
  *
  * Description:
  *  Driver callback invoked when new TX data is available.  This is a
@@ -1691,7 +1691,7 @@ static int mpfs_txavail(struct net_driver_s *dev)
 
 
 /****************************************************************************
- * Function: mpfs_can_btr
+ * Name: mpfs_can_btr
  *
  * Description:
  *  Set FPGA CAN controller data bittiming
@@ -1761,7 +1761,7 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv, struct mpfs_can_bitt
 
 
 /****************************************************************************
- * Function: mpfs_can_set_bittiming
+ * Name: mpfs_can_set_bittiming
  *
  * Description:
  *  Set FPGA CAN controller nominal (arbitration) bittiming
@@ -1787,7 +1787,7 @@ static int mpfs_can_set_bittiming(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_can_set_data_bittiming
+ * Name: mpfs_can_set_data_bittiming
  *
  * Description:
  *  Set FPGA CAN controller data bittiming
@@ -1813,7 +1813,7 @@ static int mpfs_can_set_data_bittiming(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_can_set_secondary_sample_point
+ * Name: mpfs_can_set_secondary_sample_point
  *
  * Description:
  *  Set FPGA CAN controller secondary sample point.
@@ -1864,7 +1864,7 @@ static int mpfs_can_set_secondary_sample_point(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_can_set_mode
+ * Name: mpfs_can_set_mode
  *
  * Description:
  *  Set FPGA CAN FD controller mode
@@ -1921,7 +1921,7 @@ static void mpfs_can_set_mode(FAR struct mpfs_driver_s *priv, const struct mpfs_
 
 
 /****************************************************************************
- * Function: mpfs_can_chip_start
+ * Name: mpfs_can_chip_start
  *
  * Description:
  *  This routine starts the driver. Routine expects that chip is in reset state. It setups initial
@@ -2002,7 +2002,7 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_can_chip_stop
+ * Name: mpfs_can_chip_stop
  *
  * Description:
  *  This routine stops the driver. This is the drivers stop routine. It will disable the
@@ -2039,7 +2039,7 @@ static void mpfs_can_chip_stop(FAR struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_reset
+ * Name: mpfs_reset
  *
  * Description:
  *  Put the EMAC in the non-operational, reset state
@@ -2083,7 +2083,7 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
 
 
 /****************************************************************************
- * Function: mpfs_ifup
+ * Name: mpfs_ifup
  *
  * Description:
  *  NuttX Callback: Bring up the Ethernet interface when an IP address is
@@ -2121,40 +2121,37 @@ static int mpfs_ifup(struct net_driver_s *dev)
   /* debug */
   uint32_t reg_val;
 
-  for(int i = 0; i < 10; i++)
-  {
-    reg_val = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
-    ninfo("get MODE reg value : 0x%08x\n", reg_val);
-    
-    reg_val = getreg32(priv->base + MPFS_CANFD_STATUS_OFFSET);
-    ninfo("get STATUS reg value : 0x%08x\n", reg_val);
-
-    reg_val = getreg32(priv->base + MPFS_CANFD_INT_STAT_OFFSET);
-    ninfo("get INT_STAT reg value : 0x%08x\n", reg_val);
+  reg_val = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
+  ninfo("get MODE reg value : 0x%08x\n", reg_val);
   
-    reg_val = getreg32(priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
-    ninfo("get INT_ENA_SET reg value : 0x%08x\n", reg_val);
+  reg_val = getreg32(priv->base + MPFS_CANFD_STATUS_OFFSET);
+  ninfo("get STATUS reg value : 0x%08x\n", reg_val);
 
-    reg_val = getreg32(priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
-    ninfo("get INT_MASK_SET reg value : 0x%08x\n", reg_val);
+  reg_val = getreg32(priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+  ninfo("get INT_STAT reg value : 0x%08x\n", reg_val);
 
-    reg_val = getreg32(priv->base + MPFS_CANFD_BTR_OFFSET);
-    ninfo("get BTR reg value : 0x%08x\n", reg_val);
-    
-    reg_val = getreg32(priv->base + MPFS_CANFD_BTR_FD_OFFSET);
-    ninfo("get BTR_FD reg value : 0x%08x\n", reg_val);
-    
-    reg_val = getreg32(priv->base + MPFS_CANFD_EWL_OFFSET);
-    ninfo("get EWL reg value : 0x%08x\n", reg_val);
-    
-    reg_val = getreg32(priv->base + MPFS_CANFD_REC_OFFSET);
-    ninfo("get REC reg value : 0x%08x\n", reg_val);
-    
-    reg_val = getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET);
-    ninfo("get RX_STATUS reg value : 0x%08x\n", reg_val);
+  reg_val = getreg32(priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
+  ninfo("get INT_ENA_SET reg value : 0x%08x\n", reg_val);
 
-    ninfo("\n\n");
-	} 
+  reg_val = getreg32(priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
+  ninfo("get INT_MASK_SET reg value : 0x%08x\n", reg_val);
+
+  reg_val = getreg32(priv->base + MPFS_CANFD_BTR_OFFSET);
+  ninfo("get BTR reg value : 0x%08x\n", reg_val);
+  
+  reg_val = getreg32(priv->base + MPFS_CANFD_BTR_FD_OFFSET);
+  ninfo("get BTR_FD reg value : 0x%08x\n", reg_val);
+  
+  reg_val = getreg32(priv->base + MPFS_CANFD_EWL_OFFSET);
+  ninfo("get EWL reg value : 0x%08x\n", reg_val);
+  
+  reg_val = getreg32(priv->base + MPFS_CANFD_REC_OFFSET);
+  ninfo("get REC reg value : 0x%08x\n", reg_val);
+  
+  reg_val = getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET);
+  ninfo("get RX_STATUS reg value : 0x%08x\n", reg_val);
+
+  ninfo("\n\n");
 
   /* Set interrupts */
   up_enable_irq(priv->config->canfd_fpga_irq);
@@ -2163,7 +2160,7 @@ static int mpfs_ifup(struct net_driver_s *dev)
 }
 
 /****************************************************************************
- * Function: mpfs_ifdown
+ * Name: mpfs_ifdown
  *
  * Description:
  *  NuttX Callback: Stop the interface.
@@ -2193,7 +2190,7 @@ static int mpfs_ifdown(struct net_driver_s *dev)
 
 
 /****************************************************************************
- * Function: mpfs_ioctl
+ * Name: mpfs_ioctl
  *
  * Description:
  *  PHY ioctl command handler
@@ -2247,7 +2244,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
  ****************************************************************************/
 
 /****************************************************************************
- * Function: mpfs_canfd_init
+ * Name: mpfs_fpga_canfd_init
  *
  * Description:
  *  Initialize the CAN controller and driver
@@ -2261,7 +2258,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
  *
  ****************************************************************************/
 
-int mpfs_canfd_init(void)
+int mpfs_fpga_canfd_init(void)
 {
   ninfo("initialize canfd driver...\n");
   struct mpfs_driver_s *priv;
@@ -2349,6 +2346,6 @@ int mpfs_canfd_init(void)
 void riscv_netinitialize(void)
 {
   ninfo("early init\n");
-  mpfs_canfd_init();
+  mpfs_fpga_canfd_init();
 }
 #endif

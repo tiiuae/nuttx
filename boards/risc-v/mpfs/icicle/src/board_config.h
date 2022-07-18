@@ -51,5 +51,6 @@ int mpfs_board_ihc_init(void);
 int mpfs_board_emmcsd_init(void);
 int mpfs_board_usb_init(void);
 int mpfs_pwm_setup(void);
+int mpfs_canfd_setup(void);
 
 #endif /* __BOARDS_RISCV_MPFS_ICICLE_SRC_BOARD_CONFIG_H */
