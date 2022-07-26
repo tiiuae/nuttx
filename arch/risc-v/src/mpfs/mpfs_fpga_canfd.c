@@ -833,7 +833,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
         (idw >> MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT) & CAN_SFF_MASK;
     }
 	
-  ninfo("CAN ID is 0x%08x\n", cf->can_id);
+  //ninfo("CAN ID is 0x%08x\n", cf->can_id);
       
 	/* BRS, ESI, RTR Flags */
 
@@ -885,7 +885,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
     {
       len = data_wc * 4;
     }
-  ninfo("Frame data len is %d\n", len);
+  //ninfo("Frame data len is %d\n", len);
 
 	/* Timestamp - Read and throw away */
 
@@ -897,7 +897,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
 	for (i = 0; i < len; i += 4)
     {
       uint32_t data = getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
-      ninfo("RX data 0x%08x\n", data);  
+      //ninfo("RX data 0x%08x\n", data);  
       *(uint32_t *)(cf->data + i) = data;
     }
 
@@ -954,7 +954,7 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
           if (MPFS_CANFD_FRAME_FORMAT_W_RTR & ffw)
             ninfo("Remote Frame received\n");
           else
-            ninfo("Classical CAN Frame received\n");
+            //ninfo("Classical CAN Frame received\n");
           is_classical_can_frame = true;
         }
       else
