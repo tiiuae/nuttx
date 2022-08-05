@@ -69,7 +69,7 @@
 
 #define MPFS_CANFD_FILTER_A_MASK_OFFSET                         (0x3C)
 
-#define MPFS_CANFD_FITLER_A_VAL_OFFSET                          (0x40)
+#define MPFS_CANFD_FILTER_A_VAL_OFFSET                          (0x40)
 
 #define MPFS_CANFD_FILTER_B_MASK_OFFSET                         (0x44)
 

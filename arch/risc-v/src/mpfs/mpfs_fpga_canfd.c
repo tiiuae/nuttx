@@ -43,6 +43,7 @@
 #include <nuttx/signal.h>
 #include <nuttx/net/netdev.h>
 #include <nuttx/net/can.h>
+#include <nuttx/can/can.h>
 
 #include "hardware/mpfs_fpga_canfd.h"
 #include "riscv_internal.h"
@@ -90,11 +91,22 @@
 #define POOL_SIZE               1
 #define TIMESTAMP_SIZE          sizeof(struct timeval)  /* To support
                                                          * timestamping frame */
-
 /* For bittiming calculation */
 
 #define CAN_CALC_MAX_ERROR      50 /* in one-tenth of a percent */
 #define CAN_CALC_SYNC_SEG       1
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+/* CAN hw filter support */
+
+#define HW_FILTER_A             0
+#define HW_FILTER_B             1
+#define HW_FILTER_C             2
+#define HW_FILTER_RANGE         3
+
+#define CAN_STD_ID              0
+#define CAN_EXT_ID              1
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
 
 /* Special address description flags for the CAN_ID */
 
@@ -409,6 +421,13 @@ struct mpfs_driver_s
 	uint32_t txb_prio;
 	unsigned int ntxbufs;
 
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+  /* hw filter */
+
+  uint8_t used_bit_filter_number;
+  bool used_range_filter;
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+
   /* This holds the information visible to the NuttX network */
   
   struct net_driver_s dev;    /* Interface understood by the network */
@@ -504,6 +523,17 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv,
 static int mpfs_can_set_bittiming(FAR struct mpfs_driver_s *priv);
 static int mpfs_can_set_data_bittiming(FAR struct mpfs_driver_s *priv);
 
+/* HW filter related functions */
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
+                                   uint8_t filter_type,
+                                   uint8_t can_id_type,
+                                   uint8_t can_type,
+                                   uint32_t fid1,
+                                   uint32_t fid2);
+static void mpfs_can_reset_hw_filter(FAR struct mpfs_driver_s *priv);
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
 
 /* FPGA CAN-FD controller life cycle routines */
 
@@ -719,7 +749,10 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
                bitrate_error % 10);
           return -EDOM;
         }
-      nwarn("bitrate error %d.%d%%\n", bitrate_error / 10, bitrate_error % 10);
+      nwarn("bitrate: %u, bitrate error %d.%d%%\n",
+            bt->bitrate,
+            bitrate_error / 10,
+            bitrate_error % 10);
     }
 
 	/* real sample point */
@@ -738,7 +771,7 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
 
 	if (!bt->sjw || !btc->sjw_max)
     {
-      bt->sjw = 1;
+      bt->sjw = 5;
     }
   else
     {
@@ -763,7 +796,7 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
 	bt->bitrate =
     priv->can.clock.freq / (bt->brp * (CAN_CALC_SYNC_SEG + tseg1 + tseg2));
 
-	return OK;
+  return OK;
 }
 
 /****************************************************************************
@@ -833,7 +866,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
         (idw >> MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT) & CAN_SFF_MASK;
     }
 	
-  //ninfo("CAN ID is 0x%08x\n", cf->can_id);
+  ninfo("CAN ID is 0x%08x\n", cf->can_id);
       
 	/* BRS, ESI, RTR Flags */
 
@@ -885,7 +918,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
     {
       len = data_wc * 4;
     }
-  //ninfo("Frame data len is %d\n", len);
+  ninfo("Frame data len is %d\n", len);
 
 	/* Timestamp - Read and throw away */
 
@@ -897,7 +930,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
 	for (i = 0; i < len; i += 4)
     {
       uint32_t data = getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
-      //ninfo("RX data 0x%08x\n", data);  
+      ninfo("RX data 0x%08x\n", data);  
       *(uint32_t *)(cf->data + i) = data;
     }
 
@@ -954,7 +987,7 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
           if (MPFS_CANFD_FRAME_FORMAT_W_RTR & ffw)
             ninfo("Remote Frame received\n");
           else
-            //ninfo("Classical CAN Frame received\n");
+            ninfo("Classical CAN Frame received\n");
           is_classical_can_frame = true;
         }
       else
@@ -1338,7 +1371,6 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
   ninfo("ISR = 0x%08x, rxerr %d, txerr %d, error type %u, pos %u, ALC "
         "id_field %u, bit %u\n", isr, bec.rxerr, bec.txerr, err_type, err_pos,
         alc_id_field, alc_bit);
-
 
 	/* EWLI: error warning limit condition met
 	 * FCSI: fault confinement state changed
@@ -1972,7 +2004,7 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv,
       btr |= bt->phase_seg2 << MPFS_CANFD_BTR_PH2_SHIFT;
       btr |= bt->brp << MPFS_CANFD_BTR_BRP_SHIFT;
       btr |= bt->sjw << MPFS_CANFD_BTR_SJW_SHIFT;
-
+      ninfo("prop_seg: %u, phase_seg1: %u, phase_seg2: %u, brp: %u, sjw: %u \n", bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp, bt->sjw);
       putreg32(btr, priv->base + MPFS_CANFD_BTR_OFFSET);	
     }
   else
@@ -1982,6 +2014,7 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv,
       btr |= bt->phase_seg2 << MPFS_CANFD_BTR_FD_PH2_FD_SHIFT;
       btr |= bt->brp << MPFS_CANFD_BTR_FD_BRP_FD_SHIFT;
       btr |= bt->sjw << MPFS_CANFD_BTR_FD_SJW_FD_SHIFT;
+      ninfo("prop_seg: %u, phase_seg1: %u, phase_seg2: %u, brp: %u, sjw: %u \n", bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp, bt->sjw);
 
       putreg32(btr, priv->base + MPFS_CANFD_BTR_FD_OFFSET);	
     }
@@ -2142,6 +2175,12 @@ static void mpfs_can_set_mode(FAR struct mpfs_driver_s *priv,
     (mode_reg | MPFS_CANFD_MODE_RTRLE) :
     (mode_reg & ~MPFS_CANFD_MODE_RTRLE);
 
+  /* Acceptance filter mode supported if FILTER IOCTL CONFIG is used */
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+  mode_reg |= MPFS_CANFD_MODE_AFM;
+#endif
+
 	/* Some bits fixed:
 	 * TSTM  - Off, User shall not be able to change REC/TEC by hand during
    * operation
@@ -2153,13 +2192,245 @@ static void mpfs_can_set_mode(FAR struct mpfs_driver_s *priv,
 }
 
 /****************************************************************************
+ * Name: mpfs_can_add_hw_filter
+ *
+ * Description:
+ *  Add new hw filter to FGPA CANFD Controller
+ *
+ * Input Parameters:
+ *  priv          - Pointer to the private FPGA CANFD driver state structure
+ *  filter_type   - Filter A, B, C or Range
+ *  can_id_type   - std CAN ID / ext CAN ID
+ *  can_type      - classical CAN / CANFD
+ *  filter_id1    - filter id 1 (can be filter value for bit filter or range
+ * low for range filter)
+ *  filter_id2    - filter id 2 (can be filter mask for bit filter or range
+ * high for range filter)
+ *
+ * Returned Value:
+ *  None
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
+                                   uint8_t filter_type,
+                                   uint8_t can_id_type,
+                                   uint8_t can_type,
+                                   uint32_t fid1,
+                                   uint32_t fid2)
+{
+  uint32_t fc_reg;
+  
+  fc_reg = getreg32(priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET); 
+        
+  switch (filter_type)
+    {
+      case HW_FILTER_A:
+        /* Set filter control reg for filter A */
+        
+        if (can_type == CAN_MSGPRIO_LOW)
+          {
+            /* Classical CAN frame filter */
+
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FANE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FANB);
+            
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FAFE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FAFB;
+          }
+        else if (can_type == CAN_MSGPRIO_HIGH)
+          {
+            /* CANFD frame filter */
+          
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FAFE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FAFB);
+
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FANE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FANB;
+          }
+        putreg32(fc_reg, priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET);	
+        
+        /* Set bit filter value / mask */
+        
+        putreg32(fid1, priv->base + MPFS_CANFD_FILTER_A_VAL_OFFSET);	
+        putreg32(fid2, priv->base + MPFS_CANFD_FILTER_A_MASK_OFFSET);	
+        break;
+    
+      case HW_FILTER_B:
+        /* Set filter control reg for filter B */
+        
+        if (can_type == CAN_MSGPRIO_LOW)
+          {
+            /* Classical CAN frame filter */
+
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FBNE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FBNB);
+            
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FBFE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FBFB;
+          }
+        else if (can_type == CAN_MSGPRIO_HIGH)
+          {
+            /* CANFD frame filter */
+          
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FBFE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FBFB);
+
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FBNE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FBNB;
+          }
+        putreg32(fc_reg, priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET);	
+        
+        /* Set bit filter value / mask */
+        
+        putreg32(fid1, priv->base + MPFS_CANFD_FILTER_B_VAL_OFFSET);	
+        putreg32(fid2, priv->base + MPFS_CANFD_FILTER_B_MASK_OFFSET);	
+        break;
+    
+      case HW_FILTER_C:
+        /* Set filter control reg for filter C */
+        
+        if (can_type == CAN_MSGPRIO_LOW)
+          {
+            /* Classical CAN frame filter */
+
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FCNE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FCNB);
+            
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FCFE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FCFB;
+          }
+        else if (can_type == CAN_MSGPRIO_HIGH)
+          {
+            /* CANFD frame filter */
+          
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FCFE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FCFB);
+
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FCNE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FCNB;
+          }
+        putreg32(fc_reg, priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET);	
+        
+        /* Set bit filter value / mask */
+        
+        putreg32(fid1, priv->base + MPFS_CANFD_FILTER_C_VAL_OFFSET);	
+        putreg32(fid2, priv->base + MPFS_CANFD_FILTER_C_MASK_OFFSET);	
+        break;
+    
+      case HW_FILTER_RANGE:
+        /* Set filter control reg for filter range */
+        
+        if (can_type == CAN_MSGPRIO_LOW)
+          {
+            /* Classical CAN frame filter */
+
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FRNE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FRNB);
+            
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FRFE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FRFB;
+          }
+        else if (can_type == CAN_MSGPRIO_HIGH)
+          {
+            /* CANFD frame filter */
+          
+            fc_reg = (can_id_type == CAN_EXT_ID) ?
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FRFE) :
+              (fc_reg | MPFS_CANFD_FILTER_CONTROL_FRFB);
+
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FRNE;
+            fc_reg &= ~MPFS_CANFD_FILTER_CONTROL_FRNB;
+          }
+        putreg32(fc_reg, priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET);	
+        
+        /* Set range filter low / high */
+        
+        putreg32(fid1, priv->base + MPFS_CANFD_FILTER_RAN_LOW_OFFSET);	
+        putreg32(fid2, priv->base + MPFS_CANFD_FILTER_RAN_HIGH_OFFSET);	
+        break;
+
+      default:
+        /* Unsupported filter type */
+
+        break;
+    }
+}
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+
+/****************************************************************************
+ * Name: mpfs_can_reset_hw_filter
+ *
+ * Description:
+ *  Reset all hw filters (both bit and range filter) to default settings
+ *
+ * Input Parameters:
+ *  priv  - Pointer to the private FPGA CANFD driver state structure
+ *
+ * Returned Value:
+ *  None
+ *
+ * Assumptions:
+ *  None
+ *
+ ****************************************************************************/
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+static void mpfs_can_reset_hw_filter(FAR struct mpfs_driver_s *priv)
+{
+  uint32_t reg;
+
+  /* Reset filter control */
+  
+  reg = 0; 
+  reg |= MPFS_CANFD_FILTER_CONTROL_FANB;
+  reg |= MPFS_CANFD_FILTER_CONTROL_FANE;
+  reg |= MPFS_CANFD_FILTER_CONTROL_FAFB;
+  reg |= MPFS_CANFD_FILTER_CONTROL_FAFE;
+  putreg32(reg, priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET);	
+
+  /* Reset bit filter A */
+
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_A_VAL_OFFSET);	
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_A_MASK_OFFSET);	
+
+  /* Reset bit filter B */
+
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_B_VAL_OFFSET);	
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_B_MASK_OFFSET);	
+
+  /* Reset bit filter C */
+
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_C_VAL_OFFSET);	
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_C_MASK_OFFSET);	
+
+  /* Reset range filter */
+
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_RAN_LOW_OFFSET);	
+  putreg32(0, priv->base + MPFS_CANFD_FILTER_RAN_HIGH_OFFSET);	
+
+  priv->used_bit_filter_number = 0;
+  priv->used_range_filter = false;
+}
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+
+/****************************************************************************
  * Name: mpfs_can_chip_start
  *
  * Description:
- *  This routine starts the driver. Routine expects that chip is in reset state. It setups initial
- *  Tx buffers for FIFO priorities, sets bittiming, enables interrupts,
- *  switches core to operational mode and changes controller
- *  state to %CAN_STATE_STOPPED.
+ *  This routine starts the driver. Routine expects that chip is in reset
+ *  state. It setups initial Tx buffers for FIFO priorities, sets bittiming,
+ *  enables interrupts, switches core to operational mode and changes
+ *  controller state to %CAN_STATE_STOPPED.
  *
  * Input Parameters:
  *  priv  - Pointer to the private FPGA CANFD driver state structure
@@ -2208,7 +2479,7 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
     {
     	return err;
     }
-	
+
 	/* Configure modes */
 
 	mode.flags = priv->can.ctrlmode;
@@ -2352,8 +2623,7 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
  * Name: mpfs_ifup
  *
  * Description:
- *  NuttX Callback: Bring up the Ethernet interface when an IP address is
- *  provided
+ *  NuttX Callback: Start the CAN interface
  *
  * Input Parameters:
  *  dev  - Reference to the NuttX driver state structure
@@ -2417,6 +2687,9 @@ static int mpfs_ifup(struct net_driver_s *dev)
   reg_val = getreg32(priv->base + MPFS_CANFD_RX_STATUS_OFFSET);
   ninfo("get RX_STATUS reg value : 0x%08x\n", reg_val);
 
+  reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_CONTROL_OFFSET);
+  ninfo("get FILTER_CONTROL reg value : 0x%08x\n", reg_val);
+
   ninfo("\n\n");
 
   /* Set interrupts */
@@ -2430,7 +2703,7 @@ static int mpfs_ifup(struct net_driver_s *dev)
  * Name: mpfs_ifdown
  *
  * Description:
- *  NuttX Callback: Stop the interface.
+ *  NuttX Callback: Stop the CAN interface.
  *
  * Input Parameters:
  *  dev  - Reference to the NuttX driver state structure
@@ -2474,7 +2747,7 @@ static int mpfs_ifdown(struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL
+#ifdef CONFIG_NETDEV_IOCTL     
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 {
   FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
@@ -2482,23 +2755,259 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
   
   switch (cmd)
     {
+#ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL     
     case SIOCGCANBITRATE:
       /* Get bitrate from the FPGA CANFD controller */
       
-      struct can_ioctl_data_s *req = (struct can_ioctl_data_s *)((uintptr_t)arg);
-      req->arbi_bitrate = priv->can.bittiming.bitrate / 1000; /* kbit/s */
-      req->arbi_samplep = priv->can.bittiming.sample_point / 10;
-      req->data_bitrate = priv->can.data_timing.bitrate / 1000; /* kbit/s */
-      req->data_samplep = priv->can.data_timing.sample_point / 10;
-      ret = OK;
+      {
+        struct can_ioctl_data_s *req = (struct can_ioctl_data_s *)((uintptr_t)arg);
+        req->arbi_bitrate = priv->can.bittiming.bitrate / 1000; /* kbit/s */
+        req->arbi_samplep = priv->can.bittiming.sample_point / 10;
+        req->data_bitrate = priv->can.data_bittiming.bitrate / 1000; /* kbit/s */
+        req->data_samplep = priv->can.data_bittiming.sample_point / 10;
+        ret = OK;
+      }
       break;
 
     case SIOCSCANBITRATE:
-      /* Set bitrate of the FPGA CANFD controller | NOT YET SUPPORTED */
-      
-      ret = -ESRCH;
+      /* Set bitrate of the FPGA CANFD controller */
+
+      {  
+        struct can_ioctl_data_s *req = (struct can_ioctl_data_s *)((uintptr_t)arg);
+        
+        if (req->arbi_bitrate > 1000)
+          {
+            nerr("Arbitration bitrate higher than 1Mbps is yet to be supported.");
+            ret = -EINVAL;
+            break;
+          }
+        priv->can.bittiming.bitrate = req->arbi_bitrate * 1000; /* bit/s */
+
+        if (req->arbi_samplep > 100 || req->arbi_samplep <= 0)
+          {
+            nerr("Invalid arbitration sample point. Range should be (0,100]%.");
+            ret = -EINVAL;
+            break;
+          }
+        priv->can.bittiming.sample_point =
+          req->arbi_samplep * 10; /* In one-tenth of a percent */
+                                                                    
+        if (req->data_bitrate > 4000 || req->data_bitrate < req->arbi_bitrate)
+          {
+            nerr("Data bitrate higher than 4Mbps is yet to be supported. Data "
+                  "bitrate cannot be smaller than arbitration bitrate.");
+            ret = -EINVAL;
+            break;
+          }
+        priv->can.data_bittiming.bitrate = req->data_bitrate * 1000; /* bit/s */
+
+        if (req->data_samplep > 100 || req->data_samplep <= 0)
+          {
+            nerr("Invalid data sample point. Range should be (0,100]%.");
+            ret = -EINVAL;
+            break;
+          }
+        priv->can.data_bittiming.sample_point =
+          req->data_samplep * 10; /* In one-tenth of a percent */
+                                                                   
+
+        /* Calculate nominal and data bit timing */
+        
+        mpfs_can_calc_bittiming(priv,
+                                &priv->can.bittiming,
+                                priv->can.bittiming_const);
+        mpfs_can_calc_bittiming(priv,
+                                &priv->can.data_bittiming,
+                                priv->can.data_bittiming_const);
+
+        /* Chip stop and start again to write bit timing register */
+
+        mpfs_can_chip_stop(priv);
+        if (mpfs_can_chip_start(priv) < 0)
+          {
+            nerr("Chip start failed.");
+            ret = -1;
+            break;
+          }
+        
+        ret = OK;
+      }
       break;
-    
+#endif /* CONFIG_NETDEV_CAN_BITRATE_IOCTL */
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+    case SIOCACANSTDFILTER:
+      
+      {
+        uint8_t filter;
+        struct can_ioctl_filter_s *req =
+          (struct can_ioctl_filter_s *)((uintptr_t)arg);
+
+        if (req->ftype == CAN_FILTER_MASK)
+          {
+              if (priv->used_bit_filter_number == 0)
+            {
+              /* Use bit filter A */
+            
+              filter = HW_FILTER_A;
+            }
+          else if (priv->used_bit_filter_number == 1)
+            {
+              /* Use bit filter B */
+
+              filter = HW_FILTER_B;
+            }
+          else if (priv->used_bit_filter_number == 2)
+            {
+              /* Use bit filter C */
+
+              filter = HW_FILTER_C;
+            }
+          else
+            {
+              /* All bit filters used. Return with error */
+
+              nerr("All bit filters used. Cannot add more. Delete all and add again.");
+              ret = -1;
+              break;
+            }
+          priv->used_bit_filter_number++;  
+          }
+        else if (req->ftype == CAN_FILTER_RANGE)
+          {
+            /* Use range filter */
+
+            filter = HW_FILTER_RANGE;
+            priv->used_range_filter = true;
+          }
+        else
+          {
+            /* Dual address and other filter types not yet support */
+            nerr("Dual address and other filter types not yet support");
+            ret = -1;
+            break;
+          }
+        
+        /* Add hw filter */
+
+        mpfs_can_add_hw_filter(priv,
+                              filter,
+                              CAN_STD_ID,
+                              req->fprio, /* LOW for CAN, HIGH for FDCAN */
+                              req->fid1,
+                              req->fid2);
+        
+        ret = OK;  
+      }
+      break;
+
+    case SIOCACANEXTFILTER:
+      /* Add CAN EXTENDED ID HW FILTER */
+      {    
+        uint8_t filter;
+        struct can_ioctl_filter_s *req =
+          (struct can_ioctl_filter_s *)((uintptr_t)arg);
+
+        if (req->ftype == CAN_FILTER_MASK)
+          {
+              if (priv->used_bit_filter_number == 0)
+            {
+              /* Use bit filter A */
+            
+              filter = HW_FILTER_A;
+            }
+          else if (priv->used_bit_filter_number == 1)
+            {
+              /* Use bit filter B */
+            
+              filter = HW_FILTER_B;
+            }
+          else if (priv->used_bit_filter_number == 2)
+            {
+              /* Use bit filter C */
+
+              filter = HW_FILTER_C;
+            }
+          else
+            {
+              /* All bit filters used. Return with error */
+
+              nerr("All bit filters used. Cannot add more. Delete all and add again.");
+              ret = -1;
+              break;
+            }
+          priv->used_bit_filter_number++;  
+          }
+        else if (req->ftype == CAN_FILTER_RANGE)
+          {
+            /* Use range filter */
+
+            if (priv->used_range_filter)
+              {
+                /* The range filter is already used. Return with error */
+
+                nerr("Range filter used. Cannot add more. Delete all and add again.");
+                ret = -1;
+                break;
+              }
+            filter = HW_FILTER_RANGE;
+            priv->used_range_filter = true;
+          }
+        else
+          {
+            /* Dual address and other filter types not yet support */
+            nerr("Dual address and other filter types not yet support");
+            ret = -1;
+            break;
+          }
+        
+        /* Add hw filter */
+
+        mpfs_can_add_hw_filter(priv,
+                              filter,
+                              CAN_EXT_ID,
+                              req->fprio, /* CAN Type: LOW for CAN, HIGH for FDCAN */
+                              req->fid1,
+                              req->fid2);
+        
+        ret = OK;  
+      }
+      break;
+
+    case SIOCDCANSTDFILTER: 
+    case SIOCDCANEXTFILTER:
+      /* Reset all HW FILTERs */
+      {
+#if 0
+        /* debug print */
+        uint32_t reg_val;
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_A_VAL_OFFSET);
+        ninfo("get FILTER_A value : 0x%08x\n", reg_val);
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_A_MASK_OFFSET);
+        ninfo("get FILTER_A mask : 0x%08x\n", reg_val);
+        
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_B_VAL_OFFSET);
+        ninfo("get FILTER_B value : 0x%08x\n", reg_val);
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_B_MASK_OFFSET);
+        ninfo("get FILTER_B mask : 0x%08x\n", reg_val);
+        
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_C_VAL_OFFSET);
+        ninfo("get FILTER_C value : 0x%08x\n", reg_val);
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_C_MASK_OFFSET);
+        ninfo("get FILTER_C mask : 0x%08x\n", reg_val);
+        
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_RAN_LOW_OFFSET);
+        ninfo("get FILTER_RAN LOW : 0x%08x\n", reg_val);
+        reg_val = getreg32(priv->base + MPFS_CANFD_FILTER_RAN_HIGH_OFFSET);
+        ninfo("get FILTER_RAN HIGH : 0x%08x\n", reg_val);
+        ninfo("\n\n");
+#endif
+        mpfs_can_reset_hw_filter(priv);
+        ret = OK;
+      }
+      break;
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+
     default:
       ret = -ENOTTY;
       break;
@@ -2562,6 +3071,14 @@ int mpfs_fpga_canfd_init(void)
   mpfs_can_calc_bittiming(priv,
                           &priv->can.data_bittiming,
                           priv->can.data_bittiming_const);
+
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+  /* Init hw filter runtime var */
+
+  priv->used_bit_filter_number = 0;
+  priv->used_range_filter = false;
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
 
   /* Set CAN control modes */
 #if 0
