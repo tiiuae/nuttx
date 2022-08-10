@@ -1555,7 +1555,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
   nerr("Stuck interrupt (isr=%08x)\n", isr);
 
-  /* Check if the any of the stuck one belongs to txb status. */
+  /* Check if any of the stuck one belongs to txb status. */
 
   if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
     {
@@ -1567,13 +1567,46 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
         }
     }
 
+  /* Check if any of the stuck one belongs to RX buffer data overrun */
+
+  if (isr & MPFS_CANFD_INT_STAT_DOI)
+    {
+      struct canfd_frame *cf = (struct canfd_frame *)priv->rxdesc;
+
+      ninfo("rx fifo overflow\n");
+      
+      cf->can_id = CAN_ERR_CRTL;
+      cf->data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+
+      /* Copy the buffer pointer to priv->dev..  Set amount of data
+       * in priv->dev.d_len
+       */
+
+      priv->dev.d_len = sizeof(struct canfd_frame);
+      priv->dev.d_buf = (uint8_t *)cf;
+
+      /* Send to socket interface */
+      
+      NETDEV_RXPACKETS(&priv->dev);
+      can_input(&priv->dev);
+
+      /* Point the packet buffer back to the next Tx buffer that will be
+       * used during the next write.
+       */
+      
+      priv->dev.d_buf = (uint8_t *)priv->txdesc;
+
+      /* Clear Data Overrun interrupt */
+
+      putreg32(MPFS_CANFD_INT_STAT_DOI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+    }
+
   /* Clear and reset all interrupt. */
   
   ninfo("Reset all interrupts...\n");
   imask = 0xFFFFFFFF;
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_CLR_OFFSET);
-  putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);      
-
+  putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
   return OK;
 }
 
