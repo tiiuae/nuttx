@@ -866,7 +866,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
         (idw >> MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT) & CAN_SFF_MASK;
     }
 	
-  ninfo("CAN ID is 0x%08x\n", cf->can_id);
+  //ninfo("CAN ID is 0x%08x\n", cf->can_id);
       
 	/* BRS, ESI, RTR Flags */
 
@@ -918,7 +918,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
     {
       len = data_wc * 4;
     }
-  ninfo("Frame data len is %d\n", len);
+  //ninfo("Frame data len is %d\n", len);
 
 	/* Timestamp - Read and throw away */
 
@@ -930,7 +930,7 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
 	for (i = 0; i < len; i += 4)
     {
       uint32_t data = getreg32(priv->base + MPFS_CANFD_RX_DATA_OFFSET);
-      ninfo("RX data 0x%08x\n", data);  
+      //ninfo("RX data 0x%08x\n", data);  
       *(uint32_t *)(cf->data + i) = data;
     }
 
@@ -987,12 +987,12 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
           if (MPFS_CANFD_FRAME_FORMAT_W_RTR & ffw)
             ninfo("Remote Frame received\n");
           else
-            ninfo("Classical CAN Frame received\n");
+            //ninfo("Classical CAN Frame received\n");
           is_classical_can_frame = true;
         }
       else
         {
-          ninfo("CANFD Frame received\n");
+          //ninfo("CANFD Frame received\n");
         }
       
       /* Read the classical or CANFD or remote frame */ 
@@ -1165,7 +1165,7 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
           switch (txtb_status)
             {
             case TXT_TOK:
-              ninfo("TXT_OK\n");
+              //ninfo("TXT_OK\n");
               break;
             case TXT_ERR:
               nwarn("TXB in Error state\n");
@@ -1502,7 +1502,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
       if (isr & MPFS_CANFD_INT_STAT_RBNEI)
         {
-          ninfo("RXBNEI interrupt\n");
+          //ninfo("RXBNEI interrupt\n");
 
           /* Mask RXBNEI first, then clear interrupt. Even if
           * another IRQ fires, RBNEI will always be 0 (masked).
@@ -1521,7 +1521,7 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
       if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
         {
-          ninfo("TXBHCI interrupt\n");
+          //ninfo("TXBHCI interrupt\n");
           
           /* Clear TX interrupt flags */
 
@@ -1817,7 +1817,7 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
   /* Get the current txt buffer ID */
 
   txtb_id = priv->txb_head % priv->ntxbufs;
-  ninfo("using TXB#%u\n", txtb_id);
+  //ninfo("using TXB#%u\n", txtb_id);
 
   /* Insert classical CAN / CANFD frame into controller txt buffer at txtb_id */
 
@@ -2843,6 +2843,9 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
         priv->can.data_bittiming.sample_point =
           req->data_samplep * 10; /* In one-tenth of a percent */
                                                                    
+        /* Reset sjw to default 5 */
+        priv->can.bittiming.sjw = 5;
+        priv->can.data_bittiming.sjw = 5;
 
         /* Calculate nominal and data bit timing */
         
