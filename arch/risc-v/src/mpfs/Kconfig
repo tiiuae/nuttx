@@ -427,12 +427,12 @@ config MPFS_CANFD_CLK
 
 config MPFS_CANFD_ARBI_BITRATE
 	int "CAN FD Arbitration phase bitrate"
-	default 100000
+	default 1000000
 	depends on MPFS_CANFD
 	
 config MPFS_CANFD_DATA_BITRATE
 	int "CAN  Arbitration phase bitrate"
-	default 400000
+	default 4000000
 	depends on MPFS_CANFD
 
 endmenu
