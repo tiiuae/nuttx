@@ -2788,7 +2788,9 @@ static int mpfs_ifdown(struct net_driver_s *dev)
 #ifdef CONFIG_NETDEV_IOCTL     
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 {
+#if defined(CONFIG_NETDEV_CAN_BITRATE_IOCTL) || defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
   FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+#endif
   int ret;
   
   switch (cmd)
