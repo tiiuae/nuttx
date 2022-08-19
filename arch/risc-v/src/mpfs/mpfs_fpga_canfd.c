@@ -873,10 +873,15 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
 	cf->flags = 0;
 	if (MPFS_CANFD_FRAME_FORMAT_W_FDF & ffw)
     {
+      /* Enable bitrate switch by default if frame is CANFD */
+
+      cf->flags |= CANFD_BRS;
+#if 0
       if (MPFS_CANFD_FRAME_FORMAT_W_BRS & ffw)
         {
           cf->flags |= CANFD_BRS;
         }
+#endif
       if (MPFS_CANFD_FRAME_FORMAT_W_ESI_RSV & ffw)
         {
           cf->flags |= CANFD_ESI;      
