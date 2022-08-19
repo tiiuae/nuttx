@@ -1252,7 +1252,7 @@ static void mpfs_txdone_work(FAR void *arg)
    */
 
   net_lock();
-  devif_timer(&priv->dev, 0, mpfs_txpoll);
+  devif_poll(&priv->dev, mpfs_txpoll);
   net_unlock();
 }
 
@@ -1942,7 +1942,7 @@ static void mpfs_txavail_work(FAR void *arg)
           */
 
           net_lock();
-          devif_timer(&priv->dev, 0, mpfs_txpoll);
+          devif_poll(&priv->dev, mpfs_txpoll);
           net_unlock();
         }
     }
