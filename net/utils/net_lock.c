@@ -244,7 +244,7 @@ int net_trylock(void)
 
 void net_unlock(void)
 {
-  //DEBUGASSERT(g_holder == getpid() && g_count > 0);
+  DEBUGASSERT(g_holder == getpid() && g_count > 0);
 
   /* If the count would go to zero, then release the semaphore */
 
