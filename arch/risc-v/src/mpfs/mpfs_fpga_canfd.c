@@ -2823,7 +2823,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 
         if (req->arbi_samplep > 100 || req->arbi_samplep <= 0)
           {
-            nerr("Invalid arbitration sample point. Range should be (0,100]%.");
+            nerr("Invalid arbitration sample point. Range should be (0,100]%%.");
             ret = -EINVAL;
             break;
           }
@@ -2841,7 +2841,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 
         if (req->data_samplep > 100 || req->data_samplep <= 0)
           {
-            nerr("Invalid data sample point. Range should be (0,100]%.");
+            nerr("Invalid data sample point. Range should be (0,100]%%.");
             ret = -EINVAL;
             break;
           }
