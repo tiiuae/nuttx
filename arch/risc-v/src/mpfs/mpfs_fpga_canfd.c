@@ -25,6 +25,7 @@
 
 #include <nuttx/config.h>
 
+#include <sys/time.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -45,12 +46,11 @@
 #include <nuttx/net/can.h>
 #include <nuttx/can/can.h>
 
+#include <arch/board/board.h>
+
 #include "hardware/mpfs_fpga_canfd.h"
 #include "riscv_internal.h"
 
-#include <arch/board/board.h>
-
-#include <sys/time.h>
 
 /****************************************************************************
  * Pre-processor Definitions

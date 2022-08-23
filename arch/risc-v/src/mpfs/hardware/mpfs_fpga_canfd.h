@@ -18,16 +18,12 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CAN_H
-#define __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CAN_H
+#ifndef __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CANFD_H
+#define __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CANFD_H
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-/* CAN-FD features *********************************************************/
-
-
 
 /* Register Offsets ********************************************************/
 
@@ -470,4 +466,4 @@
 /*  TIMESTAMP_HIGH registers */
 #define MPFS_CANFD_TIMESTAMP_HIGH_TIMESTAMP_HIGH                (0xFFFFFFFF << 0)
 
-#endif /* __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CAN_H */
+#endif /* __ARCH_RISCV_SRC_MPFS_HARDWARE_MPFS_FPGA_CANFD_H */

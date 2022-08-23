@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#define __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
-#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H
+#ifndef __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CANFD_H
+#define __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CANFD_H
 
 /****************************************************************************
  * Included Files
@@ -93,4 +93,4 @@ int mpfs_fpga_canfd_init(void);
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_MPFS_CANFD */
-#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CAN_H */
+#endif /* __ARCH_RISCV_SRC_MPFS_MPFS_FPGA_CANFD_H */
