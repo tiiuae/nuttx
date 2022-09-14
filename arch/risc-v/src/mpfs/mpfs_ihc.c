@@ -79,9 +79,9 @@
 
 /* Vring configuration parameters */
 
-#define VRING_SHMEM              0xa2410000  /* Vring shared memory start */
-#define VRING0_DESCRIPTORS       0xa2400000  /* Vring0 descriptor area    */
-#define VRING1_DESCRIPTORS       0xa2408000  /* Vring1 descriptor area    */
+#define VRING_SHMEM              CONFIG_MPFS_VRING_SHMEM_ADDR  /* Vring shared memory start */
+#define VRING0_DESCRIPTORS       CONFIG_MPFS_VRING0_DESC_ADDR  /* Vring0 descriptor area    */
+#define VRING1_DESCRIPTORS       CONFIG_MPFS_VRING1_DESC_ADDR  /* Vring1 descriptor area    */
 #define VRINGS                   0x02        /* Number of vrings          */
 #define VRING_ALIGN              0x1000      /* Vring alignment           */
 #define VRING_NR                 256         /* Number of descriptors     */
