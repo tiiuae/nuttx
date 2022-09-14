@@ -1875,13 +1875,13 @@ static void mpfs_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
     /* SD normal operation clocking (wide 4-bit mode) */
 
     case CLOCK_SD_TRANSFER_4BIT:
-      clckr = MPFS_MMC_CLOCK_25MHZ;
+      clckr = MPFS_MMC_CLOCK_50MHZ;
       break;
 
     /* SD normal operation clocking (narrow 1-bit mode) */
 
     case CLOCK_SD_TRANSFER_1BIT:
-      clckr = MPFS_MMC_CLOCK_25MHZ;
+      clckr = MPFS_MMC_CLOCK_50MHZ;
       break;
   }
 
