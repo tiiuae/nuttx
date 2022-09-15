@@ -28,6 +28,14 @@ ifeq ($(CONFIG_ARCH_LEDS),y)
 CSRCS += mpfs_autoleds.c
 endif
 
+ifeq ($(CONFIG_OPENSBI_DOMAINS),y)
+CSRCS += mpfs_domain.c
+endif
+
 DEPPATH += --dep-path board
 VPATH += :board
 CFLAGS += $(shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board$(DELIM)board)
+
+ifeq ($(CONFIG_OPENSBI_DOMAINS),y)
+CFLAGS += $(shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)opensbi$(DELIM)opensbi-3rdparty$(DELIM)include)
+endif
