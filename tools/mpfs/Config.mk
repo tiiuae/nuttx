@@ -26,6 +26,7 @@
 
 ifeq ($(CONFIG_MPFS_OPENSBI),y)
 define POSTBUILD
+	$(Q) $(OBJCOPY) -R .l2_scratchpad $(BIN) nuttx.elf
 	$(Q) echo "SBI: Creating nuttx.sbi file"
 	$(Q) $(OBJCOPY) -O binary -j .text.sbi $(BIN) nuttx.sbi
 	$(Q) ([ $$? -eq 0 ] && echo "Done.")
