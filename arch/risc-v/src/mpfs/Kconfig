@@ -53,6 +53,11 @@ config MPFS_OPENSBI
 	---help---
 		This uses a ld-envm-opensbi.script linker script and the mpfs_opensbi.c code to use external OpenSBI.
 
+config SIGNED_UBOOT
+	bool "Verify u-boot signing"
+ 	depends on MPFS_BOOTLOADER
+	default n
+
 config MPFS_HART0_SBI
 	bool "HART0 boots via SBI"
 	depends on MPFS_OPENSBI
