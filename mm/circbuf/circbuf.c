@@ -320,8 +320,8 @@ ssize_t circbuf_peekat(FAR struct circbuf_s *circ, size_t pos,
       len = bytes;
     }
 
-  memcpy(dst, circ->base + off, len);
-  memcpy(dst + len, circ->base, bytes - len);
+  memcpy((char *)(dst), (char *)(circ->base) + off, len);
+  memcpy((char *)(dst) + len, circ->base, bytes - len);
 
   return bytes;
 }
@@ -468,8 +468,8 @@ ssize_t circbuf_write(FAR struct circbuf_s *circ,
       space = bytes;
     }
 
-  memcpy(circ->base + off, src, space);
-  memcpy(circ->base, src + space, bytes - space);
+  memcpy((char *)(circ->base) + off, (char *)(src), space);
+  memcpy(circ->base, (char *)(src) + space, bytes - space);
   circ->head += bytes;
 
   return bytes;
@@ -503,6 +503,7 @@ ssize_t circbuf_overwrite(FAR struct circbuf_s *circ,
   size_t overwrite = 0;
   size_t space;
   size_t off;
+  const char *source = src;
 
   DEBUGASSERT(circ);
   DEBUGASSERT(src || !bytes);
@@ -514,7 +515,7 @@ ssize_t circbuf_overwrite(FAR struct circbuf_s *circ,
 
   if (bytes > circ->size)
     {
-      src += bytes - circ->size;
+      source += bytes - circ->size;
       bytes = circ->size;
     }
 
@@ -531,8 +532,8 @@ ssize_t circbuf_overwrite(FAR struct circbuf_s *circ,
       space = bytes;
     }
 
-  memcpy(circ->base + off, src, space);
-  memcpy(circ->base, src + space, bytes - space);
+  memcpy((char *)(circ->base) + off, source, space);
+  memcpy(circ->base, source + space, bytes - space);
   circ->head += bytes;
   circ->tail += overwrite;
 
