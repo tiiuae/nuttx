@@ -1187,6 +1187,18 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
               if (first)
                 {
                   canerr("BUG, TXB#%u not in a finished state (0x%x)!\n", txtb_id, txtb_status);
+                  
+                  priv->txb_tail++;
+              
+                  /* Adjust priorities before marking the buffer as empty */
+            
+                  mpfs_can_rotate_txb_prio(priv);
+                  mpfs_can_give_txtb_cmd(priv, TXT_CMD_SET_EMPTY, txtb_id);
+                  
+                  /* Clear txb status change interrupt */
+
+                  putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+                  
                   up_irq_restore(flags);
                   return;
                 }
@@ -1570,6 +1582,10 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
           uint32_t status = mpfs_can_get_tx_status(priv, i);
           caninfo("txb[%d] txb status=0x%08x\n", i, status);
         }
+
+      /* Clear txb status change interrupt */
+
+      putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
     }
 
   /* Check if any of the stuck one belongs to RX buffer data overrun */
@@ -1669,6 +1685,7 @@ static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv,
 	buf_status = mpfs_can_get_tx_status(priv, buf);
 	if (buf_status == TXT_RDY || buf_status == TXT_TRAN || buf_status == TXT_ABTP)
     {
+      canerr("TXTB status %d\n", buf_status);
 	    return false;
     }
 	
@@ -1713,6 +1730,7 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
 
 	if (buf >= priv->ntxbufs)
     {
+      canerr("invalid txt buffer index...\n");
     	return false;
     }
 	
@@ -1720,6 +1738,7 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
 
 	if (!mpfs_can_is_txt_buf_writable(priv, buf))
     {
+      canerr("not possible to insert frame to txt buffer...\n");
     	return false;
     }
 	
@@ -1727,6 +1746,7 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
 
 	if (cf->len > CANFD_MAX_DLEN || (cf->len > CAN_MAX_DLEN && is_ccf))
     {
+      canerr("invalid classical / CANFD CAN frame length...\n");
       return false;
     }
 	
@@ -1829,7 +1849,7 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
   ok = mpfs_can_insert_frame(priv, cf, txtb_id, is_classical_can_frame);
   if(!ok)
     {
-      canerr("BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n");
+      //canerr("BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n");
       NETDEV_TXERRORS(&priv->dev);
       return OK;
     }
@@ -2679,7 +2699,7 @@ static int mpfs_ifup(struct net_driver_s *dev)
 
   if (mpfs_can_chip_start(priv) < 0)
     {
-      canerr("chip start failed");
+      canerr("chip start failed\n");
       return -1;
     }
 
@@ -2692,7 +2712,7 @@ static int mpfs_ifup(struct net_driver_s *dev)
 
 
   /* Debug */
- #if 0 
+  
   uint32_t reg_val;
 
   reg_val = getreg32(priv->base + MPFS_CANFD_MODE_OFFSET);
@@ -2729,7 +2749,6 @@ static int mpfs_ifup(struct net_driver_s *dev)
   caninfo("get FILTER_CONTROL reg value : 0x%08x\n", reg_val);
 
   caninfo("\n\n");
-#endif
 
   /* Set interrupts */
   
@@ -3177,22 +3196,3 @@ int mpfs_fpga_canfd_init(void)
 
   return OK;
 }
-
-/****************************************************************************
- * Name: riscv_netinitialize
- *
- * Description:
- *  Initialize the enabled CAN device interfaces.  If there are more
- *  different network devices in the chip, then board-specific logic will
- *  have to provide this function to determine which, if any, network
- *  devices should be initialized.
- *
- ****************************************************************************/
-
-#ifndef CONFIG_NETDEV_LATEINIT
-void riscv_netinitialize(void)
-{
-  caninfo("early init\n");
-  mpfs_fpga_canfd_init();
-}
-#endif

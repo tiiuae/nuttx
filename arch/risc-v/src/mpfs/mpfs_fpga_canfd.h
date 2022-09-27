@@ -82,9 +82,7 @@ extern "C"
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NETDEV_LATEINIT
 int mpfs_fpga_canfd_init(void);
-#endif
 
 #undef EXTERN
 #if defined(__cplusplus)
