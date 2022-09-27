@@ -1685,7 +1685,7 @@ static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv,
 	buf_status = mpfs_can_get_tx_status(priv, buf);
 	if (buf_status == TXT_RDY || buf_status == TXT_TRAN || buf_status == TXT_ABTP)
     {
-      canerr("TXTB status %d\n", buf_status);
+      canwarn("TXTB status %d\n", buf_status);
 	    return false;
     }
 	
@@ -1738,7 +1738,7 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
 
 	if (!mpfs_can_is_txt_buf_writable(priv, buf))
     {
-      canerr("not possible to insert frame to txt buffer...\n");
+      canwarn("not possible to insert frame to txt buffer...\n");
     	return false;
     }
 	
@@ -1849,7 +1849,7 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
   ok = mpfs_can_insert_frame(priv, cf, txtb_id, is_classical_can_frame);
   if(!ok)
     {
-      //canerr("BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n");
+      canwarn("BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n");
       NETDEV_TXERRORS(&priv->dev);
       return OK;
     }
