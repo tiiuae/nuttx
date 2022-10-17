@@ -130,7 +130,7 @@ choice
 	prompt "Choose DDR type"
 	depends on MPFS_DDR_INIT
 	default MPFS_DDR_TYPE_LPDDR4
-	
+
 config MPFS_DDR_TYPE_DDR3
 	bool "Use DDR3"
 
@@ -466,7 +466,7 @@ config MPFS_CANFD_ARBI_BITRATE
 	int "CAN FD Arbitration phase bitrate"
 	default 1000000
 	depends on MPFS_CANFD
-	
+
 config MPFS_CANFD_DATA_BITRATE
 	int "CAN  Arbitration phase bitrate"
 	default 4000000
