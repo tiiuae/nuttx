@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/riscv/src/mpfs/mpfs_fpga_canfd.c
+ * arch/risc-v/src/mpfs/mpfs_fpga_canfd.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -17,7 +17,6 @@
  * under the License.
  *
  ****************************************************************************/
-
 
 /****************************************************************************
  * Included Files
@@ -51,7 +50,6 @@
 #include "hardware/mpfs_fpga_canfd.h"
 #include "riscv_internal.h"
 
-
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -68,7 +66,7 @@
 #  error This should not be compiled as CAN-FD FPGA block is not defined
 #endif
 
-/* This module only compiles if the Nuttx socketCAN interface support CAN-FD */
+/* This module only compiles if Nuttx socketCAN interface supports CANFD */
 
 #ifndef CONFIG_NET_CAN_CANFD
 #  error This should not be compiled as CAN-FD driver relies on socket CAN
@@ -81,7 +79,6 @@
 #define MPFS_SYSREG_SUBBLK_CLOCK_CR   (MPFS_SYSREG_BASE + \
                                        MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET)
 
-
 #define CANWORK                 LPWORK
 
 #define MPFS_CANFD_ID           0xCAFD
@@ -91,6 +88,7 @@
 #define POOL_SIZE               1
 #define TIMESTAMP_SIZE          sizeof(struct timeval)  /* To support
                                                          * timestamping frame */
+
 /* For bittiming calculation */
 
 #define CAN_CALC_MAX_ERROR      50 /* in one-tenth of a percent */
@@ -122,22 +120,23 @@
 
 /* CAN control mode */
 
-#define CAN_CTRLMODE_LOOPBACK		    0x01	/* Loopback mode */
-#define CAN_CTRLMODE_LISTENONLY		  0x02	/* Listen-only mode */
-#define CAN_CTRLMODE_3_SAMPLES		  0x04	/* Triple sampling mode */
-#define CAN_CTRLMODE_ONE_SHOT		    0x08	/* One-Shot mode */
-#define CAN_CTRLMODE_BERR_REPORTING	0x10	/* Bus-error reporting */
-#define CAN_CTRLMODE_FD			        0x20	/* CAN FD mode */
-#define CAN_CTRLMODE_PRESUME_ACK	  0x40	/* Ignore missing CAN ACKs */
-#define CAN_CTRLMODE_FD_NON_ISO		  0x80	/* CAN FD in non-ISO mode */
-#define CAN_CTRLMODE_CC_LEN8_DLC	  0x100	/* Classic CAN DLC option */
-#define CAN_CTRLMODE_TDC_AUTO		    0x200	/* CAN transiver automatically
+#define CAN_CTRLMODE_LOOPBACK       0x01  /* Loopback mode */
+#define CAN_CTRLMODE_LISTENONLY     0x02  /* Listen-only mode */
+#define CAN_CTRLMODE_3_SAMPLES      0x04  /* Triple sampling mode */
+#define CAN_CTRLMODE_ONE_SHOT       0x08  /* One-Shot mode */
+#define CAN_CTRLMODE_BERR_REPORTING 0x10  /* Bus-error reporting */
+#define CAN_CTRLMODE_FD             0x20  /* CAN FD mode */
+#define CAN_CTRLMODE_PRESUME_ACK    0x40  /* Ignore missing CAN ACKs */
+#define CAN_CTRLMODE_FD_NON_ISO     0x80  /* CAN FD in non-ISO mode */
+#define CAN_CTRLMODE_CC_LEN8_DLC    0x100 /* Classic CAN DLC option */
+#define CAN_CTRLMODE_TDC_AUTO       0x200 /* CAN transiver automatically
                                            * calculates TDCV */
-#define CAN_CTRLMODE_TDC_MANUAL     0x400	/* TDCV is manually set up by user */
+#define CAN_CTRLMODE_TDC_MANUAL     0x400 /* TDCV is manually set up by user */
 
 /* TXT buffer */
 
-enum mpfs_can_txtb_status {
+enum mpfs_can_txtb_status
+{
   TXT_NOT_EXIST       = 0x0,
   TXT_RDY             = 0x1,
   TXT_TRAN            = 0x2,
@@ -148,16 +147,16 @@ enum mpfs_can_txtb_status {
   TXT_ETY             = 0x8,
 };
 
-enum mpfs_can_txtb_command {
+enum mpfs_can_txtb_command
+{
   TXT_CMD_SET_EMPTY   = 0x01,
   TXT_CMD_SET_READY   = 0x02,
   TXT_CMD_SET_ABORT   = 0x04
 };
 
-
-/******************************************
- *          Utility definitions
- *****************************************/
+/****************************************************************************
+ * Utility definitions
+ ****************************************************************************/
 
 #define MPFS_CAN_STATE_TO_TEXT_ENTRY(st) #st
 
@@ -204,25 +203,21 @@ enum mpfs_can_txtb_command {
 #define expect_false(expr)   expect((expr) != 0, 0)
 #define expect_true(expr)    expect((expr) != 0, 1)
 
-
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
 
-/*
- * CAN operational and error states
- */
+/* CAN operational and error states */
 
-/*
- * CAN bit-timing parameters
+/* CAN bit-timing parameters
  *
  * For further information, please read chapter "8 BIT TIMING
  * REQUIREMENTS" of the "Bosch CAN Specification version 2.0"
  * at http://www.semiconductors.bosch.de/pdf/can2spec.pdf.
  */
 
-struct mpfs_can_bittiming_s {
+struct mpfs_can_bittiming_s
+{
   uint32_t bitrate;       /* Bit-rate in bits/second */
   uint32_t sample_point;  /* Sample point in one-tenth of a percent */
   uint32_t tq;            /* Time quanta (TQ) in nanoseconds */
@@ -233,12 +228,12 @@ struct mpfs_can_bittiming_s {
   uint32_t brp;           /* Bit-rate prescaler */
 };
 
-/*
- * CAN harware-dependent bit-timing constant
+/* CAN harware-dependent bit-timing constant
  * Used for calculating and checking bit-timing parameters
  */
 
-struct mpfs_can_bittiming_const_s {
+struct mpfs_can_bittiming_const_s
+{
   char name[16];          /* Name of the CAN controller hardware */
   uint32_t tseg1_min;     /* Time segment 1 = prop_seg + phase_seg1 */
   uint32_t tseg1_max;
@@ -276,21 +271,24 @@ static const struct mpfs_can_bittiming_const_s mpfs_can_bit_timing_data_max =
   .brp_inc = 1,
 };
 
-struct mpfs_can_clock_s {
+struct mpfs_can_clock_s
+{
   uint32_t freq;     /* CAN system clock frequency in Hz */
 };
 
-enum mpfs_can_state_e {
-  CAN_STATE_ERROR_ACTIVE = 0,	/* RX/TX error count < 96 */
-  CAN_STATE_ERROR_WARNING,	/* RX/TX error count < 128 */
-  CAN_STATE_ERROR_PASSIVE,	/* RX/TX error count < 256 */
-  CAN_STATE_BUS_OFF,		/* RX/TX error count >= 256 */
-  CAN_STATE_STOPPED,		/* Device is stopped */
-  CAN_STATE_SLEEPING,		/* Device is sleeping */
+enum mpfs_can_state_e
+{
+  CAN_STATE_ERROR_ACTIVE = 0, /* RX/TX error count < 96 */
+  CAN_STATE_ERROR_WARNING,    /* RX/TX error count < 128 */
+  CAN_STATE_ERROR_PASSIVE,    /* RX/TX error count < 256 */
+  CAN_STATE_BUS_OFF,          /* RX/TX error count >= 256 */
+  CAN_STATE_STOPPED,          /* Device is stopped */
+  CAN_STATE_SLEEPING,         /* Device is sleeping */
   CAN_STATE_MAX
 };
 
-static const char * const mpfs_can_state_strings[CAN_STATE_MAX] = {
+static const char * const mpfs_can_state_strings[CAN_STATE_MAX] =
+{
   MPFS_CAN_STATE_TO_TEXT_ENTRY(CAN_STATE_ERROR_ACTIVE),
   MPFS_CAN_STATE_TO_TEXT_ENTRY(CAN_STATE_ERROR_WARNING),
   MPFS_CAN_STATE_TO_TEXT_ENTRY(CAN_STATE_ERROR_PASSIVE),
@@ -299,39 +297,42 @@ static const char * const mpfs_can_state_strings[CAN_STATE_MAX] = {
   MPFS_CAN_STATE_TO_TEXT_ENTRY(CAN_STATE_SLEEPING)
 };
 
-struct mpfs_can_ctrlmode_s {
+struct mpfs_can_ctrlmode_s
+{
   uint32_t mask;
   uint32_t flags;
 };
 
-struct mpfs_can_berr_counter_s {
+struct mpfs_can_berr_counter_s
+{
   uint16_t txerr;
   uint16_t rxerr;
 };
 
-struct mpfs_can_device_stats_s {
-  uint32_t bus_error;    /* Bus errors */
-  uint32_t error_warning;    /* Changes to error warning state */
-  uint32_t error_passive;    /* Changes to error passive state */
-  uint32_t bus_off;      /* Changes to bus off state */
-  uint32_t arbitration_lost; /* Arbitration lost errors */
-  uint32_t restarts;     /* CAN controller re-starts */
+struct mpfs_can_device_stats_s
+{
+  uint32_t bus_error;         /* Bus errors */
+  uint32_t error_warning;     /* Changes to error warning state */
+  uint32_t error_passive;     /* Changes to error passive state */
+  uint32_t bus_off;           /* Changes to bus off state */
+  uint32_t arbitration_lost;  /* Arbitration lost errors */
+  uint32_t restarts;          /* CAN controller re-starts */
 };
 
+/* CAN common private data */
 
-/*
- * CAN common private data
- */
-struct mpfs_can_priv_s {
+struct mpfs_can_priv_s
+{
   struct mpfs_can_device_stats_s can_stats;
-  struct mpfs_can_bittiming_s bittiming, data_bittiming;
-  const struct mpfs_can_bittiming_const_s *bittiming_const, *data_bittiming_const;
+  struct mpfs_can_bittiming_s bittiming;
+  struct mpfs_can_bittiming_s data_bittiming;
+  const struct mpfs_can_bittiming_const_s *bittiming_const;
+  const struct mpfs_can_bittiming_const_s *data_bittiming_const;
   struct mpfs_can_clock_s clock;
 
   enum mpfs_can_state_e state;
   uint32_t ctrlmode;
 };
-
 
 /****************************************************************************
  * CANFD Frame Format
@@ -339,7 +340,8 @@ struct mpfs_can_priv_s {
 
 /* CAN frame format memory map */
 
-enum mpfs_canfd_can_frame_format {
+enum mpfs_canfd_can_frame_format
+{
   MPFS_CANFD_FRAME_FORMAT_W_OFFSET       = 0x0,
   MPFS_CANFD_IDENTIFIER_W_OFFSET         = 0x4,
   MPFS_CANFD_TIMESTAMP_L_W_OFFSET        = 0x8,
@@ -374,7 +376,6 @@ enum mpfs_canfd_can_frame_format {
 #define MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE       (0x07FF << \
   MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT)
 
-
 /****************************************************************************
  * FPGA CANFD device hardware configuration
  ****************************************************************************/
@@ -388,7 +389,6 @@ static const struct mpfs_config_s mpfs_fpga_canfd_config =
 {
   .canfd_fpga_irq = MPFS_IRQ_FABRIC_F2H_0,
 };
-
 
 /****************************************************************************
  * The mpfs_driver_s encapsulates all state information for a single
@@ -434,17 +434,16 @@ struct mpfs_driver_s
   struct net_driver_s dev;    /* Interface understood by the network */
 };
 
-
-
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
 static struct mpfs_driver_s g_canfd;
 
-static uint8_t g_tx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) * POOL_SIZE];
-static uint8_t g_rx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) * POOL_SIZE];
-
+static uint8_t g_tx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) *
+                         POOL_SIZE];
+static uint8_t g_rx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) *
+                         POOL_SIZE];
 
 /****************************************************************************
  * Private Function Prototypes
@@ -452,20 +451,22 @@ static uint8_t g_rx_pool[(sizeof(struct canfd_frame) + TIMESTAMP_SIZE) * POOL_SI
 
 /* Util functions */
 
-static int mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s *btc,
-                                        const unsigned int sample_point_nominal,
-                                        const unsigned int tseg,
-                                        unsigned int *tseg1_ptr,
-                                        unsigned int *tseg2_ptr,
-                                        unsigned int *sample_point_error_ptr);
-static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
-                                   struct mpfs_can_bittiming_s *bt,
-                                   const struct mpfs_can_bittiming_const_s *btc);
+static int
+  mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s *btc,
+                               const unsigned int sample_point_nominal,
+                               const unsigned int tseg,
+                               unsigned int *tseg1_ptr,
+                               unsigned int *tseg2_ptr,
+                               unsigned int *sample_point_error_ptr);
+static int
+  mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
+                          struct mpfs_can_bittiming_s *bt,
+                          const struct mpfs_can_bittiming_const_s *btc);
 static const char *can_state_to_str(enum mpfs_can_state_e state);
-static int mpfs_can_set_secondary_sample_point(FAR struct mpfs_driver_s *priv);
+static int
+  mpfs_can_set_secondary_sample_point(FAR struct mpfs_driver_s *priv);
 static void mpfs_can_set_mode(FAR struct mpfs_driver_s *priv,
                               const struct mpfs_can_ctrlmode_s *mode);
-
 
 /* (from interrupt) RX related functions */
 
@@ -473,7 +474,6 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
                                    struct canfd_frame *cf,
                                    uint32_t ffw);
 static void mpfs_receive(FAR struct mpfs_driver_s *priv);
-
 
 /* (from interrupt) TX related functions */
 
@@ -484,26 +484,25 @@ static void mpfs_can_give_txtb_cmd(FAR struct mpfs_driver_s *priv,
 static void mpfs_txdone(FAR struct mpfs_driver_s *priv);
 static void mpfs_txdone_work(FAR void *arg);
 
-
 /* (from interrupt) Error handling related functions */
 
-static enum mpfs_can_state_e mpfs_can_read_fault_state(FAR struct mpfs_driver_s *priv);
+static enum mpfs_can_state_e
+  mpfs_can_read_fault_state(FAR struct mpfs_driver_s *priv);
 static void mpfs_can_get_rec_tec(FAR struct mpfs_driver_s *priv,
                                  struct mpfs_can_berr_counter_s *bec);
 static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr);
-
 
 /* Interrupt service routine */
 
 static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg);
 
-
 /* (Nuttx network driver interface callback when TX packet available) Tx
  * related functions
  */
 
-static enum mpfs_can_txtb_status mpfs_can_get_tx_status(FAR struct mpfs_driver_s *priv,
-                                                        uint8_t buf);
+static enum mpfs_can_txtb_status
+  mpfs_can_get_tx_status(FAR struct mpfs_driver_s *priv,
+                         uint8_t buf);
 static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv,
                                          uint8_t buf);
 static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
@@ -514,7 +513,6 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv);
 static int mpfs_txpoll(struct net_driver_s *dev);
 static void mpfs_txavail_work(FAR void *arg);
 static int mpfs_txavail(struct net_driver_s *dev);
-
 
 /* Bit timing related functions */
 
@@ -542,7 +540,6 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv);
 static void mpfs_can_chip_stop(FAR struct mpfs_driver_s *priv);
 static int mpfs_reset(struct mpfs_driver_s *priv);
 
-
 /* Driver interface to Nuttx network callbacks */
 
 static int mpfs_ifup(struct net_driver_s *dev);
@@ -550,7 +547,6 @@ static int mpfs_ifdown(struct net_driver_s *dev);
 #ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg);
 #endif
-
 
 /****************************************************************************
  * Private Function
@@ -578,16 +574,20 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg);
  *
  ****************************************************************************/
 
-static int mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s *btc,
-                                        const unsigned int sample_point_nominal,
-                                        const unsigned int tseg,
-                                        unsigned int *tseg1_ptr,
-                                        unsigned int *tseg2_ptr,
-                                        unsigned int *sample_point_error_ptr)
+static int
+  mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s *btc,
+                               const unsigned int sample_point_nominal,
+                               const unsigned int tseg,
+                               unsigned int *tseg1_ptr,
+                               unsigned int *tseg2_ptr,
+                               unsigned int *sample_point_error_ptr)
 {
-  unsigned int sample_point_error, best_sample_point_error = UINT_MAX;
-  unsigned int sample_point, best_sample_point = 0;
-  unsigned int tseg1, tseg2;
+  unsigned int sample_point_error;
+  unsigned int best_sample_point_error = UINT_MAX;
+  unsigned int sample_point;
+  unsigned int best_sample_point = 0;
+  unsigned int tseg1;
+  unsigned int tseg2;
   int i;
 
   for (i = 0; i <= 1; i++)
@@ -633,7 +633,8 @@ static int mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s 
  * Input Parameters:
  *  priv  - Pointer to the private FPGA CANFD driver state structure
  *  bt    - Pointer to the bittiming structure to be set
- *  btc   - Pointer to the constant bittiming structure to be used to set the bittiming params
+ *  btc   - Pointer to the constant bittiming structure to be used to set
+ *          the bittiming params
  *
  * Returned Value:
  *  Zero (OK) on success; a negated errno on failure
@@ -643,9 +644,10 @@ static int mpfs_can_update_sample_point(const struct mpfs_can_bittiming_const_s 
  *
  ****************************************************************************/
 
-static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
-                                   struct mpfs_can_bittiming_s *bt,
-                                   const struct mpfs_can_bittiming_const_s *btc)
+static int
+  mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
+                          struct mpfs_can_bittiming_s *bt,
+                          const struct mpfs_can_bittiming_const_s *btc)
 {
   unsigned int bitrate;               /* current bitrate */
   unsigned int bitrate_error;         /* difference between current and
@@ -657,7 +659,11 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
   unsigned int sample_point_nominal;  /* nominal sample point */
   unsigned int best_tseg = 0;         /* current best value for tseg */
   unsigned int best_brp = 0;          /* current best value for brp */
-  unsigned int brp, tsegall, tseg, tseg1 = 0, tseg2 = 0;
+  unsigned int brp;
+  unsigned int tsegall;
+  unsigned int tseg;
+  unsigned int tseg1 = 0;
+  unsigned int tseg2 = 0;
   uint64_t v64;
 
   /* Use CiA recommended sample points */
@@ -759,7 +765,8 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
   /* real sample point */
 
   bt->sample_point = mpfs_can_update_sample_point(btc, sample_point_nominal,
-                                              best_tseg, &tseg1, &tseg2, NULL);
+                                                  best_tseg, &tseg1,
+                                                  &tseg2, NULL);
 
   v64 = (uint64_t)best_brp * 1000 * 1000 * 1000;
   do_div(v64, priv->can.clock.freq);
@@ -782,6 +789,7 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
         {
           bt->sjw = btc->sjw_max;
         }
+
       /* bt->sjw must not be higher than tseg2 */
 
       if (tseg2 < bt->sjw)
@@ -814,6 +822,7 @@ static int mpfs_can_calc_bittiming(FAR struct mpfs_driver_s *priv,
  *
  * Assumptions:
  *  None
+ *
  ****************************************************************************/
 
 static const char *can_state_to_str(enum mpfs_can_state_e state)
@@ -843,7 +852,8 @@ static const char *can_state_to_str(enum mpfs_can_state_e state)
  *  None
  *
  * Assumptions:
- *  Frame format word must be read separately before this and provided in 'ffw'
+ *  Frame format word must be read separately before this and provided in
+ *  'ffw'
  *
  ****************************************************************************/
 
@@ -864,7 +874,8 @@ static void mpfs_can_read_rx_frame(FAR struct mpfs_driver_s *priv,
   else
     {
       cf->can_id =
-        (idw >> MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT) & CAN_SFF_MASK;
+        (idw >> MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT) &
+        CAN_SFF_MASK;
     }
 
   /* BRS, ESI, RTR Flags */
@@ -983,14 +994,19 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
       if (!(MPFS_CANFD_FRAME_FORMAT_W_FDF & ffw))
         {
           if (MPFS_CANFD_FRAME_FORMAT_W_RTR & ffw)
-            caninfo("Remote Frame received\n");
+            {
+              caninfo("Remote Frame received\n");
+            }
           else
-            //caninfo("Classical CAN Frame received\n");
+            {
+              /* caninfo("Classical CAN Frame received\n"); */
+            }
+
           is_classical_can_frame = true;
         }
       else
         {
-          //caninfo("CANFD Frame received\n");
+          /* caninfo("CANFD Frame received\n"); */
         }
 
       /* Read the classical or CANFD or remote frame */
@@ -1010,13 +1026,12 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
       NETDEV_RXPACKETS(&priv->dev);
       can_input(&priv->dev);
 
-      /*
-      * Point the packet buffer back to the next Tx buffer that will be
-      *  used during the next write.  If the write queue is full, then
-      *  this will point at an active buffer, which must not be written
-      *  to.  This is OK because devif_poll won't be called unless the
-      *  queue is not full.
-      */
+      /* Point the packet buffer back to the next Tx buffer that will be
+       * used during the next write.  If the write queue is full, then
+       * this will point at an active buffer, which must not be written
+       * to.  This is OK because devif_poll won't be called unless the
+       * queue is not full.
+       */
 
       priv->dev.d_buf = (uint8_t *)priv->txdesc;
 
@@ -1057,15 +1072,18 @@ static void mpfs_receive(FAR struct mpfs_driver_s *priv)
 
       /* Clear Data Overrun */
 
-      putreg32(MPFS_CANFD_COMMAND_CDO, priv->base + MPFS_CANFD_COMMAND_OFFSET);
+      putreg32(MPFS_CANFD_COMMAND_CDO,
+               priv->base + MPFS_CANFD_COMMAND_OFFSET);
     }
 
   /* Clear and enable RBNEI. It is level-triggered, so
    * there is no race condition.
    */
 
-  putreg32(MPFS_CANFD_INT_STAT_RBNEI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
-  putreg32(MPFS_CANFD_INT_STAT_RBNEI, priv->base + MPFS_CANFD_INT_MASK_CLR_OFFSET);
+  putreg32(MPFS_CANFD_INT_STAT_RBNEI,
+           priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+  putreg32(MPFS_CANFD_INT_STAT_RBNEI,
+           priv->base + MPFS_CANFD_INT_MASK_CLR_OFFSET);
 }
 
 /****************************************************************************
@@ -1089,11 +1107,10 @@ static void mpfs_can_rotate_txb_prio(FAR struct mpfs_driver_s *priv)
 {
   uint32_t prio = priv->txb_prio;
 
-  prio = (prio << 4) | ((prio >> ((priv->ntxbufs - 1) * 4)) & 0xF);
+  prio = (prio << 4) | ((prio >> ((priv->ntxbufs - 1) * 4)) & 0xf);
   priv->txb_prio = prio;
   putreg32(prio, priv->base + MPFS_CANFD_TX_PRIORITY_OFFSET);
 }
-
 
 /****************************************************************************
  * Name: mpfs_can_give_txtb_cmd
@@ -1153,7 +1170,7 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
     {
       flags = up_irq_save();
       some_buffers_processed = false;
-      while((int)(priv->txb_head - priv->txb_tail) > 0 ||
+      while ((int)(priv->txb_head - priv->txb_tail) > 0 ||
         (priv->txb_head == 0 && priv->txb_tail > 0))
         {
           txtb_id = priv->txb_tail % priv->ntxbufs;
@@ -1163,7 +1180,6 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
           switch (txtb_status)
             {
             case TXT_TOK:
-              //caninfo("TXT_OK\n");
               break;
             case TXT_ERR:
               canwarn("TXB in Error state\n");
@@ -1174,12 +1190,14 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
             default:
               other_status = true;
 
-              /* Bug only if the first buffer is not finished, otherwise it is
-              * pretty much expected.
-              */
+              /* Bug only if the first buffer is not finished, otherwise it
+               * is pretty much expected.
+               */
+
               if (first)
                 {
-                  canerr("BUG, TXB#%u not in a finished state (0x%x)!\n", txtb_id, txtb_status);
+                  canerr("BUG, TXB#%u not in a finished state (0x%x)!\n",
+                         txtb_id, txtb_status);
 
                   priv->txb_tail++;
 
@@ -1190,7 +1208,8 @@ static void mpfs_txdone(FAR struct mpfs_driver_s *priv)
 
                   /* Clear txb status change interrupt */
 
-                  putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+                  putreg32(MPFS_CANFD_INT_STAT_TXBHCI,
+                           priv->base + MPFS_CANFD_INT_STAT_OFFSET);
 
                   up_irq_restore(flags);
                   return;
@@ -1261,7 +1280,6 @@ static void mpfs_txdone_work(FAR void *arg)
   net_unlock();
 }
 
-
 /****************************************************************************
  * Name: mpfs_can_read_fault_state
  *
@@ -1276,7 +1294,8 @@ static void mpfs_txdone_work(FAR void *arg)
  *
  ****************************************************************************/
 
-static enum mpfs_can_state_e mpfs_can_read_fault_state(FAR struct mpfs_driver_s *priv)
+static enum mpfs_can_state_e
+  mpfs_can_read_fault_state(FAR struct mpfs_driver_s *priv)
 {
   u_int32_t ewl_erp_fs_reg, rec_tec_reg, ew_limit, rec_val, tec_val;
 
@@ -1366,7 +1385,8 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
 
   mpfs_can_get_rec_tec(priv, &bec);
   state = mpfs_can_read_fault_state(priv);
-  err_capt_retr_ctr_alc_reg = getreg32(priv->base + MPFS_CANFD_ERR_CAPT_OFFSET);
+  err_capt_retr_ctr_alc_reg =
+    getreg32(priv->base + MPFS_CANFD_ERR_CAPT_OFFSET);
 
   err_type = ((err_capt_retr_ctr_alc_reg & MPFS_CANFD_ERR_CAPT_ERR_TYPE) >>
     MPFS_CANFD_ERR_CAPT_ERR_TYPE_SHIFT);
@@ -1379,8 +1399,8 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
     MPFS_CANFD_ERR_CAPT_ALC_BIT_SHIFT);
 
   caninfo("ISR = 0x%08x, rxerr %d, txerr %d, error type %u, pos %u, ALC "
-        "id_field %u, bit %u\n", isr, bec.rxerr, bec.txerr, err_type, err_pos,
-        alc_id_field, alc_bit);
+          "id_field %u, bit %u\n", isr, bec.rxerr, bec.txerr, err_type,
+          err_pos, alc_id_field, alc_bit);
 
   /* EWLI: error warning limit condition met
    * FCSI: fault confinement state changed
@@ -1392,7 +1412,8 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
     {
       if (priv->can.state == state)
         {
-          canwarn("current and previous state is the same! (missed interrupt?)\n");
+          canwarn("current and previous state is the same! "
+                  "(missed interrupt?)\n");
         }
       else
         {
@@ -1431,7 +1452,8 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
           cf->data[7] = bec.rxerr;
           break;
         default:
-          canwarn("unhandled error state (%d:%s)!\n", state, can_state_to_str(state));
+          canwarn("unhandled error state (%d:%s)!\n", state,
+                  can_state_to_str(state));
           break;
         }
     }
@@ -1458,6 +1480,7 @@ static void mpfs_err_interrupt(FAR struct mpfs_driver_s *priv, uint32_t isr)
     }
 
   /* Send to socket interface. */
+
   priv->dev.d_len = sizeof(struct canfd_frame);
   priv->dev.d_buf = (uint8_t *)cf;
   NETDEV_RXPACKETS(&priv->dev);
@@ -1501,7 +1524,9 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
       isr  = getreg32(priv->base + MPFS_CANFD_INT_STAT_OFFSET);
 
-      /* Check and exit interrupt service routine if there is no int flag in INT_STAT reg */
+      /* Check and exit interrupt service routine if there is no int flag in
+       * INT_STAT reg.
+       */
 
       if (!isr)
         {
@@ -1533,7 +1558,9 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
           mpfs_txdone(priv);
 
-          /* Schedule work to poll for next available tx frame from the network */
+          /* Schedule work to poll for next available tx frame from the
+           * network.
+           */
 
           work_queue(CANWORK, &priv->irqwork, mpfs_txdone_work, priv, 0);
         }
@@ -1555,8 +1582,8 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
         }
     }
 
-  /* Now, it seems that there are still some interrupt flags that remain stuck
-   * in INT_STAT reg
+  /* Now, it seems that there are still some interrupt flags that remain
+   * stuck in INT_STAT reg.
    */
 
   canerr("Stuck interrupt (isr=%08x)\n", isr);
@@ -1565,7 +1592,8 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
   if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
     {
-      caninfo("txb_head=0x%08x txb_tail=0x%08x\n", priv->txb_head, priv->txb_tail);
+      caninfo("txb_head=0x%08x txb_tail=0x%08x\n", priv->txb_head,
+              priv->txb_tail);
       for (int i = 0; i < priv->ntxbufs; i++)
         {
           uint32_t status = mpfs_can_get_tx_status(priv, i);
@@ -1574,7 +1602,8 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
       /* Clear txb status change interrupt */
 
-      putreg32(MPFS_CANFD_INT_STAT_TXBHCI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+      putreg32(MPFS_CANFD_INT_STAT_TXBHCI,
+               priv->base + MPFS_CANFD_INT_STAT_OFFSET);
     }
 
   /* Check if any of the stuck one belongs to RX buffer data overrun */
@@ -1608,13 +1637,14 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
 
       /* Clear Data Overrun interrupt */
 
-      putreg32(MPFS_CANFD_INT_STAT_DOI, priv->base + MPFS_CANFD_INT_STAT_OFFSET);
+      putreg32(MPFS_CANFD_INT_STAT_DOI,
+               priv->base + MPFS_CANFD_INT_STAT_OFFSET);
     }
 
   /* Clear and reset all interrupt. */
 
   caninfo("Reset all interrupts...\n");
-  imask = 0xFFFFFFFF;
+  imask = 0xffffffff;
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_CLR_OFFSET);
   putreg32(imask, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
   return OK;
@@ -1638,13 +1668,14 @@ static int mpfs_fpga_interrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static enum mpfs_can_txtb_status mpfs_can_get_tx_status(FAR struct mpfs_driver_s *priv,
-                                                        uint8_t buf)
+static enum mpfs_can_txtb_status
+  mpfs_can_get_tx_status(FAR struct mpfs_driver_s *priv,
+                         uint8_t buf)
 {
-	uint32_t tx_status = getreg32(priv->base + MPFS_CANFD_TX_STATUS_OFFSET);
-	enum mpfs_can_txtb_status status = (tx_status >> (buf * 4)) & 0xF;
+  uint32_t tx_status = getreg32(priv->base + MPFS_CANFD_TX_STATUS_OFFSET);
+  enum mpfs_can_txtb_status status = (tx_status >> (buf * 4)) & 0xf;
 
-	return status;
+  return status;
 }
 
 /****************************************************************************
@@ -1672,7 +1703,8 @@ static bool mpfs_can_is_txt_buf_writable(FAR struct mpfs_driver_s *priv,
   enum mpfs_can_txtb_status buf_status;
 
   buf_status = mpfs_can_get_tx_status(priv, buf);
-  if (buf_status == TXT_RDY || buf_status == TXT_TRAN || buf_status == TXT_ABTP)
+  if (buf_status == TXT_RDY || buf_status == TXT_TRAN ||
+      buf_status == TXT_ABTP)
     {
       canwarn("TXTB status %d\n", buf_status);
      return false;
@@ -1751,7 +1783,7 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
       ffw |= MPFS_CANFD_FRAME_FORMAT_W_IDE;
     }
 
-  if(!is_ccf)
+  if (!is_ccf)
     {
       ffw |= MPFS_CANFD_FRAME_FORMAT_W_FDF; /* FD Frame */
       if (cf->flags & CANFD_BRS)
@@ -1776,7 +1808,9 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
           MPFS_CANFD_IDENTIFIER_W_IDENTIFIER_BASE_SHIFT);
     }
 
-  /* Write ID, Frame format, Don't write timestamp -> Time triggered transmission disabled */
+  /* Write ID, Frame format, Don't write timestamp -> Time triggered
+   * transmission disabled.
+   */
 
   buf_base = (buf + 1) * 0x100;
   putreg32(ffw, priv->base + buf_base + MPFS_CANFD_FRAME_FORMAT_W_OFFSET);
@@ -1789,11 +1823,12 @@ static bool mpfs_can_insert_frame(FAR struct mpfs_driver_s *priv,
       for (i = 0; i < cf->len; i += 4)
         {
           uint32_t data = *(uint32_t *)(cf->data + i);
-          putreg32(data, priv->base + buf_base + MPFS_CANFD_DATA_1_4_W_OFFSET + i);
+          putreg32(data,
+                   priv->base + buf_base + MPFS_CANFD_DATA_1_4_W_OFFSET + i);
         }
     }
 
-	return true;
+  return true;
 }
 
 /****************************************************************************
@@ -1823,28 +1858,26 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
 
   /* Retrieve the classical CAN / CANFD frame from network device buffer */
 
-  is_classical_can_frame = priv->dev.d_len <= sizeof(struct can_frame) ? true : false;
+  is_classical_can_frame =
+    priv->dev.d_len <= sizeof(struct can_frame) ? true : false;
   struct canfd_frame *cf = (struct canfd_frame *)priv->dev.d_buf;
-
-  /* TODO: drop invalid buffer dev.d_buf if it contains invalid can frame?? */
 
   /* Get the current txt buffer ID */
 
   txtb_id = priv->txb_head % priv->ntxbufs;
-  //caninfo("using TXB#%u\n", txtb_id);
 
-  /* Insert classical CAN / CANFD frame into controller txt buffer at txtb_id */
+  /* Insert classical CAN/CANFD frame into controller txt bf at txtb_id */
 
   ok = mpfs_can_insert_frame(priv, cf, txtb_id, is_classical_can_frame);
-  if(!ok)
+  if (!ok)
     {
       canwarn("BUG! TXNF set but cannot insert frame into TXTB! HW Bug?\n");
       NETDEV_TXERRORS(&priv->dev);
       return OK;
     }
 
-  /* Now, write to txt buffer seems ok, use txt command to set buffer state to
-   * READY for xmit
+  /* Now, write to txt buffer seems ok, use txt command to set buffer state
+   * to READY for xmit.
    */
 
   mpfs_can_give_txtb_cmd(priv, TXT_CMD_SET_READY, txtb_id);
@@ -1883,7 +1916,8 @@ static int mpfs_transmit(FAR struct mpfs_driver_s *priv)
 
 static int mpfs_txpoll(struct net_driver_s *dev)
 {
-  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+  FAR struct mpfs_driver_s *priv =
+    (FAR struct mpfs_driver_s *)dev->d_private;
 
   /* If the polling resulted in data that should be sent out on the network,
    * the field d_len is set to a value > 0.
@@ -1940,15 +1974,13 @@ static void mpfs_txavail_work(FAR void *arg)
 
   if (priv->bifup)
     {
-      /*
-      * Check if there is room in the controller to hold another outgoing packet
-      */
+      /* Check if there is room in the controller to hold another outgoing
+       * packet.
+       */
 
       if (MPFS_CAN_FD_TXTNF(priv))
         {
-          /*
-          * Yes, there is, poll the network for new TXT transmit
-          */
+          /* Yes, there is, poll the network for new TXT transmit */
 
           net_lock();
           devif_poll(&priv->dev, mpfs_txpoll);
@@ -1978,7 +2010,8 @@ static void mpfs_txavail_work(FAR void *arg)
 
 static int mpfs_txavail(struct net_driver_s *dev)
 {
-  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+  FAR struct mpfs_driver_s *priv =
+    (FAR struct mpfs_driver_s *)dev->d_private;
 
   /* Is our single work structure available?  It may not be if there are
    * pending interrupt actions and we will have to ignore the Tx
@@ -2032,10 +2065,10 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv,
      max_ph1_len = 63;
     }
 
-  /* The timing calculation functions have only constraints on tseg1, which is
-   * prop_seg + phase1_seg combined. tseg1 is then split in half and stored
-   * into prog_seg and phase_seg1. In FPGA CAN FD controller, PROP is 6 bits
-   * wide but PH1 only 5, so we must re-distribute the values here.
+  /* The timing calculation functions have only constraints on tseg1, which
+   * is prop_seg + phase1_seg combined. tseg1 is then split in half and
+   * stored into prog_seg and phase_seg1. In FPGA CAN FD controller, PROP is
+   * 6 bits wide but PH1 only 5, so we must re-distribute the values here.
    */
 
   if (bt->phase_seg1 > max_ph1_len)
@@ -2051,7 +2084,9 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv,
       btr |= bt->phase_seg2 << MPFS_CANFD_BTR_PH2_SHIFT;
       btr |= bt->brp << MPFS_CANFD_BTR_BRP_SHIFT;
       btr |= bt->sjw << MPFS_CANFD_BTR_SJW_SHIFT;
-      caninfo("prop_seg: %u, phase_seg1: %u, phase_seg2: %u, brp: %u, sjw: %u \n", bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp, bt->sjw);
+      caninfo("prop_seg: %u, phase_seg1: %u, phase_seg2: %u, brp: %u, "
+              "sjw: %u \n", bt->prop_seg, bt->phase_seg1, bt->phase_seg2,
+              bt->brp, bt->sjw);
       putreg32(btr, priv->base + MPFS_CANFD_BTR_OFFSET);
     }
   else
@@ -2061,7 +2096,9 @@ static int mpfs_can_set_btr(FAR struct mpfs_driver_s *priv,
       btr |= bt->phase_seg2 << MPFS_CANFD_BTR_FD_PH2_FD_SHIFT;
       btr |= bt->brp << MPFS_CANFD_BTR_FD_BRP_FD_SHIFT;
       btr |= bt->sjw << MPFS_CANFD_BTR_FD_SJW_FD_SHIFT;
-      caninfo("prop_seg: %u, phase_seg1: %u, phase_seg2: %u, brp: %u, sjw: %u \n", bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp, bt->sjw);
+      caninfo("prop_seg: %u, phase_seg1: %u, phase_seg2: %u, brp: %u, "
+              "sjw: %u \n", bt->prop_seg, bt->phase_seg1, bt->phase_seg2,
+              bt->brp, bt->sjw);
 
       putreg32(btr, priv->base + MPFS_CANFD_BTR_FD_OFFSET);
     }
@@ -2138,7 +2175,8 @@ static int mpfs_can_set_data_bittiming(FAR struct mpfs_driver_s *priv)
  *
  ****************************************************************************/
 
-static int mpfs_can_set_secondary_sample_point(FAR struct mpfs_driver_s *priv)
+static int mpfs_can_set_secondary_sample_point(FAR struct
+                                               mpfs_driver_s *priv)
 {
   struct mpfs_can_bittiming_s *dbt = &(priv->can.data_bittiming);
   int ssp_offset = 0;
@@ -2155,7 +2193,9 @@ static int mpfs_can_set_secondary_sample_point(FAR struct mpfs_driver_s *priv)
   if (dbt->bitrate > 1000000)
     {
       /* Calculate SSP in minimal time quanta */
-      ssp_offset = (priv->can.clock.freq / 1000) * dbt->sample_point / dbt->bitrate;
+
+      ssp_offset = (priv->can.clock.freq / 1000) *
+                   dbt->sample_point / dbt->bitrate;
 
       if (ssp_offset > 127)
         {
@@ -2277,6 +2317,7 @@ static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
   switch (filter_type)
     {
       case HW_FILTER_A:
+
         /* Set filter control reg for filter A */
 
         if (can_type == CAN_MSGPRIO_LOW)
@@ -2310,6 +2351,7 @@ static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
         break;
 
       case HW_FILTER_B:
+
         /* Set filter control reg for filter B */
 
         if (can_type == CAN_MSGPRIO_LOW)
@@ -2343,6 +2385,7 @@ static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
         break;
 
       case HW_FILTER_C:
+
         /* Set filter control reg for filter C */
 
         if (can_type == CAN_MSGPRIO_LOW)
@@ -2376,6 +2419,7 @@ static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
         break;
 
       case HW_FILTER_RANGE:
+
         /* Set filter control reg for filter range */
 
         if (can_type == CAN_MSGPRIO_LOW)
@@ -2409,6 +2453,7 @@ static void mpfs_can_add_hw_filter(FAR struct mpfs_driver_s *priv,
         break;
 
       default:
+
         /* Unsupported filter type */
 
         break;
@@ -2531,7 +2576,7 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
   /* Configure modes */
 
   mode.flags = priv->can.ctrlmode;
-  mode.mask = 0xFFFFFFFF;
+  mode.mask = 0xffffffff;
   mpfs_can_set_mode(priv, &mode);
 
   /* Configure interrupts */
@@ -2553,7 +2598,7 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
 
   /* It's after reset, so there is no need to clear anything */
 
-  uint32_t mask = 0xFFFFFFFF;
+  uint32_t mask = 0xffffffff;
   putreg32(mask, priv->base + MPFS_CANFD_INT_MASK_CLR_OFFSET);
   putreg32(int_msk, priv->base + MPFS_CANFD_INT_MASK_SET_OFFSET);
   putreg32(int_ena, priv->base + MPFS_CANFD_INT_ENA_SET_OFFSET);
@@ -2577,8 +2622,8 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
  * Name: mpfs_can_chip_stop
  *
  * Description:
- *  This routine stops the driver. This is the drivers stop routine. It will disable the
- * interrupts and disable the controller
+ *  This routine stops the driver. This is the drivers stop routine. It will
+ * disable the interrupts and disable the controller
  *
  * Input Parameters:
  *  priv  - Pointer to the private FPGA CANFD driver state structure
@@ -2593,7 +2638,7 @@ static int mpfs_can_chip_start(FAR struct mpfs_driver_s *priv)
 
 static void mpfs_can_chip_stop(FAR struct mpfs_driver_s *priv)
 {
-  uint32_t mask = 0xFFFFFFFF;
+  uint32_t mask = 0xffffffff;
   uint32_t mode;
 
   /* Disable interrupts */
@@ -2649,7 +2694,8 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
   do
     {
       device_id = (getreg32(priv->base + MPFS_CANFD_DEVICE_ID_OFFSET) &
-        MPFS_CANFD_DEVICE_ID_DEVICE_ID) >> MPFS_CANFD_DEVICE_ID_DEVICE_ID_SHIFT;
+        MPFS_CANFD_DEVICE_ID_DEVICE_ID) >>
+        MPFS_CANFD_DEVICE_ID_DEVICE_ID_SHIFT;
 
       if (device_id == MPFS_CANFD_ID)
         {
@@ -2685,7 +2731,8 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
 
 static int mpfs_ifup(struct net_driver_s *dev)
 {
-  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+  FAR struct mpfs_driver_s *priv =
+    (FAR struct mpfs_driver_s *)dev->d_private;
 
   if (mpfs_can_chip_start(priv) < 0)
     {
@@ -2726,7 +2773,8 @@ static int mpfs_ifup(struct net_driver_s *dev)
 
 static int mpfs_ifdown(struct net_driver_s *dev)
 {
-  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+  FAR struct mpfs_driver_s *priv =
+    (FAR struct mpfs_driver_s *)dev->d_private;
 
   /* Stop chip */
 
@@ -2758,8 +2806,10 @@ static int mpfs_ifdown(struct net_driver_s *dev)
 #ifdef CONFIG_NETDEV_IOCTL
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 {
-#if defined(CONFIG_NETDEV_CAN_BITRATE_IOCTL) || defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
-  FAR struct mpfs_driver_s *priv = (FAR struct mpfs_driver_s *)dev->d_private;
+#if defined(CONFIG_NETDEV_CAN_BITRATE_IOCTL) || \
+defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
+  FAR struct mpfs_driver_s *priv =
+    (FAR struct mpfs_driver_s *)dev->d_private;
 #endif
   int ret;
 
@@ -2767,10 +2817,12 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
     {
 #ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL
     case SIOCGCANBITRATE:
+
       /* Get bitrate from the FPGA CANFD controller */
 
       {
-        struct can_ioctl_data_s *req = (struct can_ioctl_data_s *)((uintptr_t)arg);
+        struct can_ioctl_data_s *req =
+          (struct can_ioctl_data_s *)((uintptr_t)arg);
         req->arbi_bitrate = priv->can.bittiming.bitrate / 1000; /* kbit/s */
         req->arbi_samplep = priv->can.bittiming.sample_point / 10;
         req->data_bitrate = priv->can.data_bittiming.bitrate / 1000; /* kbit/s */
@@ -2780,14 +2832,16 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
       break;
 
     case SIOCSCANBITRATE:
+
       /* Set bitrate of the FPGA CANFD controller */
 
       {
-        struct can_ioctl_data_s *req = (struct can_ioctl_data_s *)((uintptr_t)arg);
+        struct can_ioctl_data_s *req =
+          (struct can_ioctl_data_s *)((uintptr_t)arg);
 
         if (req->arbi_bitrate > 1000)
           {
-            canerr("Arbitration bitrate higher than 1Mbps is yet to be supported.");
+            canerr("Arbitration bitrate > 1Mbps is not supported.");
             ret = -EINVAL;
             break;
           }
@@ -2795,17 +2849,19 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 
         if (req->arbi_samplep > 100 || req->arbi_samplep <= 0)
           {
-            canerr("Invalid arbitration sample point. Range should be (0,100]%%.");
+            canerr("Invalid arbitration sample point. "
+                   "Range should be (0,100]%%.");
             ret = -EINVAL;
             break;
           }
         priv->can.bittiming.sample_point =
           req->arbi_samplep * 10; /* In one-tenth of a percent */
 
-        if (req->data_bitrate > 4000 || req->data_bitrate < req->arbi_bitrate)
+        if (req->data_bitrate > 4000 ||
+            req->data_bitrate < req->arbi_bitrate)
           {
-            canerr("Data bitrate higher than 4Mbps is yet to be supported. Data "
-                  "bitrate cannot be smaller than arbitration bitrate.");
+            canerr("Data bitrate higher than 4Mbps is yet to be supported. "
+                   "Data br cannot be smaller than arbitration br.");
             ret = -EINVAL;
             break;
           }
@@ -2819,7 +2875,9 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
           }
         priv->can.data_bittiming.sample_point =
           req->data_samplep * 10; /* In one-tenth of a percent */
+
         /* Reset sjw to default 5 */
+
         priv->can.bittiming.sjw = 5;
         priv->can.data_bittiming.sjw = 5;
 
@@ -2879,7 +2937,8 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
             {
               /* All bit filters used. Return with error */
 
-              canerr("All bit filters used. Cannot add more. Delete all and add again.");
+              canerr("All bit filters used. Cannot add more. Delete all and "
+                     "add again.");
               ret = -1;
               break;
             }
@@ -2895,6 +2954,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
         else
           {
             /* Dual address and other filter types not yet support */
+
             canerr("Dual address and other filter types not yet support");
             ret = -1;
             break;
@@ -2914,7 +2974,9 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
       break;
 
     case SIOCACANEXTFILTER:
+
       /* Add CAN EXTENDED ID HW FILTER */
+
       {
         uint8_t filter;
         struct can_ioctl_filter_s *req =
@@ -2944,7 +3006,8 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
             {
               /* All bit filters used. Return with error */
 
-              canerr("All bit filters used. Cannot add more. Delete all and add again.");
+              canerr("All bit filters used. Cannot add more. Delete all and "
+                     "add again.");
               ret = -1;
               break;
             }
@@ -2958,7 +3021,8 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
               {
                 /* The range filter is already used. Return with error */
 
-                canerr("Range filter used. Cannot add more. Delete all and add again.");
+                canerr("Range filter used. Cannot add more. Delete all and "
+                       "add again.");
                 ret = -1;
                 break;
               }
@@ -2968,6 +3032,7 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
         else
           {
             /* Dual address and other filter types not yet support */
+
             canerr("Dual address and other filter types not yet support");
             ret = -1;
             break;
@@ -2988,7 +3053,9 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 
     case SIOCDCANSTDFILTER:
     case SIOCDCANEXTFILTER:
+
       /* Reset all HW FILTERs */
+
       {
         mpfs_can_reset_hw_filter(priv);
         ret = OK;
@@ -3004,7 +3071,6 @@ static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
   return ret;
 }
 #endif /* CONFIG_NETDEV_IOCTL */
-
 
 /****************************************************************************
  * Public Functions
@@ -3060,7 +3126,6 @@ int mpfs_fpga_canfd_init(void)
                           &priv->can.data_bittiming,
                           priv->can.data_bittiming_const);
 
-
 #ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
   /* Init hw filter runtime var */
 
@@ -3099,6 +3164,7 @@ int mpfs_fpga_canfd_init(void)
     {
       return -1;
     }
+
   caninfo("CAN-FD driver init done\n");
 
   /* Put the interface in the down state.  This usually amounts to resetting

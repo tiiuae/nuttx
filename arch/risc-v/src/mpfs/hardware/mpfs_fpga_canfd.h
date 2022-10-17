@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/riscv/src/mpfs/hardware/mpfs_fpga_canfd.h
+ * arch/risc-v/src/mpfs/hardware/mpfs_fpga_canfd.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -25,7 +25,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Register Offsets ********************************************************/
+/* Register Offsets *********************************************************/
 
 #define MPFS_CANFD_DEVICE_ID_OFFSET                             (0x00)
 #define MPFS_CANFD_VERSION_OFFSET                               (0x02)
@@ -82,7 +82,6 @@
 #define MPFS_CANFD_FILTER_CONTROL_OFFSET                        (0x5C)
 #define MPFS_CANFD_FILTER_STATUS_OFFSET                         (0x5E)
 
-
 /*  RX registers */
 #define MPFS_CANFD_RX_MEM_INFO_OFFSET                           (0x60)
 
@@ -93,7 +92,6 @@
 
 #define MPFS_CANFD_RX_DATA_OFFSET                               (0x6C)
 
-
 /*  TX registers */
 #define MPFS_CANFD_TX_STATUS_OFFSET                             (0x70)
 
@@ -101,7 +99,6 @@
 #define MPFS_CANFD_TXTB_INFO_OFFSET                             (0x76)
 
 #define MPFS_CANFD_TX_PRIORITY_OFFSET                           (0x78)
-
 
 #define MPFS_CANFD_ERR_CAPT_OFFSET                              (0x7C)
 #define MPFS_CANFD_RETR_CTR_OFFSET                              (0x7D)
@@ -159,8 +156,7 @@
 # define MPFS_CANFD_CTUCANFD_TST_WDATA                          (0x908)
 # define MPFS_CANFD_CTUCANFD_TST_RDATA                          (0x90C)
 
-
-/* Control_registers memory region *****************************************/
+/* Control_registers memory region ******************************************/
 
 /*  DEVICE ID / VERSION registers */
 #define MPFS_CANFD_DEVICE_ID_DEVICE_ID_SHIFT                    (0)
