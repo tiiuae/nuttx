@@ -37,13 +37,9 @@
 #  include <arch/board/boot_romfsimg.h>
 #endif
 
-#ifdef CONFIG_MPFS_CANFD
-#  include "mpfs_fpga_canfd.h"
-#endif
-
-
 #include "board_config.h"
 #include "mpfs_corepwm.h"
+#include "mpfs_fpga_canfd.h"
 #include "mpfs.h"
 
 /****************************************************************************
@@ -145,7 +141,7 @@ int mpfs_bringup(void)
 #ifdef CONFIG_MPFS_CANFD
   /* Configure FPGA CAN-FD peripheral interfaces */
 
-  ret = mpfs_canfd_init();
+  ret = mpfs_canfd_setup();
 
   if (ret < 0)
     {
