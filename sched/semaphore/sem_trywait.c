@@ -72,7 +72,7 @@ int nxsem_trywait(FAR sem_t *sem)
 
   /* This API should not be called from interrupt handlers & idleloop */
 
-  DEBUGASSERT(sem != NULL);
+  DEBUGASSERT(sem != NULL && up_interrupt_context() == false);
   DEBUGASSERT(!OSINIT_IDLELOOP() || !sched_idletask());
 
   if (sem != NULL)
