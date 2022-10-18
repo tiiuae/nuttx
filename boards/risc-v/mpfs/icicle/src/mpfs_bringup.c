@@ -137,7 +137,6 @@ int mpfs_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_NETDEV_LATEINIT
 #ifdef CONFIG_MPFS_CANFD
   /* Configure FPGA CAN-FD peripheral interfaces */
 
@@ -148,7 +147,6 @@ int mpfs_bringup(void)
       syslog(LOG_ERR, "Failed to initialize FPGA CAN-FD driver: %d\n", ret);
     }
 #endif /* CONFIG_MPFS_CANFD */
-#endif /* CONFIG_NETDEV_LATEINIT */
 
 #ifdef CONFIG_MPFS_EMMCSD
   ret = mpfs_board_emmcsd_init();
