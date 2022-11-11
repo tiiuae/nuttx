@@ -154,18 +154,16 @@ enum mpfs_can_txb_command
   TXT_CMD_SET_ABORT   = 0x04
 };
 
-#define candebug _none
-
 /****************************************************************************
  * Utility definitions
  ****************************************************************************/
 
 #ifndef min
-#define min(a, b)  (a) < (b) ? a : b
+#define min(a, b)  ((a) < (b) ? (a) : (b))
 #endif
 
 #ifndef max
-#define max(a, b)  (a) > (b) ? a : b
+#define max(a, b)  ((a) > (b) ? (a) : (b))
 #endif
 
 #define clamp(val, lo, hi)  min(max(val, lo), hi)
@@ -663,18 +661,18 @@ static void mpfs_receive_work(void *arg)
         {
           if (MPFS_CANFD_FRAME_FORMAT_W_RTR & ffw)
             {
-              candebug("Remote Frame received\n");
+              caninfo("Remote Frame received\n");
             }
           else
             {
-              candebug("Classical CAN Frame received\n");
+              caninfo("Classical CAN Frame received\n");
             }
 
           is_classical_can_frame = true;
         }
       else
         {
-          candebug("CANFD Frame received\n");
+          caninfo("CANFD Frame received\n");
         }
 
       /* Retrieve the classical or CANFD or remote frame */
@@ -1043,7 +1041,7 @@ static void mpfs_err_interrupt(struct mpfs_driver_s *priv, uint32_t isr)
   alc_bit = ((err_capt_retr_ctr_alc_reg & MPFS_CANFD_ERR_CAPT_ALC_BIT) >>
     MPFS_CANFD_ERR_CAPT_ALC_BIT_SHIFT);
 
-  candebug("ISR = 0x%08x, rxerr %d, txerr %d, error type %u, pos %u, ALC "
+  caninfo("ISR = 0x%08x, rxerr %d, txerr %d, error type %u, pos %u, ALC "
           "id_field %u, bit %u\n", isr, bec.rxerr, bec.txerr, err_type,
           err_pos, alc_id_field, alc_bit);
 
@@ -1072,7 +1070,7 @@ static void mpfs_err_interrupt(struct mpfs_driver_s *priv, uint32_t isr)
           canwarn("Change to ERROR_WARNING error state\n");
           break;
         case CAN_STATE_ERROR_ACTIVE:
-          candebug("Change to ERROR_ACTIVE error state\n");
+          caninfo("Change to ERROR_ACTIVE error state\n");
           return;
         default:
           canwarn("Unhandled error state %d\n", state);
@@ -1198,13 +1196,13 @@ static int mpfs_interrupt(int irq, void *context, void *arg)
 
   if (isr & MPFS_CANFD_INT_STAT_TXBHCI)
     {
-#if 0
-      candebug("txb_sent=0x%08x txb_processed=0x%08x\n", priv->txb_sent,
-               priv->txb_processed);
+#if CONFIG_DEBUG_CAN_INFO
+      caninfo("txb_sent=0x%08x txb_processed=0x%08x\n", priv->txb_sent,
+              priv->txb_processed);
       for (int i = 0; i < priv->ntxbufs; i++)
         {
           uint32_t status = mpfs_can_get_txb_status(priv, i);
-          candebug("txb[%d] txb status=0x%08x\n", i, status);
+          caninfo("txb[%d] txb status=0x%08x\n", i, status);
         }
 #endif
       /* Notify to socket interface */
@@ -1831,10 +1829,10 @@ static int mpfs_can_config_bit_timing(struct mpfs_driver_s *priv,
       btr |= bt->phase_seg2 << MPFS_CANFD_BTR_PH2_SHIFT;
       btr |= bt->brp << MPFS_CANFD_BTR_BRP_SHIFT;
       btr |= bt->sjw << MPFS_CANFD_BTR_SJW_SHIFT;
-      candebug("Arbitration bitrate: %u, Prop_seg: %u, phase_seg1: %u, "
-               "phase_seg2: %u, brp: %u, sjw: %u \n", bt->bitrate,
-               bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp,
-               bt->sjw);
+      caninfo("Arbitration bitrate: %u, Prop_seg: %u, phase_seg1: %u, "
+              "phase_seg2: %u, brp: %u, sjw: %u \n", bt->bitrate,
+              bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp,
+              bt->sjw);
       putreg32(btr, priv->base + MPFS_CANFD_BTR_OFFSET);
     }
   else
@@ -1844,10 +1842,10 @@ static int mpfs_can_config_bit_timing(struct mpfs_driver_s *priv,
       btr |= bt->phase_seg2 << MPFS_CANFD_BTR_FD_PH2_FD_SHIFT;
       btr |= bt->brp << MPFS_CANFD_BTR_FD_BRP_FD_SHIFT;
       btr |= bt->sjw << MPFS_CANFD_BTR_FD_SJW_FD_SHIFT;
-      candebug("Data bitrate: %u, Prop_seg: %u, phase_seg1: %u, "
-               "phase_seg2: %u, brp: %u, sjw: %u \n", bt->bitrate,
-               bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp,
-               bt->sjw);
+      caninfo("Data bitrate: %u, Prop_seg: %u, phase_seg1: %u, "
+              "phase_seg2: %u, brp: %u, sjw: %u \n", bt->bitrate,
+              bt->prop_seg, bt->phase_seg1, bt->phase_seg2, bt->brp,
+              bt->sjw);
       putreg32(btr, priv->base + MPFS_CANFD_BTR_FD_OFFSET);
     }
 
