@@ -6,6 +6,7 @@
 config FS_SHMFS
 	bool "Shared memory support"
 	select MM_VM_MAP
+	select MM_SHM
 	default n
 	---help---
 		Include support for shm_open() and shm_close.
