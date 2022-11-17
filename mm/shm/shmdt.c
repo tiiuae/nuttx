@@ -83,7 +83,6 @@ int shmdt(FAR const void *shmaddr)
   tcb = nxsched_self();
   DEBUGASSERT(tcb && tcb->group);
   group = tcb->group;
-  DEBUGASSERT(group->tg_shm.gs_handle != NULL);
 
   /* Perform the reverse lookup to get the shmid corresponding to this
    * shmaddr.
@@ -117,8 +116,7 @@ int shmdt(FAR const void *shmaddr)
 
   /* Free the virtual address space */
 
-  gran_free(group->tg_shm.gs_handle, (FAR void *)shmaddr,
-            region->sr_ds.shm_segsz);
+  shm_free(group, (uintptr_t)shmaddr, region->sr_ds.shm_segsz);
 
   /* Convert the region size to pages */
 

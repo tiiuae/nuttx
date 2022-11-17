@@ -130,11 +130,10 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
 
   /* Set aside a virtual address space to span this physical region */
 
-  vaddr = (uintptr_t)gran_alloc(group->tg_shm.gs_handle,
-                                region->sr_ds.shm_segsz);
+  vaddr = (uintptr_t)shm_alloc(group, 0, region->sr_ds.shm_segsz);
   if (vaddr == 0)
     {
-      shmerr("ERROR: gran_alloc() failed\n");
+      shmerr("ERROR: shm_alloc() failed\n");
       ret = -ENOMEM;
       goto errout_with_semaphore;
     }
@@ -184,8 +183,7 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
   return (FAR void *)vaddr;
 
 errout_with_vaddr:
-  gran_free(group->tg_shm.gs_handle, (FAR void *)vaddr,
-            region->sr_ds.shm_segsz);
+  shm_free(group, vaddr, region->sr_ds.shm_segsz);
 
 errout_with_semaphore:
   nxsem_post(&region->sr_sem);
