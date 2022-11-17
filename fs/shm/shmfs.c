@@ -22,9 +22,18 @@
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/fs/ioctl.h>
 #include <assert.h>
+
+#include <nuttx/fs/ioctl.h>
 #include <nuttx/fs/shmfs.h>
+
+#if defined (CONFIG_BUILD_KERNEL)
+#include <nuttx/arch.h>
+#include <nuttx/pgalloc.h>
+#include <nuttx/sched.h>
+#include <nuttx/mm/vm_map.h>
+#endif
+
 #include "shmfs_private.h"
 #include "inode/inode.h"
 
@@ -47,6 +56,12 @@ static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
                            size_t buflen);
 static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 static int shmfs_truncate(FAR struct file *filep, off_t length);
+
+/* Helper functions for mmap / unmap */
+
+static int shmfs_mmap(FAR uintptr_t *pages, size_t length,
+                      FAR uintptr_t *vaddr);
+static int shmfs_unmap(uintptr_t vaddr, size_t length);
 
 /****************************************************************************
  * Public Data
@@ -102,7 +117,7 @@ static ssize_t shmfs_read(FAR struct file *filep, FAR char *buffer,
   ssize_t len = 0;
 
 #ifdef CONFIG_BUILD_KERNEL
-#error Not implemented
+  (void)object;
 #else
   if (object && object->paddr[0])
     {
@@ -126,7 +141,7 @@ static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
   ssize_t len = 0;
 
 #ifdef CONFIG_BUILD_KERNEL
-#error Not implemented
+  (void)object;
 #else
   if (object && object->paddr[0])
     {
@@ -142,7 +157,7 @@ static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
  * Name: shmfs_ioctl
  ****************************************************************************/
 
-static int  shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 {
   int ret = OK;
   switch (cmd)
@@ -152,15 +167,19 @@ static int  shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
         FAR struct shmfs_object_s *object =
           (FAR struct shmfs_object_s *)filep->f_inode->i_private;
 
-        /* object may be null if the shm has not bee ftruncated */
+        /* object may be null if the shm has not been ftruncated */
 
         if (object)
           {
-#ifdef CONFIG_BUILD_KERNEL
-#error Not implemented
-#else
-            *(uintptr_t *)arg = (uintptr_t)object->paddr[0];
-#endif
+            FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
+            uintptr_t      vaddr;
+
+            ret = shmfs_mmap(pages, object->length, &vaddr);
+            if (ret >= 0)
+              {
+                *(uintptr_t *)arg = vaddr;
+              }
+
             /* Keep the inode when mmapped, increase refcount */
 
             filep->f_inode->i_crefs++;
@@ -173,6 +192,16 @@ static int  shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
       break;
     case FIOC_MUNMAP:
       {
+        const FAR struct vm_map_entry_s *map;
+
+        /* Remove mapping regardless */
+
+        map = (const FAR struct vm_map_entry_s *)arg;
+        if (map)
+          {
+            shmfs_unmap((uintptr_t)map->vaddr, map->length);
+          }
+
         /* Delete the object if it has been unlinked
          * and it is no longer referenced
          */
@@ -222,6 +251,78 @@ static int shmfs_truncate(FAR struct file *filep, off_t length)
     }
 
   return OK;
+}
+
+/****************************************************************************
+ * Name: shmfs_mmap
+ ****************************************************************************/
+
+static int shmfs_mmap(FAR uintptr_t *pages, size_t length,
+                      FAR uintptr_t *vaddr)
+{
+#ifdef CONFIG_BUILD_KERNEL
+  FAR struct tcb_s        *tcb   = nxsched_self();
+  FAR struct task_group_s *group = tcb->group;
+  uintptr_t                mapaddr;
+  unsigned int             npages;
+  int                      ret;
+
+  /* Find a free vaddr space that satisfies length */
+
+  mapaddr = (uintptr_t)shm_alloc(group, 0, length);
+
+  /* Convert the region size to pages */
+
+  npages = MM_NPAGES(length);
+
+  /* Map the memory to user virtual address space */
+
+  ret = up_shmat(pages, npages, mapaddr);
+  if (ret < 0)
+    {
+      shm_free(group, (FAR void *)mapaddr, length);
+    }
+
+  *vaddr = mapaddr;
+  return ret;
+#else
+  /* In flat mode just return the physical address */
+
+  *vaddr = (uintptr_t)object->paddr[0];
+  return OK;
+#endif
+}
+
+/****************************************************************************
+ * Name: shmfs_unmap
+ ****************************************************************************/
+
+static int shmfs_unmap(uintptr_t vaddr, size_t length)
+{
+#ifdef CONFIG_BUILD_KERNEL
+  FAR struct tcb_s        *tcb   = nxsched_self();
+  FAR struct task_group_s *group = tcb->group;
+  unsigned int             npages;
+  int                      ret;
+
+  /* Convert the region size to pages */
+
+  npages = MM_NPAGES(length);
+
+  /* Unmap the memory from user virtual address space */
+
+  ret = up_shmdt(vaddr, npages);
+
+  /* Add the virtual memory back to the shared memory pool */
+
+  shm_free(group, (FAR void *)vaddr, length);
+
+  return ret;
+#else
+  /* No work to do */
+
+  return OK;
+#endif
 }
 
 /****************************************************************************
