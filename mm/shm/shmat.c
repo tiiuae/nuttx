@@ -99,7 +99,7 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
   FAR struct shm_region_s *region;
   FAR struct task_group_s *group;
   FAR struct tcb_s *tcb;
-  uintptr_t vaddr;
+  FAR void *vaddr;
   unsigned int npages;
   int ret;
 
@@ -128,11 +128,10 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
 
   /* Set aside a virtual address space to span this physical region */
 
-  vaddr = (uintptr_t)gran_alloc(group->tg_shm.gs_handle,
-                                region->sr_ds.shm_segsz);
-  if (vaddr == 0)
+  vaddr = shm_alloc(group, NULL, region->sr_ds.shm_segsz);
+  if (vaddr == NULL)
     {
-      shmerr("ERROR: gran_alloc() failed\n");
+      shmerr("ERROR: shm_alloc() failed\n");
       ret = -ENOMEM;
       goto errout_with_semaphore;
     }
@@ -143,7 +142,7 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
 
   /* Attach, i.e, map, on shared memory region to the user virtual address. */
 
-  ret = up_shmat(region->sr_pages, npages, vaddr);
+  ret = up_shmat(region->sr_pages, npages, (uintptr_t)vaddr);
   if (ret < 0)
     {
       shmerr("ERROR: up_shmat() failed\n");
@@ -155,7 +154,7 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
    * detach, we need to get the region table index.
    */
 
-  group->tg_shm.gs_vaddr[shmid] = vaddr;
+  group->tg_shm.gs_vaddr[shmid] = (uintptr_t)vaddr;
 
   /* Increment the count of processes attached to this region */
 
@@ -175,8 +174,7 @@ FAR void *shmat(int shmid, FAR const void *shmaddr, int shmflg)
   return (FAR void *)vaddr;
 
 errout_with_vaddr:
-  gran_free(group->tg_shm.gs_handle, (FAR void *)vaddr,
-            region->sr_ds.shm_segsz);
+  shm_free(group, vaddr, region->sr_ds.shm_segsz);
 
 errout_with_semaphore:
   nxsem_post(&region->sr_sem);
