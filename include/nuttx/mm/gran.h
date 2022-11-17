@@ -170,11 +170,12 @@ void gran_release(GRAN_HANDLE handle);
  *   size   - The size of the region to be reserved
  *
  * Returned Value:
- *   None
+ *   Zero (OK) is returned on success; a negated errno value is returned
+ *   on failure.
  *
  ****************************************************************************/
 
-void gran_reserve(GRAN_HANDLE handle, uintptr_t start, size_t size);
+int gran_reserve(GRAN_HANDLE handle, uintptr_t start, size_t size);
 
 /****************************************************************************
  * Name: gran_alloc

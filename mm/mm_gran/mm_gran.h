@@ -109,11 +109,12 @@ void gran_leave_critical(FAR struct gran_s *priv);
  *   ngranules - The number of granules allocated
  *
  * Returned Value:
- *   None
+ *   Zero (OK) is returned on success; a negated errno value is returned
+ *   on failure.
  *
  ****************************************************************************/
 
-void gran_mark_allocated(FAR struct gran_s *priv, uintptr_t alloc,
-                         unsigned int ngranules);
+int gran_mark_allocated(FAR struct gran_s *priv, uintptr_t alloc,
+                        unsigned int ngranules);
 
 #endif /* __MM_MM_GRAN_MM_GRAN_H */

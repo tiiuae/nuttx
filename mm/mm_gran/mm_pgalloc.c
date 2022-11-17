@@ -123,7 +123,7 @@ void mm_pginitialize(FAR void *heap_start, size_t heap_size)
 
 void mm_pgreserve(uintptr_t start, size_t size)
 {
-  gran_reserve(g_pgalloc, start, size);
+  DEBUGASSERT(gran_reserve(g_pgalloc, start, size) == 0);
 }
 
 /****************************************************************************

@@ -48,11 +48,12 @@
  *   ngranules - The number of granules allocated
  *
  * Returned Value:
- *   None
+ *   Zero (OK) is returned on success; a negated errno value is returned
+ *   on failure.
  *
  ****************************************************************************/
 
-void gran_mark_allocated(FAR struct gran_s *priv, uintptr_t alloc,
+int gran_mark_allocated(FAR struct gran_s *priv, uintptr_t alloc,
                          unsigned int ngranules)
 {
   unsigned int granno;
@@ -60,6 +61,7 @@ void gran_mark_allocated(FAR struct gran_s *priv, uintptr_t alloc,
   unsigned int gatbit;
   unsigned int avail;
   uint32_t     gatmask;
+  int          ret = OK;
 
   /* Determine the granule number of the allocation */
 
@@ -75,35 +77,49 @@ void gran_mark_allocated(FAR struct gran_s *priv, uintptr_t alloc,
   avail = 32 - gatbit;
   if (ngranules > avail)
     {
-      /* Mark bits in the first GAT entry */
+      uint32_t gatmask2;
 
-      gatmask = 0xffffffff << gatbit;
-      DEBUGASSERT((priv->gat[gatidx] & gatmask) == 0);
+      gatmask    = 0xffffffff << gatbit;
+      ngranules -= avail;
+      gatmask2   = 0xffffffff >> (32 - ngranules);
+
+      /* Check that the area is free, from both mask words */
+
+      if (((priv->gat[gatidx] & gatmask) != 0) ||
+          ((priv->gat[gatidx + 1] & gatmask2) != 0))
+        {
+          ret = -ENOMEM;
+          goto err_nomem;
+        }
+
+      /* Mark bits in the first and second GAT entry */
 
       priv->gat[gatidx] |= gatmask;
-      ngranules -= avail;
-
-      /* Mark bits in the second GAT entry */
-
-      gatmask = 0xffffffff >> (32 - ngranules);
-      DEBUGASSERT((priv->gat[gatidx + 1] & gatmask) == 0);
-
-      priv->gat[gatidx + 1] |= gatmask;
+      priv->gat[gatidx + 1] |= gatmask2;
     }
 
   /* Handle the case where where all of the granules come from one entry */
 
   else
     {
-      /* Mark bits in a single GAT entry */
-
       gatmask   = 0xffffffff >> (32 - ngranules);
       gatmask <<= gatbit;
-      DEBUGASSERT((priv->gat[gatidx] & gatmask) == 0);
+
+      /* Check that the area is free */
+
+      if ((priv->gat[gatidx] & gatmask) != 0)
+        {
+          ret = -ENOMEM;
+          goto err_nomem;
+        }
+
+      /* Mark bits in a single GAT entry */
 
       priv->gat[gatidx] |= gatmask;
-      return;
     }
+
+err_nomem:
+  return ret;
 }
 
 #endif /* CONFIG_GRAN */
