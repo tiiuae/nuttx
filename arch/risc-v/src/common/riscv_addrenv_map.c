@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/risc-v/src/common/pgalloc.h
+ * arch/risc-v/src/common/riscv_addrenv_map.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,85 +18,67 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISC_V_SRC_COMMON_PGALLOC_H
-#define __ARCH_RISC_V_SRC_COMMON_PGALLOC_H
-
-#ifdef CONFIG_MM_PGALLOC
-
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
 
-#include <stdint.h>
-#include <string.h>
+#include "pgalloc.h"
 
-#include <nuttx/addrenv.h>
-#include <nuttx/pgalloc.h>
+#ifdef CONFIG_BUILD_KERNEL
 
 /****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-#ifndef CONFIG_ARCH_PGPOOL_MAPPING
-#  error "RISC-V needs CONFIG_ARCH_PGPOOL_MAPPING"
-#endif
-
-/****************************************************************************
- * Public Functions Prototypes
+ * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: riscv_pgvaddr
+ * Name: up_addrenv_pa_to_va
  *
  * Description:
- *   Get virtual address for pgpool physical address. Note: this function
- *   is minimalistic and is only usable for kernel mappings and only tests
- *   if the paddr is in the pgpool. For user mapped addresses this does not
- *   work.
+ *   Map phy address to virtual address.  Not supported by all architectures.
  *
- * Note:
- *   To get it to work with user addresses, a manual table walk needs to be
- *   implemented. Not too complex, but not needed for anything -> not
- *   implemented.
+ *   REVISIT:  Should this not then be conditional on having that
+ *   architecture-specific support?
  *
  * Input Parameters:
- *   paddr - Physical pgpool address
+ *   pa - The phy address to be mapped.
  *
- * Return:
- *   vaddr - Virtual address for physical address
+ * Returned Value:
+ *   Virtual address on success; NULL on failure.
  *
  ****************************************************************************/
 
-#ifdef CONFIG_ARCH_PGPOOL_MAPPING
-static inline uintptr_t riscv_pgvaddr(uintptr_t paddr)
+FAR void *up_addrenv_pa_to_va(uintptr_t pa)
 {
-  if (paddr >= CONFIG_ARCH_PGPOOL_PBASE && paddr < CONFIG_ARCH_PGPOOL_PEND)
-    {
-      return paddr - CONFIG_ARCH_PGPOOL_PBASE + CONFIG_ARCH_PGPOOL_VBASE;
-    }
+  /* This can only translate page pool addresses for now */
 
-  return 0;
+  return (FAR void *)riscv_pgvaddr(pa);
 }
-#endif /* CONFIG_ARCH_PGPOOL_MAPPING */
 
 /****************************************************************************
- * Name: riscv_pgwipe
+ * Name: up_addrenv_va_to_pa
  *
  * Description:
- *   Wipe a page of physical memory, first mapping it into virtual memory.
+ *   Map virtual address to phy address.  Not supported by all architectures.
+ *
+ *   REVISIT:  Should this not then be conditional on having that
+ *   architecture-specific support?
  *
  * Input Parameters:
- *   paddr - Physical address of page
+ *   va - The virtual address to be mapped.  Not supported by all
+ *        architectures.
+ *
+ * Returned Value:
+ *   Phy address on success; NULL on failure.
  *
  ****************************************************************************/
 
-static inline void riscv_pgwipe(uintptr_t paddr)
+uintptr_t up_addrenv_va_to_pa(FAR void *va)
 {
-  uintptr_t vaddr = riscv_pgvaddr(paddr);
-  memset((void *)vaddr, 0, MM_PGSIZE);
+  /* This cannot translate anything */
+
+  return (uintptr_t)NULL;
 }
 
-#endif /* CONFIG_MM_PGALLOC */
-#endif /* __ARCH_RISC_V_SRC_COMMON_PGALLOC_H */
+#endif /* CONFIG_BUILD_KERNEL */
