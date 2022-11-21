@@ -41,6 +41,14 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+#ifndef min
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#endif
+
+#ifndef max
+#define max(a,b) ((a) > (b) ? (a) : (b))
+#endif
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -116,16 +124,32 @@ static ssize_t shmfs_read(FAR struct file *filep, FAR char *buffer,
     (FAR struct shmfs_object_s *)filep->f_inode->i_private;
   ssize_t len = 0;
 
-#ifdef CONFIG_BUILD_KERNEL
-  (void)object;
-#else
   if (object && object->paddr[0])
     {
       len = buflen > object->length ? object->length : buflen;
+#ifdef CONFIG_BUILD_KERNEL
+      FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
+      ssize_t remaining = len;
+      ssize_t slice;
+      uintptr_t paddr;
+
+      /* Must copy page by page */
+
+      while (remaining > 0)
+        {
+          slice = min(len, MM_PGSIZE);
+          paddr = *pages++;
+          remaining -= slice;
+          memcpy(buffer, up_addrenv_pa_to_va(paddr) , slice);
+          buffer += slice;
+        }
+#else
+      /* Can copy as a bundle */
+
       memcpy(buffer, object->paddr[0], len);
+#endif
     }
 
-#endif
   return len;
 }
 
@@ -140,16 +164,32 @@ static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
     (FAR struct shmfs_object_s *)filep->f_inode->i_private;
   ssize_t len = 0;
 
-#ifdef CONFIG_BUILD_KERNEL
-  (void)object;
-#else
   if (object && object->paddr[0])
     {
       len = buflen > object->length ? object->length : buflen;
+#ifdef CONFIG_BUILD_KERNEL
+      FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
+      ssize_t remaining = len;
+      ssize_t slice;
+      uintptr_t paddr;
+
+      /* Must copy page by page */
+
+      while (remaining > 0)
+        {
+          slice = min(len, MM_PGSIZE);
+          paddr = *pages++;
+          remaining -= slice;
+          memcpy(up_addrenv_pa_to_va(paddr), buffer, slice);
+          buffer += slice;
+        }
+#else
+      /* Can copy as a bundle */
+
       memcpy(object->paddr[0], buffer, len);
+#endif
     }
 
-#endif
   return len;
 }
 
