@@ -328,7 +328,7 @@ static int shmfs_mmap(FAR uintptr_t *pages, size_t length,
 #else
   /* In flat mode just return the physical address */
 
-  *vaddr = (uintptr_t)object->paddr[0];
+  *vaddr = (uintptr_t)pages;
   return OK;
 #endif
 }
