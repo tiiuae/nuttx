@@ -77,14 +77,18 @@ static int file_shm_unlink(FAR const char *shm_name)
       goto errout_with_sem;
     }
 
-  /* Delete the object if all instances have been unmapped
-   */
-
-  if (inode->i_crefs <= 1)
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  if (inode->u.i_ops->unlink)
     {
-      delete_shm_object(inode->i_private);
-      inode->i_private = NULL;
+      /* Notify the shmfs driver that it has been unlinked */
+
+      ret = inode->u.i_ops->unlink(inode);
+      if (ret < 0)
+        {
+          goto errout_with_inode;
+        }
     }
+#endif
 
   /* Remove the old inode from the tree. If we hold a reference count
    * on the inode, it will not be deleted now.  This will set the
@@ -105,6 +109,11 @@ static int file_shm_unlink(FAR const char *shm_name)
     }
 
   DEBUGASSERT(ret == OK);
+
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+errout_with_inode:
+  inode_release(inode);
+#endif
 
 errout_with_sem:
   inode_unlock();

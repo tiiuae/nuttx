@@ -65,6 +65,10 @@ static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
 static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 static int shmfs_truncate(FAR struct file *filep, off_t length);
 
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+static int shmfs_unlink(FAR struct inode *inode);
+#endif
+
 /* Helper functions for mmap / unmap */
 
 static int shmfs_mmap(FAR uintptr_t *pages, size_t length,
@@ -85,7 +89,7 @@ const struct file_operations shmfs_operations =
   shmfs_ioctl,      /* ioctl */
   NULL,             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  NULL,             /* unlink */
+  shmfs_unlink,     /* unlink */
 #endif
 };
 
@@ -292,6 +296,23 @@ static int shmfs_truncate(FAR struct file *filep, off_t length)
 
   return OK;
 }
+
+/****************************************************************************
+ * Name: shmfs_unlink
+ ****************************************************************************/
+
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+static int shmfs_unlink(FAR struct inode *inode)
+{
+  if (inode->i_crefs <= 1)
+    {
+      delete_shm_object(inode->i_private);
+      inode->i_private = NULL;
+    }
+
+  return OK;
+}
+#endif
 
 /****************************************************************************
  * Name: shmfs_mmap
