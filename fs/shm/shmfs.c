@@ -208,29 +208,35 @@ static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
     {
     case FIOC_MMAP:
       {
-        FAR struct shmfs_object_s *object =
-          (FAR struct shmfs_object_s *)filep->f_inode->i_private;
+        FAR struct shmfs_object_s *object;
 
-        /* object may be null if the shm has not been ftruncated */
+        /* Keep the inode when mmapped, increase refcount */
 
-        if (object)
+        ret = inode_addref(filep->f_inode);
+        if (ret >= 0)
           {
-            FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
-            uintptr_t      vaddr;
+            object = (FAR struct shmfs_object_s *)filep->f_inode->i_private;
 
-            ret = shmfs_mmap(pages, object->length, &vaddr);
-            if (ret >= 0)
+            /* object may be null if the shm has not been ftruncated */
+
+            if (object)
               {
-                *(uintptr_t *)arg = vaddr;
+                FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
+                uintptr_t      vaddr;
+
+                ret = shmfs_mmap(pages, object->length, &vaddr);
+                if (ret >= 0)
+                  {
+                    *(uintptr_t *)arg = vaddr;
+                  }
               }
+            else
+              {
+                /* Oops, the file has not been truncated yet */
 
-            /* Keep the inode when mmapped, increase refcount */
-
-            filep->f_inode->i_crefs++;
-          }
-        else
-          {
-            ret = -EINVAL;
+                inode_release(filep->f_inode);
+                ret = -EINVAL;
+              }
           }
       }
       break;
@@ -246,15 +252,15 @@ static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
             shmfs_unmap((uintptr_t)map->vaddr, map->length);
           }
 
-        /* Delete the object if it has been unlinked
-         * and it is no longer referenced
-         */
-
-        if (filep->f_inode->i_parent == NULL &&
-            filep->f_inode->i_crefs <= 1)
+        ret = inode_lock();
+        if (ret >= 0)
           {
-            delete_shm_object(filep->f_inode->i_private);
-            filep->f_inode->i_private = NULL;
+            /* Delete the object if it has been unlinked
+             * and it is no longer referenced, let shmfs_close() do the work
+             */
+
+            shmfs_close(filep);
+            inode_unlock();
           }
 
         /* And release the inode */
@@ -281,20 +287,28 @@ static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
 static int shmfs_truncate(FAR struct file *filep, off_t length)
 {
-  FAR struct shmfs_object_s *object = filep->f_inode->i_private;
+  FAR struct shmfs_object_s *object;
+  int ret;
 
-  if (!object)
+  ret = inode_lock();
+  if (ret >= 0)
     {
-      filep->f_inode->i_private = alloc_shm_object(length);
-    }
-  else if (object->length != length)
-    {
-      /* This doesn't support resize */
+      object = filep->f_inode->i_private;
+      if (!object)
+        {
+          filep->f_inode->i_private = alloc_shm_object(length);
+        }
+      else if (object->length != length)
+        {
+          /* This doesn't support resize */
 
-      return ERROR;
+          ret = ERROR;
+        }
+
+      inode_unlock();
     }
 
-  return OK;
+  return ret;
 }
 
 /****************************************************************************
