@@ -24,6 +24,8 @@
 
 #include <assert.h>
 
+#include <sys/mman.h>
+
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/fs/shmfs.h>
 
@@ -62,18 +64,17 @@ static ssize_t shmfs_read(FAR struct file *filep, FAR char *buffer,
                           size_t buflen);
 static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
                            size_t buflen);
-static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 static int shmfs_truncate(FAR struct file *filep, off_t length);
 
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
 static int shmfs_unlink(FAR struct inode *inode);
 #endif
 
-/* Helper functions for mmap / unmap */
+static FAR void *shmfs_mmap(FAR struct file *filep, off_t start,
+                            size_t length);
 
-static int shmfs_mmap(FAR uintptr_t *pages, size_t length,
-                      FAR uintptr_t *vaddr);
-static int shmfs_unmap(uintptr_t vaddr, size_t length);
+static int shmfs_munmap(FAR struct task_group_s *group,
+                        FAR struct inode *inode, void *vaddr, size_t length);
 
 /****************************************************************************
  * Public Data
@@ -86,10 +87,13 @@ const struct file_operations shmfs_operations =
   shmfs_read,       /* read */
   shmfs_write,      /* write */
   NULL,             /* seek */
-  shmfs_ioctl,      /* ioctl */
-  NULL,             /* poll */
+  NULL,             /* ioctl */
+  shmfs_truncate,   /* truncate */
+  shmfs_mmap,       /* mmap */
+  shmfs_munmap,     /* munmap */
+  NULL              /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  shmfs_unlink,     /* unlink */
+  , shmfs_unlink    /* unlink */
 #endif
 };
 
@@ -101,20 +105,31 @@ const struct file_operations shmfs_operations =
  * Name: shmfs_close
  ****************************************************************************/
 
-static int shmfs_close(FAR struct file *filep)
+static int _shmfs_close(FAR struct inode *inode)
 {
   /* If the file has been unlinked previously, delete the contents.
    * The inode is released after this call, hence checking if i_crefs <= 1.
    */
 
-  if (filep->f_inode->i_parent == NULL &&
-      filep->f_inode->i_crefs <= 1)
+  int ret = inode_lock();
+  if (ret >= 0)
     {
-      delete_shm_object(filep->f_inode->i_private);
-      filep->f_inode->i_private = NULL;
+      if (inode->i_parent == NULL &&
+          inode->i_crefs <= 1)
+        {
+          delete_shm_object(inode->i_private);
+          inode->i_private = NULL;
+        }
+
+      inode_unlock();
     }
 
-  return OK;
+  return ret;
+}
+
+static int shmfs_close(FAR struct file *filep)
+{
+  return _shmfs_close(filep->f_inode);
 }
 
 /****************************************************************************
@@ -198,90 +213,6 @@ static ssize_t shmfs_write(FAR struct file *filep, FAR const char *buffer,
 }
 
 /****************************************************************************
- * Name: shmfs_ioctl
- ****************************************************************************/
-
-static int shmfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  int ret = OK;
-  switch (cmd)
-    {
-    case FIOC_MMAP:
-      {
-        FAR struct shmfs_object_s *object;
-
-        /* Keep the inode when mmapped, increase refcount */
-
-        ret = inode_addref(filep->f_inode);
-        if (ret >= 0)
-          {
-            object = (FAR struct shmfs_object_s *)filep->f_inode->i_private;
-
-            /* object may be null if the shm has not been ftruncated */
-
-            if (object)
-              {
-                FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
-                uintptr_t      vaddr;
-
-                ret = shmfs_mmap(pages, object->length, &vaddr);
-                if (ret >= 0)
-                  {
-                    *(uintptr_t *)arg = vaddr;
-                  }
-              }
-            else
-              {
-                /* Oops, the file has not been truncated yet */
-
-                inode_release(filep->f_inode);
-                ret = -EINVAL;
-              }
-          }
-      }
-      break;
-    case FIOC_MUNMAP:
-      {
-        const FAR struct vm_map_entry_s *map;
-
-        /* Remove mapping regardless */
-
-        map = (const FAR struct vm_map_entry_s *)arg;
-        if (map)
-          {
-            shmfs_unmap((uintptr_t)map->vaddr, map->length);
-          }
-
-        ret = inode_lock();
-        if (ret >= 0)
-          {
-            /* Delete the object if it has been unlinked
-             * and it is no longer referenced, let shmfs_close() do the work
-             */
-
-            shmfs_close(filep);
-            inode_unlock();
-          }
-
-        /* And release the inode */
-
-        inode_release(filep->f_inode);
-      }
-      break;
-    case FIOC_TRUNCATE:
-      if (shmfs_truncate(filep, arg) != OK)
-        {
-          ret = -EINVAL;
-        }
-      break;
-    default:
-      ret = -ENOSYS;
-  }
-
-  return ret;
-}
-
-/****************************************************************************
  * Name: shmfs_truncate
  ****************************************************************************/
 
@@ -314,7 +245,6 @@ static int shmfs_truncate(FAR struct file *filep, off_t length)
 /****************************************************************************
  * Name: shmfs_unlink
  ****************************************************************************/
-
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
 static int shmfs_unlink(FAR struct inode *inode)
 {
@@ -332,53 +262,79 @@ static int shmfs_unlink(FAR struct inode *inode)
  * Name: shmfs_mmap
  ****************************************************************************/
 
-static int shmfs_mmap(FAR uintptr_t *pages, size_t length,
-                      FAR uintptr_t *vaddr)
+FAR void *shmfs_mmap(FAR struct file *filep, off_t start, size_t length)
 {
-#ifdef CONFIG_BUILD_KERNEL
-  FAR struct tcb_s        *tcb   = nxsched_self();
-  FAR struct task_group_s *group = tcb->group;
-  uintptr_t                mapaddr;
-  unsigned int             npages;
-  int                      ret;
+  FAR struct shmfs_object_s *object;
+  void *vaddr = MAP_FAILED;
+  int ret;
 
-  /* Find a free vaddr space that satisfies length */
+  /* Keep the inode when mmapped, increase refcount */
 
-  mapaddr = (uintptr_t)shm_alloc(group, 0, length);
-
-  /* Convert the region size to pages */
-
-  npages = MM_NPAGES(length);
-
-  /* Map the memory to user virtual address space */
-
-  ret = up_shmat(pages, npages, mapaddr);
-  if (ret < 0)
+  ret = inode_addref(filep->f_inode);
+  if (ret >= 0)
     {
-      shm_free(group, (FAR void *)mapaddr, length);
+      object = (FAR struct shmfs_object_s *)filep->f_inode->i_private;
+
+      /* object may be null if the shm has not been ftruncated */
+
+      if (object)
+        {
+          FAR uintptr_t *pages = (FAR uintptr_t *)&object->paddr[0];
+
+#ifdef CONFIG_BUILD_KERNEL
+          FAR struct tcb_s        *tcb   = nxsched_self();
+          FAR struct task_group_s *group = tcb->group;
+          uintptr_t                mapaddr;
+          unsigned int             npages;
+
+          /* Find a free vaddr space that satisfies length */
+
+          mapaddr = (uintptr_t)shm_alloc(group, 0, object->length);
+
+          /* Convert the region size to pages */
+
+          npages = MM_NPAGES(object->length);
+
+          /* Map the memory to user virtual address space */
+
+          ret = up_shmat(pages, npages, mapaddr);
+          if (ret < 0)
+            {
+              shm_free(group, (FAR void *)mapaddr, object->length);
+            }
+          else
+            {
+              vaddr = mapaddr;
+            }
+#else
+          /* In flat mode just use the physical address */
+
+          vaddr = pages;
+#endif
+
+          if (ret < 0)
+            {
+              /* Oops, the file has not been truncated yet */
+
+              inode_release(filep->f_inode);
+              vaddr = MAP_FAILED;
+            }
+        }
     }
 
-  *vaddr = mapaddr;
-  return ret;
-#else
-  /* In flat mode just return the physical address */
-
-  *vaddr = (uintptr_t)pages;
-  return OK;
-#endif
+  return vaddr;
 }
 
 /****************************************************************************
- * Name: shmfs_unmap
+ * Name: shmfs_munmap
  ****************************************************************************/
 
-static int shmfs_unmap(uintptr_t vaddr, size_t length)
+static int shmfs_munmap(FAR struct task_group_s *group,
+                        FAR struct inode *inode, void *vaddr, size_t length)
 {
+  int                      ret = OK;
 #ifdef CONFIG_BUILD_KERNEL
-  FAR struct tcb_s        *tcb   = nxsched_self();
-  FAR struct task_group_s *group = tcb->group;
   unsigned int             npages;
-  int                      ret;
 
   /* Convert the region size to pages */
 
@@ -391,13 +347,13 @@ static int shmfs_unmap(uintptr_t vaddr, size_t length)
   /* Add the virtual memory back to the shared memory pool */
 
   shm_free(group, (FAR void *)vaddr, length);
-
-  return ret;
-#else
-  /* No work to do */
-
-  return OK;
 #endif
+
+  /* Delete the object if it has been unlinked
+   * and it is no longer referenced, let _shmfs_close() do the work
+   */
+
+  return _shmfs_close(inode) == OK ? ret : -EFAULT;
 }
 
 /****************************************************************************
