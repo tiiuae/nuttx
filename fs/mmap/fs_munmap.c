@@ -162,7 +162,6 @@ errout_with_lock:
 
 #ifdef CONFIG_MM_VM_MAP
   const FAR struct vm_map_entry_s *map = NULL;
-  struct file tmp_file;
   int err;
   int ret = OK;
   bool found = false;
@@ -176,24 +175,15 @@ errout_with_lock:
       switch (map->type)
         {
         case VM_MAP_FILE:
-          if (map->id.inode)
+          if (map->id.inode && map->id.inode->u.i_ops &&
+              map->id.inode->u.i_ops->munmap)
             {
-              if (start == map->vaddr && length == map->length)
+              /* TODO: pass group for unmap call from upper level */
+
+              FAR struct tcb_s *tcb = nxsched_self();
+              if (map->id.inode->u.i_ops->munmap(tcb->group, map->id.inode,
+                                                 start, length) == OK)
                 {
-                  /* Create a temporary file struct and make ioctl */
-
-                  tmp_file.f_oflags = 0;
-                  tmp_file.f_pos    = 0;
-                  tmp_file.f_inode  = map->id.inode;
-                  tmp_file.f_priv   = NULL;
-
-                  err = file_ioctl(&tmp_file, FIOC_MUNMAP, map);
-                  if (err < 0)
-                    {
-                      ferr("ERROR: file_ioctl fail\n");
-                      ret = err;
-                    }
-
                   err = vm_map_rm(&map);
                   if (err < 0)
                     {
@@ -205,7 +195,7 @@ errout_with_lock:
             }
           else
             {
-              ferr("ERROR: No inode in file mmap\n");
+              ferr("ERROR: munmap not supported by fs\n");
             }
           break;
 
@@ -285,7 +275,7 @@ int file_munmap(FAR void *start, size_t length)
  *   1. mmap() is the API that is used to support direct access to random
  *     access media under the following very restrictive conditions:
  *
- *     a. The filesystem supports the FIOC_MMAP ioctl command.  Any file
+ *     a. The filesystem impelements the mmap file operation.  Any file
  *        system that maps files contiguously on the media should support
  *        this ioctl. (vs. file system that scatter files over the media
  *        in non-contiguous sectors).  As of this writing, ROMFS is the

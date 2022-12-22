@@ -51,7 +51,6 @@ static int file_mmap_(FAR struct file *filep, FAR void *start,
                       off_t offset, bool kernel, FAR void **mapped)
 {
   FAR void *addr;
-  int ret;
 
 #ifdef CONFIG_MM_VM_MAP
   union vm_map_id_u map_id;
@@ -151,8 +150,11 @@ static int file_mmap_(FAR struct file *filep, FAR void *start,
    * a pointer).
    */
 
-  ret = file_ioctl(filep, FIOC_MMAP, (unsigned long)((uintptr_t)&addr));
-  if (ret < 0)
+  if (filep->f_inode && filep->f_inode->u.i_ops->mmap != NULL)
+    {
+      addr = filep->f_inode->u.i_ops->mmap(filep, offset, length);
+    }
+  else
     {
       /* Not directly mappable, probably because the underlying media does
        * not support random access.
@@ -165,21 +167,26 @@ static int file_mmap_(FAR struct file *filep, FAR void *start,
 
       return rammap(filep, length, offset, kernel, mapped);
 #else
-      ferr("ERROR: file_ioctl(FIOC_MMAP) failed: %d\n", ret);
-      return ret;
+      ferr("ERROR: mmap not supported \n");
+      return -ENOSYS;
 #endif
     }
 
   /* Return the offset address */
 
-  *mapped = (FAR void *)(((FAR uint8_t *)addr) + offset);
+  if (addr != MAP_FAILED)
+    {
+      *mapped = (FAR void *)(((FAR uint8_t *)addr) + offset);
 
 #ifdef CONFIG_MM_VM_MAP
-  map_id.inode = filep->f_inode;
-  vm_map_add(VM_MAP_FILE, map_id, *mapped, length);
+      map_id.inode = filep->f_inode;
+      vm_map_add(VM_MAP_FILE, map_id, *mapped, length);
 #endif
+      return OK;
+    }
 
-  return OK;
+  ferr("ERROR: mmap not supported \n");
+  return -ENOSYS;
 }
 
 /****************************************************************************
@@ -213,7 +220,7 @@ int file_mmap(FAR struct file *filep, FAR void *start, size_t length,
  *   1. mmap() is the API that is used to support direct access to random
  *     access media under the following very restrictive conditions:
  *
- *     a. The filesystem supports the FIOC_MMAP ioctl command.  Any file
+ *     a. The filesystem implements the mmap file operation.  Any file
  *        system that maps files contiguously on the media should support
  *        this ioctl. (vs. file system that scatter files over the media
  *        in non-contiguous sectors).  As of this writing, ROMFS is the

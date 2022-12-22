@@ -288,6 +288,9 @@ static const struct file_operations g_video_fops =
   video_write,              /* write */
   NULL,                     /* seek */
   video_ioctl,              /* ioctl */
+  NULL,                     /* truncate */
+  video_mmap,               /* mmap */
+  NULL,                     /* munmap */
   NULL                      /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL                    /* unlink */
@@ -3245,13 +3248,6 @@ static int video_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
         break;
 
-      case FIOC_MMAP:
-        DEBUGASSERT((FAR void **)(uintptr_t)arg != NULL);
-        *(FAR void **)((uintptr_t)arg) = priv->video_inf.bufheap;
-        ret = OK;
-
-        break;
-
       default:
         verr("Unrecognized cmd: %d\n", cmd);
         ret = - ENOTTY;
@@ -3259,6 +3255,14 @@ static int video_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
     }
 
   return ret;
+}
+
+static FAR void *video_mmap(FAR struct file *filep, off_t start,
+                            off_t length)
+{
+  FAR struct inode *inode = filep->f_inode;
+  FAR video_mng_t  *priv  = (FAR video_mng_t *)inode->i_private;
+  return priv->video_inf.bufheap;
 }
 
 static FAR void *video_register(FAR const char *devpath)

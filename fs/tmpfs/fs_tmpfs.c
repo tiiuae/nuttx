@@ -134,7 +134,6 @@ static ssize_t tmpfs_read(FAR struct file *filep, FAR char *buffer,
 static ssize_t tmpfs_write(FAR struct file *filep, FAR const char *buffer,
               size_t buflen);
 static off_t tmpfs_seek(FAR struct file *filep, off_t offset, int whence);
-static int  tmpfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 static int  tmpfs_sync(FAR struct file *filep);
 static int  tmpfs_dup(FAR const struct file *oldp, FAR struct file *newp);
 static int  tmpfs_fstat(FAR const struct file *filep, FAR struct stat *buf);
@@ -176,13 +175,15 @@ const struct mountpt_operations tmpfs_operations =
   tmpfs_read,       /* read */
   tmpfs_write,      /* write */
   tmpfs_seek,       /* seek */
-  tmpfs_ioctl,      /* ioctl */
+  NULL,             /* ioctl */
+  tmpfs_truncate,   /* truncate */
+  tmpfs_mmap,       /* mmap */
+  NULL,             /* munmap */
 
   tmpfs_sync,       /* sync */
   tmpfs_dup,        /* dup */
   tmpfs_fstat,      /* fstat */
   NULL,             /* fchstat */
-  tmpfs_truncate,   /* truncate */
 
   tmpfs_opendir,    /* opendir */
   tmpfs_closedir,   /* closedir */
@@ -1640,16 +1641,11 @@ static off_t tmpfs_seek(FAR struct file *filep, off_t offset, int whence)
   return position;
 }
 
-/****************************************************************************
- * Name: tmpfs_ioctl
- ****************************************************************************/
-
-static int tmpfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+static FAR void *tmpfs_mmap(FAR struct file *filep, off_t start,
+                            size_t length)
 {
   FAR struct tmpfs_file_s *tfo;
-  FAR void **ppv = (FAR void**)arg;
 
-  finfo("filep: %p cmd: %d arg: %08lx\n", filep, cmd, arg);
   DEBUGASSERT(filep->f_priv != NULL && filep->f_inode != NULL);
 
   /* Recover our private data from the struct file instance */
@@ -1658,20 +1654,7 @@ static int tmpfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
   DEBUGASSERT(tfo != NULL);
 
-  /* Only one ioctl command is supported */
-
-  if (cmd == FIOC_MMAP && ppv != NULL)
-    {
-      /* Return the address on the media corresponding to the start of
-       * the file.
-       */
-
-      *ppv = (FAR void *)tfo->tfo_data;
-      return OK;
-    }
-
-  ferr("ERROR: Invalid cmd: %d\n", cmd);
-  return -ENOTTY;
+  return tfo->tfo_data;
 }
 
 /****************************************************************************

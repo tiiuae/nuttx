@@ -57,6 +57,9 @@ static const struct file_operations devnull_fops =
   devnull_write, /* write */
   NULL,          /* seek */
   NULL,          /* ioctl */
+  NULL,          /* truncate */
+  NULL,          /* mmap */
+  NULL,          /* munmap */
   devnull_poll   /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL         /* unlink */

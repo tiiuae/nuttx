@@ -85,7 +85,10 @@ static const struct file_operations fb_fops =
   fb_write,      /* write */
   fb_seek,       /* seek */
   fb_ioctl,      /* ioctl */
-  fb_poll        /* poll */
+  NULL,          /* truncate */
+  fb_mmap,       /* mmap */
+  NULL           /* munmap */
+  fb_poll,       /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL         /* unlink */
 #endif
@@ -281,18 +284,6 @@ static int fb_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
   switch (cmd)
     {
-      case FIOC_MMAP:  /* Get color plane info */
-        {
-          FAR void **ppv = (FAR void **)((uintptr_t)arg);
-
-          /* Return the address corresponding to the start of frame buffer. */
-
-          DEBUGASSERT(ppv != NULL);
-          *ppv = fb->fbmem;
-          ret = OK;
-        }
-        break;
-
       case FBIOGET_VIDEOINFO:  /* Get color plane info */
         {
           FAR struct fb_videoinfo_s *vinfo =
@@ -546,6 +537,22 @@ static int fb_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
     }
 
   return ret;
+}
+
+static FAR void *fb_mmap(FAR struct file *filep, off_t start, size_t length)
+{
+  FAR struct inode *inode;
+  FAR struct fb_chardev_s *fb;
+
+  /* Get the framebuffer instance */
+
+  DEBUGASSERT(filep != NULL && filep->f_inode != NULL);
+  inode = filep->f_inode;
+  fb    = (FAR struct fb_chardev_s *)inode->i_private;
+
+  /* Return the address corresponding to the start of frame buffer. */
+
+  return fb->fbmem;
 }
 
 /****************************************************************************

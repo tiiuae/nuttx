@@ -169,6 +169,7 @@ struct stat;
 struct statfs;
 struct pollfd;
 struct mtd_dev_s;
+struct task_group_s;
 
 /* The internal representation of type DIR is just a container for an inode
  * reference, and the path of directory.
@@ -206,16 +207,21 @@ struct file_operations
    * treated like unions.
    */
 
-  int     (*close)(FAR struct file *filep);
-  ssize_t (*read)(FAR struct file *filep, FAR char *buffer, size_t buflen);
-  ssize_t (*write)(FAR struct file *filep, FAR const char *buffer,
-                   size_t buflen);
-  off_t   (*seek)(FAR struct file *filep, off_t offset, int whence);
-  int     (*ioctl)(FAR struct file *filep, int cmd, unsigned long arg);
+  int      (*close)(FAR struct file *filep);
+  ssize_t  (*read)(FAR struct file *filep, FAR char *buffer, size_t buflen);
+  ssize_t  (*write)(FAR struct file *filep, FAR const char *buffer,
+                    size_t buflen);
+  off_t    (*seek)(FAR struct file *filep, off_t offset, int whence);
+  int      (*ioctl)(FAR struct file *filep, int cmd, unsigned long arg);
+  int      (*truncate)(FAR struct file *filep, off_t length);
+  FAR void *(*mmap)(FAR struct file *filep, off_t start, size_t length);
+  int      (*munmap)(FAR struct task_group_s *group, FAR struct inode *inode,
+                      void *start, size_t length);
 
   /* The two structures need not be common after this point */
 
   int     (*poll)(FAR struct file *filep, struct pollfd *fds, bool setup);
+
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   int     (*unlink)(FAR struct inode *inode);
 #endif
@@ -292,12 +298,16 @@ struct mountpt_operations
    * treated like unions.
    */
 
-  int     (*close)(FAR struct file *filep);
-  ssize_t (*read)(FAR struct file *filep, FAR char *buffer, size_t buflen);
-  ssize_t (*write)(FAR struct file *filep, FAR const char *buffer,
-            size_t buflen);
-  off_t   (*seek)(FAR struct file *filep, off_t offset, int whence);
-  int     (*ioctl)(FAR struct file *filep, int cmd, unsigned long arg);
+  int      (*close)(FAR struct file *filep);
+  ssize_t  (*read)(FAR struct file *filep, FAR char *buffer, size_t buflen);
+  ssize_t  (*write)(FAR struct file *filep, FAR const char *buffer,
+                    size_t buflen);
+  off_t    (*seek)(FAR struct file *filep, off_t offset, int whence);
+  int      (*ioctl)(FAR struct file *filep, int cmd, unsigned long arg);
+  int      (*truncate)(FAR struct file *filep, off_t length);
+  FAR void *(*mmap)(FAR struct file *filep, off_t start, size_t length);
+  int      (*munmap)(FAR struct task_group_s *group,
+                     FAR struct inode *inode, void *start, size_t length);
 
   /* The two structures need not be common after this point. The following
    * are extended methods needed to deal with the unique needs of mounted
@@ -311,7 +321,6 @@ struct mountpt_operations
   int     (*fstat)(FAR const struct file *filep, FAR struct stat *buf);
   int     (*fchstat)(FAR const struct file *filep,
                      FAR const struct stat *buf, int flags);
-  int     (*truncate)(FAR struct file *filep, off_t length);
 
   /* Directory operations */
 
