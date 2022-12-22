@@ -355,6 +355,7 @@ static const struct file_operations cdcwdm_fops =
   cdcwdm_write,  /* write */
   NULL,          /* seek */
   NULL,          /* ioctl */
+  NULL,          /* truncate */
   cdcwdm_poll    /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL         /* unlink */
