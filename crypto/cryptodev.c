@@ -75,6 +75,7 @@ static const struct file_operations g_cryptodevops =
   NULL,               /* seek   */
   cryptodev_ioctl,    /* ioctl  */
   NULL,               /* truncate */
+  NULL,               /* mmap */
   NULL                /* poll   */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL              /* unlink */

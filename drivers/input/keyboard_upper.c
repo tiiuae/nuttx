@@ -90,6 +90,7 @@ static const struct file_operations g_keyboard_fops =
   NULL,           /* seek */
   NULL,           /* ioctl */
   NULL,           /* truncate */
+  NULL,           /* mmap */
   keyboard_poll   /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL          /* unlink */
