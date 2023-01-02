@@ -202,8 +202,8 @@ static const struct file_operations g_telnet_fops =
   telnet_write,  /* write */
   NULL,          /* seek */
   telnet_ioctl,  /* ioctl */
-  NULL,          /* truncate */
   NULL,          /* mmap */
+  NULL,          /* truncate */
   telnet_poll    /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL         /* unlink */

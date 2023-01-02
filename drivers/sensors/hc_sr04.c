@@ -89,8 +89,8 @@ static const struct file_operations g_hcsr04ops =
   hcsr04_write,  /* write */
   NULL,          /* seek */
   hcsr04_ioctl,  /* ioctl */
-  NULL,          /* truncate */
   NULL,          /* mmap */
+  NULL,          /* truncate */
   hcsr04_poll    /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL         /* unlink */

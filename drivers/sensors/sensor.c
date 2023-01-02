@@ -167,8 +167,8 @@ static const struct file_operations g_sensor_fops =
   sensor_write,   /* write */
   NULL,           /* seek  */
   sensor_ioctl,   /* ioctl */
-  NULL,           /* truncate */
   NULL,           /* mmap */
+  NULL,           /* truncate */
   sensor_poll     /* poll  */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL          /* unlink */
