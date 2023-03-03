@@ -1,7 +1,10 @@
+COMMIT = 4eed24d99ef7bb020f3156f4cba9ea9369e2c6d1
+
 MPFS_CRYPTO = mpfs/crypto/.git
 $(MPFS_CRYPTO):
 	$(Q) echo "Cloning PolarFire crypto driver"
 	$(Q) git clone git@github.com:tiiuae/pf_crypto mpfs/crypto
+	$(Q) cd mpfs/crypto && git checkout $(COMMIT) && cd ../..
 
 context::$(MPFS_CRYPTO)
 
