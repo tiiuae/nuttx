@@ -102,6 +102,7 @@
 
 #if defined(CONFIG_MPFS_MAC_SGMII) && defined(CONFIG_MPFS_MAC_GMII)
 #  error "Both CONFIG_MPFS_MAC_SGMII and CONFIG_MPFS_MAC_GMII defined"
+        }
 #endif
 
 /* Number of buffers for RX */
@@ -156,11 +157,11 @@
 
 /* TX timeout = 1 minute */
 
-#define MPFS_TXTIMEOUT   (60 * CLK_TCK)
+#define MPFS_TXTIMEOUT   (4 * CLK_TCK)
 
 /* RX timeout = 30s */
 
-#define MPFS_RXTIMEOUT   (30 * CLK_TCK)
+#define MPFS_RXTIMEOUT   (4 * CLK_TCK)
 
 /* PHY reset tim in loop counts */
 
@@ -469,6 +470,38 @@ static int mpfs_interrupt_0(int irq, void *context, void *arg)
   work_queue(ETHWORK, &priv->irqwork, mpfs_interrupt_work, priv, 0);
 
   return OK;
+}
+
+/****************************************************************************
+ * Name: mac_phylinkstate
+ *
+ * Description:
+ *  Get phy link state
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static inline bool mac_phylinkstate(struct mpfs_ethmac_s *priv)
+{
+  uint32_t ctrl;
+  uint16_t msr;
+
+  ctrl = mac_getreg(priv, NETWORK_CONTROL);
+  ctrl |= NETWORK_CONTROL_MAN_PORT_EN;
+  mac_putreg(priv, NETWORK_CONTROL, ctrl);
+  mpfs_phyread(priv, priv->phyaddr, GMII_MSR, &msr);
+  ctrl &= ~NETWORK_CONTROL_MAN_PORT_EN;
+  mac_putreg(priv, NETWORK_CONTROL, ctrl);
+
+  /* Bit 2:  Link status */
+
+  return (msr & 0x4) ? true : false;
+
 }
 
 static int mpfs_interrupt_1(int irq, void *context, void *arg)
@@ -2829,6 +2862,16 @@ static void mpfs_txtimeout_work(void *arg)
 {
   struct mpfs_ethmac_s *priv = (struct mpfs_ethmac_s *)arg;
 
+  if (!mac_phylinkstate(priv))
+    {
+
+      nwarn("EXPIRY: **** LINK DOWN **");
+      wd_start(&priv->rxtimeout, MPFS_RXTIMEOUT,
+             mpfs_txtimeout_expiry, (wdparm_t)priv);
+      return;
+
+    }
+
   nerr("ERROR: TX-Timeout!\n");
 
   /* Reset the hardware.  Just take the interface down, then back up again. */
@@ -2841,6 +2884,7 @@ static void mpfs_txtimeout_work(void *arg)
 
   mpfs_dopoll(priv);
   net_unlock();
+
 }
 
 /****************************************************************************
@@ -2864,17 +2908,6 @@ static void mpfs_txtimeout_work(void *arg)
 static void mpfs_txtimeout_expiry(wdparm_t arg)
 {
   struct mpfs_ethmac_s *priv = (struct mpfs_ethmac_s *)arg;
-  unsigned int qi;
-
-  /* Disable further Ethernet interrupts.  This will prevent some race
-   * conditions with interrupt work.  There is still a potential race
-   * condition with interrupt work that is already queued and in progress.
-   */
-
-  for (qi = 0; qi < MPFS_MAC_QUEUE_COUNT; qi++)
-    {
-      *priv->queue[qi].int_disable = 0xffffffff;
-    }
 
   /* Schedule to perform the TX timeout processing on the worker thread. */
 
