@@ -261,6 +261,7 @@ struct mpfs_ethmac_s
   struct work_s irqwork;                         /* For deferring interrupt work to the work queue */
   struct work_s pollwork;                        /* For deferring poll work to the work queue */
 
+  bool rxerr;
   /* This holds the information visible to the NuttX network */
 
   struct net_driver_s     dev;  /* Interface understood by the network */
@@ -452,7 +453,7 @@ static int mpfs_interrupt_0(int irq, void *context, void *arg)
     {
       /* If a TX transfer just completed, then cancel the TX timeout */
 
-      nwarn("TX complete: cancel timeout\n");
+      ninfo("TX complete: cancel timeout\n");
       wd_cancel(&priv->txtimeout);
     }
 
@@ -618,19 +619,26 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
 
   ninfo("rxndx: %" PRId32 "\n", rxndx);
 
+  if (priv->rxerr) nwarn("BEGIN: ***** rxndx: %" PRId32 " *****\n", rxndx);
+
   while ((rxdesc->addr & GEM_RX_DMA_ADDR_OWNER) != 0)
     {
+      if (priv->rxerr) nwarn("  (%" PRId32 ") SW owns\n", rxndx);
       /* The start of frame bit indicates the beginning of a frame.  Discard
        * any previous fragments.
        */
 
       if ((rxdesc->status & GEM_RX_DMA_STATUS_SOF) != 0)
         {
+          if (priv->rxerr) nwarn("  (%" PRId32 ") start of frame found -> skip all fragments\n", priv->queue[qi].rxndx);
+
           /* Skip previous fragments */
 
           while (rxndx != priv->queue[qi].rxndx)
             {
               /* Give ownership back to the GMAC */
+
+              if (priv->rxerr) nwarn("   ->  (%" PRId32 ") ownership to GMAC\n", priv->queue[qi].rxndx);
 
               rxdesc = &priv->queue[qi].
                         rx_desc_tab[priv->queue[qi].rxndx];
@@ -660,17 +668,21 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
         {
           rxndx = 0;
         }
+      if (priv->rxerr) nwarn("  (%" PRId32 ") -> incremented working index\n", rxndx);
 
       /* Copy data into the packet buffer */
 
       if (isframe)
         {
+          if (priv->rxerr) nwarn("  (%" PRId32 ") isframe = true\n", rxndx);
           if (rxndx == priv->queue[qi].rxndx)
             {
               nerr("ERROR: No EOF (Invalid or buffers too small)\n");
               do
                 {
                   /* Give ownership back to the GMAC */
+
+                  if (priv->rxerr) nwarn("   ERROR ->  (%" PRId32 ") ownership to GMAC\n", priv->queue[qi].rxndx);
 
                   rxdesc = &priv->queue[qi].
                             rx_desc_tab[priv->queue[qi].rxndx];
@@ -698,6 +710,8 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
 
           /* And do the copy */
 
+          if (priv->rxerr) nwarn("  (%" PRId32 ") Copy frame to buffer\n", rxndx);
+
           addr = (uintptr_t)(rxdesc->addr & GEM_RX_DMA_ADDR_MASK);
 #if defined(CONFIG_MPFS_ETHMAC_64BIT_ADDRESS_MODE)
           addr += (uintptr_t)(rxdesc->addr_hi) << 32;
@@ -710,11 +724,14 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
 
           if ((rxdesc->status & GEM_RX_DMA_STATUS_EOF) != 0)
             {
+              if (priv->rxerr) nwarn("  (%" PRId32 ") End Of Frame found\n", rxndx);
               /* Frame size from the GMAC */
 
               dev->d_len = rxdesc->status & GEM_RX_DMA_STATUS_FRAME_LEN_MASK;
               ninfo("packet %d-%" PRId32 " (%d)\n",
                     priv->queue[qi].rxndx, rxndx, dev->d_len);
+
+              if (priv->rxerr) nwarn("   => packet %d-%" PRId32 " (%d)\n", priv->queue[qi].rxndx, rxndx, dev->d_len);
 
               /* All data have been copied in the application frame buffer,
                * release the RX descriptor
@@ -723,6 +740,8 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
               while (priv->queue[qi].rxndx != rxndx)
                 {
                   /* Give ownership back to the GMAC */
+
+                  if (priv->rxerr) nwarn("   ->  (%" PRId32 ") ownership to GMAC\n", priv->queue[qi].rxndx);
 
                   rxdesc = &priv->queue[qi].
                             rx_desc_tab[priv->queue[qi].rxndx];
@@ -740,6 +759,8 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
               /* Check if the device packet buffer was large enough to accept
                * all of the data.
                */
+
+              if (priv->rxerr) nwarn("    => rxndx: %d d_len: %d\n", priv->queue[qi].rxndx, dev->d_len);
 
               ninfo("rxndx: %d d_len: %d\n",
                     priv->queue[qi].rxndx, dev->d_len);
@@ -762,6 +783,7 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
       else
         {
           /* Give ownership back to the GMAC */
+          if (priv->rxerr) nwarn("  (%" PRId32 ") no frame, ownership back to GMAC\n", rxndx);
 
           rxdesc->addr &= ~GEM_RX_DMA_ADDR_OWNER;
           priv->queue[qi].rxndx = rxndx;
@@ -789,6 +811,7 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
       priv->queue[qi].rxndx = rxndx;
     }
 
+  if (priv->rxerr) nwarn("    => END: **** rxndx: %d ****\n", priv->queue[qi].rxndx);
   ninfo("rxndx: %d\n", priv->queue[qi].rxndx);
   return -EAGAIN;
 }
@@ -818,9 +841,14 @@ static void mpfs_receive(struct mpfs_ethmac_s *priv, unsigned int queue)
   /* Loop while while mpfs_recvframe() successfully retrieves valid
    * GMAC frames.
    */
+  int counter = 0;
+  priv->rxerr = false;
 
   while (mpfs_recvframe(priv, queue) == OK)
     {
+      if (++counter > 20) {
+        priv->rxerr = true;
+      }
       mpfs_dumppacket("Received packet", dev->d_buf, dev->d_len);
 
       /* Check if the packet is a valid size for the network buffer
@@ -1022,6 +1050,11 @@ static void mpfs_interrupt_work(void *arg)
         {
           nerr("ERROR: Late collision: %08" PRIx32 "\n", tsr);
           ++tx_error;
+        }
+
+      if ((tsr & TRANSMIT_STATUS_USED_BIT_READ) != 0)
+        {
+          nwarn("WARN: TX used bit read: %08" PRIx32 "\n", tsr);
         }
 
       /* Clear status */
@@ -3643,6 +3676,8 @@ int mpfs_ethinitialize(int intf)
       modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
                   SYSREG_SOFT_RESET_CR_MAC1, 0);
     }
+
+  priv->rxerr = false;
 
   /* Put the interface in the down state. */
 
