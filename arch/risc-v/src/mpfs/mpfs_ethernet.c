@@ -266,6 +266,8 @@ struct mpfs_ethmac_s
 
   struct net_driver_s     dev;  /* Interface understood by the network */
   struct mpfs_mac_queue_s queue[MPFS_MAC_QUEUE_COUNT];
+
+  bool rx_used_bit_read;
 };
 
 /* These are the pre-allocated Ethernet device structures */
@@ -449,6 +451,12 @@ static int mpfs_interrupt_0(int irq, void *context, void *arg)
 
   *priv->queue[0].int_status = isr;
 
+  if ((isr & GEM_INT_RECEIVE_BUFFER_USED_BIT_READ) != 0)
+    {
+      nwarn("RX used bit read\n");
+      priv->rx_used_bit_read = true;
+    }
+
   if ((isr & GEM_INT_TRANSMIT_COMPLETE) != 0)
     {
       /* If a TX transfer just completed, then cancel the TX timeout */
@@ -621,6 +629,16 @@ static int mpfs_recvframe(struct mpfs_ethmac_s *priv, unsigned int qi)
 
   while ((rxdesc->addr & GEM_RX_DMA_ADDR_OWNER) != 0)
     {
+
+      /* Check if RX USED BIT READ error interrupt has occurred
+       * In such case exit receive loop to be able to reset RX
+       */
+
+      if (priv->rx_used_bit_read)
+        {
+          break;
+        }
+
       /* The start of frame bit indicates the beginning of a frame.  Discard
        * any previous fragments.
        */
@@ -1059,10 +1077,19 @@ static void mpfs_interrupt_work(void *arg)
    *   in memory. This indication is cleared by writing a one to this bit.
    */
 
-  if (rsr != 0)
+  if (rsr != 0 || priv->rx_used_bit_read)
     {
       uint32_t rx_error = 0;
-      ninfo("RX: rsr=0x%X\n", rsr);
+      ninfo("RX: rsr=0x%X, rx-ubr=%s\n", rsr, (priv->rx_used_bit_read)? "true" : "false");
+
+      /* Check RX Used Bit Read */
+
+      if (priv->rx_used_bit_read)
+        {
+          ++rx_error;
+          priv->rx_used_bit_read = false;
+          nerr("ERROR: RX User Bit Read\n");
+        }
 
       /* Check for Receive Overrun */
 
