@@ -102,10 +102,8 @@ void devif_send(FAR struct net_driver_s *dev, FAR const void *buf,
 
   /* Prepare device buffer before poll callback */
 
-  iob_update_pktlen(dev->d_iob, offset);
-
   ret = iob_trycopyin(dev->d_iob, buf, len, offset, false);
-  if (ret != len)
+  if (ret < 0 || dev->d_iob->io_pktlen != len)
     {
       netdev_iob_release(dev);
       goto errout;

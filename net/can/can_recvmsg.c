@@ -231,6 +231,15 @@ static inline int can_readahead(struct can_recvfrom_s *pstate)
   if ((iob = iob_peek_queue(&conn->readahead)) != NULL &&
       pstate->pr_buflen > 0)
     {
+      if (iob->io_flink != NULL || iob->io_pktlen == 0 || iob->io_offset <= 0)
+        {
+          if (iob->io_pktlen == 0 || iob->io_offset <= 0)
+            {
+              iob_free(iob);
+           }
+          iob_remove_queue(&conn->readahead);
+          return 0;
+        }
       DEBUGASSERT(iob->io_pktlen > 0);
 
 #ifdef CONFIG_NET_TIMESTAMP
