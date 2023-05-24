@@ -105,7 +105,7 @@
   li         t1, MSTATUS_FS
   and        t2, t0, t1
   li         t1, MSTATUS_FS_DIRTY
-  bne        t2, t1, skip_save_fpu
+  blt        t2, t1, skip_save_fpu
   li         t1, ~MSTATUS_FS
   and        t0, t0, t1
   li         t1, MSTATUS_FS_CLEAN
