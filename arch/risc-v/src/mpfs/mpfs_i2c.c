@@ -727,7 +727,7 @@ static int mpfs_i2c_transfer(struct i2c_master_s *dev,
 
       if (mpfs_i2c_sem_waitdone(priv) < 0)
         {
-          i2cinfo("Message %" PRIu8 " timed out.\n", priv->msgid);
+          i2cwarn("Message %" PRIu8 " timed out.\n", priv->msgid);
           ret = -ETIMEDOUT;
           break;
         }
@@ -735,7 +735,7 @@ static int mpfs_i2c_transfer(struct i2c_master_s *dev,
         {
           if (priv->status != MPFS_I2C_SUCCESS)
             {
-              i2cinfo("Transfer error %" PRIu32 "\n", priv->status);
+              i2cwarn("Transfer error %" PRIu32 "\n", priv->status);
               ret = -EIO;
               break;
             }

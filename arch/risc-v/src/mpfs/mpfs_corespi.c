@@ -940,7 +940,7 @@ static void mpfs_spi_irq_exchange(struct mpfs_spi_priv_s *priv,
 
   if (mpfs_spi_sem_waitdone(priv) < 0)
     {
-      spiinfo("Message timed out\n");
+      spiwarn("Message timed out\n");
       priv->error = -ETIMEDOUT;
     }
 
