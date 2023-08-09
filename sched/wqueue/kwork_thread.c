@@ -61,8 +61,8 @@
          elapsed = up_perf_gettime() - start; \
          if (elapsed > CONFIG_SCHED_CRITMONITOR_MAXTIME_WQUEUE) \
            { \
-             serr("WORKER %p execute too long %"PRIu32"\n", \
-                   worker, elapsed); \
+             serr("WORKER %p (pid: %d) execute too long %"PRIu32"\n", \
+                   worker, getpid(), elapsed); \
            } \
        } \
      while (0)
