@@ -3903,6 +3903,7 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_SET_MODE_VS_BITS */
 
+  _alert("set_mode\n");
   retval = mpfs_set_mode_vs_bits(priv);
 
   if (retval)
@@ -3915,67 +3916,69 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
   /* DDR_MANUAL_ADDCMD_TRAINING_SW */
 
 #ifdef CONFIG_MPFS_DDR_MANUAL_ADDCMD_TRAINING
+  _alert("manual addcmd\n");
   mpfs_ddr_manual_addcmd_training(priv);
 #endif
 
+  _alert("start\n");
   mpfs_training_start(priv);
 
   /* DDR_TRAINING_IP_SM_START_CHECK */
 
   retval = mpfs_training_start_check(priv);
-
+  _alert("start, ret %d\n",retval);
   if (retval)
     {
       return retval;
     }
 
   /* DDR_TRAINING_IP_SM_BCLKSCLK */
-
+  _alert("bclksclk");
   retval = mpfs_training_bclksclk(priv);
-
+  _alert("bclksclk ret %d",retval);
   if (retval)
     {
       return retval;
     }
 
   /* DDR_TRAINING_IP_SM_ADDCMD */
-
+  _alert("addcmd");
   retval = mpfs_training_addcmd();
-
+  _alert("addcmd ret %d",retval);
   if (retval)
     {
       return retval;
     }
 
   /* DDR_TRAINING_IP_SM_WRLVL */
-
+  _alert("wrlvl");
   retval = mpfs_training_wrlvl_wait();
-
+  _alert("wrlvl ret %d",retval);
   if (retval)
     {
       return retval;
     }
 
   /* DDR_TRAINING_IP_SM_RDGATE */
-
+  _alert("rdgate");
   retval = mpfs_training_rdgate();
-
+  _alert("rdgate ret %d",retval);
   if (retval)
     {
       return retval;
     }
 
   /* DDR_TRAINING_IP_SM_DQ_DQS */
-
+  _alert("dq_dqs");
   retval = mpfs_dq_dqs();
-
+  _alert("dq_dqs ret %d",retval);
   if (retval)
     {
       return retval;
     }
-
+  _alert("verify");
   retval = mpfs_training_verify();
-
+  _alert("verify ret %d",retval);
   if (retval)
     {
       return retval;
@@ -3984,7 +3987,7 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
   putreg32(LIBERO_SETTING_DDRPHY_MODE, MPFS_CFG_DDR_SGMII_PHY_DDRPHY_MODE);
 
   /* DDR_TRAINING_WRITE_CALIBRATION */
-
+  _alert("write calibration");
   do
     {
       retval = mpfs_training_write_calibration(priv);
@@ -3996,20 +3999,20 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
         }
     }
   while (retval == -EAGAIN);
-
+  _alert("write calibration %d",retval);
   /* DDR_FULL_MTC_CHECK */
-
+  _alert("mtc test");
   retval = mpfs_training_full_mtc_test();
-
+  _alert("mtc test ret %d",retval);
   if (retval)
     {
       return retval;
     }
 
   /* DDR_FULL_32BIT_NC_CHECK */
-
+  _alert("32bit nc check");
   retval = mpfs_ddr_test_32bit_nc(priv);
-
+  _alert("32bit nc check ret %d",retval);
   if (retval)
     {
       return retval;
@@ -4018,9 +4021,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
   /* DDR_TRAINING_FINISHED */
 
   /* Configure Segments, address mapping, CFG0/CFG1 */
-
+  _alert("setup segments");
   mpfs_setup_ddr_segments(LIBERO_SEG_SETUP);
-
+  _alert("done!");
   return 0;
 }
 
