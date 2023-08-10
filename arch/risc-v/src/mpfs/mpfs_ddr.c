@@ -149,7 +149,7 @@
 
 /* Uncomment to enable additional memory test for debugging */
 
-#define MEMORYTEST
+/* #define MEMORYTEST */
 #define KILOBYTE (1024)
 #define MEGABYTE (1024 * KILOBYTE)
 #define GIGABYTE (1024ul * MEGABYTE)
@@ -453,6 +453,45 @@ static void mpfs_ddr_off_mode(void)
 static void mpfs_set_ddr_mode_reg_and_vs_bits(struct mpfs_ddr_priv_s *priv)
 {
   uint32_t ddrphy_mode = LIBERO_SETTING_DDRPHY_MODE;
+
+#if 0
+  /* DQ_DRIVE */
+
+  ddrphy_mode &= ~(0x3 << 9);
+  ddrphy_mode |= (1 << 9);
+
+  /* DQS_DRIVE */
+
+  ddrphy_mode &= ~(0x3 << 11);
+  ddrphy_mode |= (1 << 11);
+
+  /* ADD_CMD_DRIVE */
+
+  //  ddrphy_mode &= ~(0x3 << 13);
+  //  ddrphy_mode |= (2 << 13);
+
+  /* CLK_OUT_DRIVE */
+
+  //  ddrphy_mode &= ~(0x3 << 15);
+  //  ddrphy_mode |= (2 << 15);
+
+  /* ADD_CMD_INPUT_PIN_TERMINATION */
+
+  ddrphy_mode &= ~(0x3 << 21);
+  ddrphy_mode |= (1 << 21);
+
+  /* DQ_termination */
+
+  //  ddrphy_mode &= ~(0x3 << 17);
+  //  ddrphy_mode |= (2 << 17);
+
+  /* DQS_termination */
+  //  ddrphy_mode &= ~(0x3 << 19);
+  //  ddrphy_mode |= (3 << 19);
+
+#endif
+
+  _alert("DDRPHY_MODE: %x\n", ddrphy_mode);
 
 #ifdef MPFS_DDR_TYPE_DDR4
   if ((LIBERO_SETTING_DDRPHY_MODE & DDRPHY_MODE_ECC_MASK) ==
@@ -2123,6 +2162,7 @@ static int mpfs_write_calibration_using_mtc(struct mpfs_ddr_priv_s *priv)
       cal_data = 0x0;
       for (lane = 0; lane < lanes; lane++)
         {
+          _alert("lane %d offset %d\n",lane, offset[lane]);
           cal_data |= offset[lane] << (lane * 4);
         }
 
@@ -2749,6 +2789,7 @@ static void mpfs_ddr_manual_addcmd_training(struct mpfs_ddr_priv_s *priv)
   if (vref_answer == 128)
     {
       vref_answer = 0x10;
+      _alert("data_vref trn1 %d\n", vref_answer);
       dpc_bits_new = (getreg32(MPFS_CFG_DDR_SGMII_PHY_DPC_BITS) & 0xfffc0fff)
                       | (vref_answer << 12) | (0x1 << 18);
     }
@@ -2757,6 +2798,8 @@ static void mpfs_ddr_manual_addcmd_training(struct mpfs_ddr_priv_s *priv)
       vref_answer = vref_answer;
       dpc_bits_new = (getreg32(MPFS_CFG_DDR_SGMII_PHY_DPC_BITS) & 0xfffc0fff)
                       | (vref_answer << 12) | (0x1 << 18);
+
+      _alert("data_vref trn2 %d\n", vref_answer);
     }
 
   putreg32(dpc_bits_new, MPFS_CFG_DDR_SGMII_PHY_DPC_BITS);
@@ -3040,6 +3083,9 @@ static void mpfs_ddr_manual_addcmd_training(struct mpfs_ddr_priv_s *priv)
 
   dpc_vals = (getreg32(MPFS_CFG_DDR_SGMII_PHY_DPC_BITS) & 0xfffc0fff) |
               (ca_vref << 12) | (0x1 << 18);
+
+  _alert("ca_vref trn %d\n", ca_vref);
+
   putreg32(dpc_vals, MPFS_CFG_DDR_SGMII_PHY_DPC_BITS);
 
   mpfs_wait_cycles(10);
@@ -3069,7 +3115,61 @@ static void mpfs_ddr_manual_addcmd_training(struct mpfs_ddr_priv_s *priv)
 static void mpfs_ddr_sm_init(struct mpfs_ddr_priv_s *priv)
 {
   priv->tip_cfg_params      = LIBERO_SETTING_TIP_CFG_PARAMS;
+
+#if 0
+  const uint32_t addcmd_off = 1;
+  const uint32_t bcklsclk_off = 6;
+  const uint32_t wrcalib_write_count = 0;
+  const uint32_t read_gate_min_reads = 127;
+  const uint32_t addrcmd_wait_count = 31;
+
+  /* ADDCMD_OFFSET */
+
+  priv->tip_cfg_params &= ~(0x7 << 0);
+  priv->tip_cfg_params |= (addcmd_off << 0);
+
+  /* BCKLSCLK_OFFSET */
+
+  priv->tip_cfg_params &= ~(0x7 << 3);
+  priv->tip_cfg_params |= (bcklsclk_off << 3);
+
+  /* wrcalib_write_count */
+
+  priv->tip_cfg_params &= ~(0x7f << 6);
+  priv->tip_cfg_params |= (wrcalib_write_count << 6);
+
+  /* read_gate_min_reads */
+
+  priv->tip_cfg_params &= ~(0x1ff << 13);
+  priv->tip_cfg_params |= (read_gate_min_reads << 13);
+
+  /* addrcmd_wait_count */
+
+  priv->tip_cfg_params &= ~(0x1ff << 22);
+  priv->tip_cfg_params |= (addrcmd_wait_count << 22);
+#endif
+
+  _alert("TIP_CFG_PARAMS 0x%x\n", priv->tip_cfg_params);
+
   priv->dpc_bits            = LIBERO_SETTING_DPC_BITS;
+
+#if 0
+  uint32_t ca_vref;
+  uint32_t data_vref;
+
+  ca_vref = 14;
+  data_vref = 4;
+
+  priv->dpc_bits &= ~(0x3f << 12);
+  priv->dpc_bits |= (ca_vref << 12);
+
+  priv->dpc_bits &= ~(0x3f << 4);
+  priv->dpc_bits |= (data_vref << 4);
+
+#endif
+
+  _alert("dpc_bits: %x\n", priv->dpc_bits);
+
   priv->rpc_166_fifo_offset = DEFAULT_RPC_166_VALUE;
   priv->refclk_sweep_index  = 0xf;
 
@@ -3507,7 +3607,7 @@ static int mpfs_training_verify(void)
 
   if (retries == 0)
     {
-      merr("Timeout\n");
+      _alert("training not complete\n");
       return -ETIMEDOUT;
     }
 
@@ -3555,6 +3655,7 @@ static int mpfs_training_verify(void)
         {
           /* Retrain via reset */
 
+          _alert("low_ca_dly_count > 1\n");
           return -EIO;
         }
     }
@@ -3569,12 +3670,18 @@ static int mpfs_training_verify(void)
       /* Check that gate training passed without error  */
 
       t_status |= getreg32(MPFS_CFG_DDR_SGMII_PHY_GT_ERR_COMB);
+      if (getreg32(MPFS_CFG_DDR_SGMII_PHY_GT_ERR_COMB) != 0)
+        {
+          _alert("gate training fail\n");
+        }
+
       mpfs_wait_cycles(10);
 
       /* Check that DQ/DQS training passed without error */
 
       if (getreg32(MPFS_CFG_DDR_SGMII_PHY_DQ_DQS_ERR_DONE) != 8)
         {
+          _alert("dq/dqs training fail\n");
           t_status |= 0x01;
         }
 
@@ -3588,8 +3695,11 @@ static int mpfs_training_verify(void)
       if (width_taps < DQ_DQS_NUM_TAPS ||
           width_taps + off_taps <= 16 + DQ_DQS_NUM_TAPS / 2)
         {
+          _alert("dq/dqs window too small\n");
           t_status |= 0x01;
         }
+
+      _alert("width: %d offset: %d\n", width_taps, off_taps);
 
       /* Extra checks */
 
@@ -3600,6 +3710,7 @@ static int mpfs_training_verify(void)
       if (((getreg32(MPFS_CFG_DDR_SGMII_PHY_GT_TXDLY) >> (gt_clk_sel * 8)) &
            0xff) == 0)
         {
+          _alert("PHY_GT_TXDLY fail\n");
           t_status |= 0x01;
         }
     }
@@ -3755,6 +3866,7 @@ static int mpfs_training_write_calibration(struct mpfs_ddr_priv_s *priv)
     }
   else
     {
+      _alert("Set latency %d\n", write_latency);
       putreg32(write_latency, MPFS_DDR_CSR_APB_CFG_DFI_T_PHY_WRLAT);
       error = mpfs_write_calibration_using_mtc(priv);
     }
@@ -3875,6 +3987,7 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_SET_MODE_VS_BITS */
 
+  _alert("set_mode\n");
   retval = mpfs_set_mode_vs_bits(priv);
 
   if (retval)
@@ -3891,15 +4004,17 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
   /* DDR_MANUAL_ADDCMD_TRAINING_SW */
 
 #ifdef CONFIG_MPFS_DDR_MANUAL_ADDCMD_TRAINING
+  _alert("manual addcmd\n");
   mpfs_ddr_manual_addcmd_training(priv);
 #endif
 
+  _alert("start\n");
   mpfs_training_start(priv);
 
   /* DDR_TRAINING_IP_SM_START_CHECK */
 
   retval = mpfs_training_start_check(priv);
-
+  _alert("start, ret %d\n", retval);
   if (retval)
     {
       return retval;
@@ -3907,8 +4022,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_IP_SM_BCLKSCLK */
 
+  _alert("bclksclk");
   retval = mpfs_training_bclksclk(priv);
-
+  _alert("bclksclk ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3916,8 +4032,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_IP_SM_ADDCMD */
 
+  _alert("addcmd");
   retval = mpfs_training_addcmd();
-
+  _alert("addcmd ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3925,8 +4042,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_IP_SM_WRLVL */
 
+  _alert("wrlvl");
   retval = mpfs_training_wrlvl_wait();
-
+  _alert("wrlvl ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3934,8 +4052,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_IP_SM_RDGATE */
 
+  _alert("rdgate");
   retval = mpfs_training_rdgate();
-
+  _alert("rdgate ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3943,15 +4062,17 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_IP_SM_DQ_DQS */
 
+  _alert("dq_dqs");
   retval = mpfs_dq_dqs();
-
+  _alert("dq_dqs ret %d", retval);
   if (retval)
     {
       return retval;
     }
 
+  _alert("verify");
   retval = mpfs_training_verify();
-
+  _alert("verify ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3961,8 +4082,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_TRAINING_WRITE_CALIBRATION */
 
+  _alert("write calibration");
   retval = mpfs_training_write_calibration(priv);
-
+  _alert("write calibration %d", retval);
   if (retval)
     {
       return retval;
@@ -3970,8 +4092,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_FULL_MTC_CHECK */
 
+  _alert("mtc test");
   retval = mpfs_training_full_mtc_test();
-
+  _alert("mtc test ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3979,8 +4102,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* DDR_FULL_32BIT_NC_CHECK */
 
+  _alert("32bit nc check");
   retval = mpfs_ddr_test_32bit_nc(priv);
-
+  _alert("32bit nc check ret %d", retval);
   if (retval)
     {
       return retval;
@@ -3990,8 +4114,9 @@ static int mpfs_ddr_setup(struct mpfs_ddr_priv_s *priv)
 
   /* Configure Segments, address mapping, CFG0/CFG1 */
 
+  _alert("setup segments");
   mpfs_setup_ddr_segments(LIBERO_SEG_SETUP);
-
+  _alert("done!");
   return 0;
 }
 
