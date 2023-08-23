@@ -49,6 +49,8 @@
 #include "hardware/mpfs_ddr.h"
 #include "hardware/mpfs_sgmii.h"
 
+#include "memtest.h"
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -144,6 +146,13 @@
 
 #define MPFS_DEFAULT_RETRIES            0xffff
 #define MPFS_LONG_RETRIES               0xffffff
+
+/* Uncomment to enable additional memory test for debugging */
+
+#define MEMORYTEST
+#define KILOBYTE (1024)
+#define MEGABYTE (1024 * KILOBYTE)
+#define GIGABYTE (1024ul * MEGABYTE)
 
 /****************************************************************************
  * Private Types
@@ -282,6 +291,85 @@ static uint64_t prng_state[2] =
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/* Test memory in 64MB blocks */
+
+#ifdef MEMORYTEST
+static int devtest64m(uint64_t start, size_t size)
+{
+  datum *addr;
+  uint64_t start_address = start;
+  uint64_t end_address = start_address + size;
+
+  while (start_address < end_address)
+    {
+      _alert("test %p - %p\n", start_address, start_address + 64 * MEGABYTE);
+      addr = memTestDevice((volatile datum *)start_address, 64 * MEGABYTE);
+      if (addr != NULL)
+        {
+          _alert("dev test fail at address %"PRIxPTR"\n", addr);
+          return -EIO;
+        }
+
+      start_address += 64 * MEGABYTE;
+    }
+
+  return 0;
+}
+#endif
+
+static int memorytest(void)
+{
+#ifdef MEMORYTEST
+  /* Test DDR in 2 1GB blocks
+   * 1 block is at 0x8000 0000 -  0xBFFF FFFF
+   * 1 block is at 0x10 0000 0000 - 0x10 3FFF FFFF
+   */
+
+  unsigned long data = memTestDataBus((volatile datum *)0x80000000);
+
+  if (data != 0)
+    {
+      _alert("data bus test fail %ux\n", data);
+      return -EIO;
+    }
+  else
+    {
+      _alert("data bus test OK\n");
+    }
+
+  datum *addr = memTestAddressBus((volatile datum *)0x80000000, GIGABYTE);
+
+  if (addr == NULL)
+    {
+      addr = memTestAddressBus((volatile datum *)0x1000000000ul, GIGABYTE);
+    }
+
+  if (addr)
+    {
+      _alert("address bus test fail at address %"PRIxPTR"\n", addr);
+      return -EIO;
+    }
+  else
+    {
+      _alert("address bus test OK\n");
+    }
+
+  if (devtest64m(0x80000000, GIGABYTE))
+    {
+      return -EIO;
+    }
+
+  if (devtest64m(0x1000000000, GIGABYTE))
+    {
+      return -EIO;
+    }
+
+  _alert("dev test OK\n");
+#endif
+
+  return 0;
+}
 
 /****************************************************************************
  * Name: mpfs_wait_cycles
@@ -3941,12 +4029,18 @@ int mpfs_ddr_init(void)
 
   if (ddr_status == 0)
     {
-      minfo("DDR setup successfully\n");
+      _alert("DDR setup successfully\n");
     }
   else
     {
-      minfo("DDR setup returned error: %d\n", ddr_status);
+      _alert("DDR setup returned error: %d\n", ddr_status);
       mpfs_ddr_fail(priv);
+    }
+
+  if (ddr_status == 0 && memorytest())
+    {
+      _alert("Performing extra memory test FAILED\n");
+      ddr_status = -EIO;
     }
 
   minfo("Done ddr setup\n");

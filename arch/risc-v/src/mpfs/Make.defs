@@ -84,6 +84,7 @@ endif
 
 ifeq (${CONFIG_MPFS_DDR_INIT},y)
 CHIP_CSRCS += mpfs_ddr.c
+CHIP_CSRCS += memtest.c
 endif
 
 ifeq (${CONFIG_MPFS_BOOTLOADER},y)
