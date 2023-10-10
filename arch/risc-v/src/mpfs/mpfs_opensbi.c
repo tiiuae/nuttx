@@ -75,9 +75,6 @@
 #define MPFS_ACLINT_MSWI_ADDR      MPFS_CLINT_MSIP0
 #define MPFS_ACLINT_MTIMER_ADDR    MPFS_CLINT_MTIMECMP0
 
-#define MPFS_PMP_DEFAULT_ADDR      0xfffffffff
-#define MPFS_PMP_DEFAULT_PERM      0x000000009f
-
 #define MPFS_SYSREG_SOFT_RESET_CR     (MPFS_SYSREG_BASE + \
                                        MPFS_SYSREG_SOFT_RESET_CR_OFFSET)
 #define MPFS_SYSREG_SUBBLK_CLOCK_CR   (MPFS_SYSREG_BASE + \
@@ -510,30 +507,6 @@ static void mpfs_opensbi_scratch_setup(uint32_t hartid)
 }
 
 /****************************************************************************
- * Name: mpfs_opensbi_pmp_setup
- *
- * Description:
- *   Initializes the PMP registers in a known default state.  All harts need
- *   to set these registers.
- *
- * Input Parameters:
- *   None
- *
- * Returned Value:
- *   None
- *
- ****************************************************************************/
-
-static void mpfs_opensbi_pmp_setup(void)
-{
-  /* All access granted */
-
-  csr_write(pmpaddr0, MPFS_PMP_DEFAULT_ADDR);
-  csr_write(pmpcfg0, MPFS_PMP_DEFAULT_PERM);
-  csr_write(pmpcfg2, 0);
-}
-
-/****************************************************************************
  * Name: mpfs_opensbi_vendor_ext_check
  *
  * Description:
@@ -632,8 +605,6 @@ void __attribute__((noreturn)) mpfs_opensbi_setup(void)
     {
       mpfs_hart_index2id[i] = mpfs_get_use_sbi(i) ? i : -1;
     }
-
-  mpfs_opensbi_pmp_setup();
 
   sbi_console_set_device(&mpfs_console);
   mpfs_opensbi_scratch_setup(hartid);
