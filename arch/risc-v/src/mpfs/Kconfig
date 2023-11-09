@@ -460,6 +460,12 @@ config MPFS_FPGA_FIC0_CLK_FREQ
 	---help---
 		Frequency of FPGA FIC0 clock.
 
+config MPFS_TAMPER
+	bool "Tamper detection"
+	default n
+	---help---
+		Enable tamper detection mechanisms.
+
 config MPFS_IHC_CLIENT
 	bool "IHC slave"
 	depends on RPTUN && !MPFS_BOOTLOADER
