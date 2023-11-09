@@ -454,6 +454,12 @@ config MPFS_COREMMC_WRCOMPLETE_IRQNUM
 		design, select CONFIG_MMCSD_SDIOWAIT_WRCOMPLETE and configure the
 		correct IRQ line here.
 
+config MPFS_TAMPER
+	bool "Tamper detection"
+	default n
+	---help---
+		Enable tamper detection mechanisms.
+
 config MPFS_IHC_CLIENT
 	bool "IHC slave"
 	depends on RPTUN && !MPFS_BOOTLOADER
