@@ -277,33 +277,27 @@ static int mpfs_tamper_interrupt(int irq, void *context, void *arg)
  ****************************************************************************/
 
 #ifdef TAMPER_TESTS
-extern int mpfs_systemservice_init();
-extern int mpfs_sys_get_serial_number(uint8_t *out_sn, uint16_t mb_offset);
-extern int mpfs_sys_query_security(uint8_t *out_security_resp,
-                                   uint16_t mb_offset);
-extern int mpfs_sys_query_design_information(uint8_t *out_security_resp,
-                                             uint16_t mb_offset);
-extern int mpfs_sys_query_device_certificate(uint8_t *out_security_resp,
-                                             uint16_t mb_offset);
 extern uint16_t mpfs_sys_unlock_debug_passcode(uint8_t *cmd_data,
                                                uint16_t mb_offset,
                                                uint16_t resp_offset);
-extern void test_ecdsa(void);
+extern uint16_t mpfs_sys_authenticate_iap_image(uint32_t spi_idx);
 
 static void mpfs_tamper_tests(void)
 {
-  uint8_t buf[1024 + 4];
+  /* MPFS_SYS_UNLOCK_DEBUG_PASSCODE_DATA_LEN = 32 */
 
-  mpfs_systemservice_init();
+  uint8_t buf[32];
 
-  /* Some of the functions do not exist */
+  /* Looks like the buf needs to be gargabed first */
 
-  mpfs_sys_get_serial_number(buf, 0);
-  mpfs_sys_query_security(buf, 0);
-  mpfs_sys_query_design_information(buf, 0);
-  mpfs_sys_query_device_certificate(buf, 0);
+  memset(buf, 0xaa, sizeof(buf));
+
+  /* Issue: <PASSCODE FAIL> */
+
   mpfs_sys_unlock_debug_passcode(buf, 0, 0);
-  test_ecdsa();
+
+  /* Issue: <BITSTREAM AUTH FAIL> */
+
   mpfs_sys_authenticate_iap_image(0);
 }
 #endif
