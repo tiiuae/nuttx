@@ -241,7 +241,7 @@ static int mpfs_tamper_interrupt(int irq, void *context, void *arg)
   if (eventlist)
     {
       tinfo("**********************************************************\n");
-      tinfo("Tamper detection has caught out the following event(s):\n");
+      tinfo("Tamper detection has caught the following event(s):\n");
       for (i = 0; i < FLAG_BITS; i++)
         {
           if ((1 << i) & eventlist)
