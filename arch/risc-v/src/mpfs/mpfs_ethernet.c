@@ -103,7 +103,7 @@
 #  elif defined(CONFIG_MPFS_ETHMAC_LPWORK)
 #    define ETHWORK LPWORK
 #  else
-#    define ETHWORK LPWORK
+#    define ETHWORK HPWORK
 #  endif
 #endif
 
