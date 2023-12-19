@@ -332,7 +332,7 @@ static int modlib_relocate(FAR struct module_s *modp,
 
       /* Now perform the architecture-specific relocation */
 
-      ret = up_relocate(rel, sym, addr);
+      ret = up_relocate(rel, sym, addr, NULL);
       if (ret < 0)
         {
           berr("ERROR: Section %d reloc %d: Relocation failed: %d\n",
@@ -522,7 +522,7 @@ static int modlib_relocateadd(FAR struct module_s *modp,
 
       /* Now perform the architecture-specific relocation */
 
-      ret = up_relocateadd(rela, sym, addr);
+      ret = up_relocateadd(rela, sym, addr, NULL);
       if (ret < 0)
         {
           berr("ERROR: Section %d reloc %d: Relocation failed: %d\n",
@@ -731,7 +731,7 @@ static int modlib_relocatedyn(FAR struct module_s *modp,
               else
                   dynsym.st_value = *(uint32_t *) addr -
                                     loadinfo->datasec + loadinfo->datastart;
-              ret = up_relocate(rel, &dynsym, addr);
+              ret = up_relocate(rel, &dynsym, addr, NULL);
             }
 
           if (ret < 0)
