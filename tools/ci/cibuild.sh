@@ -116,7 +116,7 @@ function avr-gcc-toolchain {
         brew install avr-gcc
         ;;
       Linux)
-        apt-get install -y avr-libc gcc-avr
+        sudo apt-get install -y avr-libc gcc-avr
         ;;
     esac
   fi
@@ -187,7 +187,7 @@ function clang-tidy {
   if ! type clang-tidy &> /dev/null; then
     case ${os} in
       Linux)
-        apt-get install -y clang clang-tidy
+        sudo apt-get install -y clang clang-tidy
         ;;
     esac
   fi
@@ -215,7 +215,7 @@ function util-linux {
         brew install flock
         ;;
       Linux)
-        apt-get install -y util-linux
+        sudo apt-get install -y util-linux
         ;;
     esac
   fi
@@ -231,7 +231,7 @@ function gen-romfs {
         brew install genromfs
         ;;
       Linux)
-        apt-get install -y genromfs
+        sudo apt-get install -y genromfs
         ;;
     esac
   fi
@@ -467,7 +467,7 @@ function u-boot-tools {
         brew install u-boot-tools
         ;;
       Linux)
-        apt-get install -y u-boot-tools
+        sudo apt-get install -y u-boot-tools
         ;;
     esac
   fi
@@ -588,7 +588,7 @@ case ${os} in
     rm -f /usr/local/bin/openssl || :
     ;;
   Linux)
-    install="arm-clang-toolchain arm-gcc-toolchain arm64-gcc-toolchain avr-gcc-toolchain binutils bloaty clang-tidy gen-romfs gperf kconfig-frontends mips-gcc-toolchain python-tools riscv-gcc-toolchain rust rx-gcc-toolchain sparc-gcc-toolchain xtensa-esp32-gcc-toolchain u-boot-tools util-linux wasi-sdk c-cache"
+    install="arm-gcc-toolchain binutils gen-romfs gperf kconfig-frontends python-tools riscv-gcc-toolchain c-cache"
     ;;
 esac
 
