@@ -109,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        boards: [arm-12, risc-v]
+        boards: [ssrc-arm, ssrc-riscv]
     steps:
       - name: Download Source Artifact
         uses: actions/download-artifact@v3
