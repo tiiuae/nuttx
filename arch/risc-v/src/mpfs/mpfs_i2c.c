@@ -82,7 +82,10 @@ typedef enum mpfs_i2c_status
   MPFS_I2C_SUCCESS = 0u,
   MPFS_I2C_IN_PROGRESS,
   MPFS_I2C_FAILED,
-  MPFS_I2C_TIMED_OUT
+  MPFS_I2C_FAILED_SLAW_NACK,
+  MPFS_I2C_FAILED_SLAR_NACK,
+  MPFS_I2C_FAILED_TX_DATA_NACK,
+  MPFS_I2C_FAILED_BUS_ERROR,
 } mpfs_i2c_status_t;
 
 typedef enum mpfs_i2c_clock_divider
@@ -469,7 +472,7 @@ static int mpfs_i2c_irq(int cpuint, void *context, void *arg)
 
       case MPFS_I2C_ST_SLAW_NACK:
         modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STO_MASK);
-        priv->status = MPFS_I2C_FAILED;
+        priv->status = MPFS_I2C_FAILED_SLAW_NACK;
         break;
 
       case MPFS_I2C_ST_SLAW_ACK:
@@ -528,7 +531,7 @@ static int mpfs_i2c_irq(int cpuint, void *context, void *arg)
 
       case MPFS_I2C_ST_TX_DATA_NACK:
         modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STO_MASK);
-        priv->status = MPFS_I2C_FAILED;
+        priv->status = MPFS_I2C_FAILED_TX_DATA_NACK;
         break;
 
       case MPFS_I2C_ST_SLAR_ACK: /* SLA+R tx'ed. */
@@ -550,7 +553,7 @@ static int mpfs_i2c_irq(int cpuint, void *context, void *arg)
 
       case MPFS_I2C_ST_SLAR_NACK: /* SLA+R tx'ed; send a stop condition */
         modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STO_MASK);
-        priv->status = MPFS_I2C_FAILED;
+        priv->status = MPFS_I2C_FAILED_SLAR_NACK;
         break;
 
       case MPFS_I2C_ST_RX_DATA_ACK:
@@ -575,7 +578,6 @@ static int mpfs_i2c_irq(int cpuint, void *context, void *arg)
         DEBUGASSERT(priv->rx_idx < priv->rx_size);
         priv->rx_buffer[priv->rx_idx] = (uint8_t)getreg32(MPFS_I2C_DATA);
         priv->rx_idx++;
-
         priv->status = MPFS_I2C_SUCCESS;
         modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STO_MASK);
         break;
@@ -616,7 +618,7 @@ static int mpfs_i2c_irq(int cpuint, void *context, void *arg)
 
         if (priv->status == MPFS_I2C_IN_PROGRESS)
           {
-            priv->status = MPFS_I2C_FAILED;
+            priv->status = MPFS_I2C_FAILED_BUS_ERROR;
           }
 
         break;
