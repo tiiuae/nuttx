@@ -716,6 +716,12 @@ config ARCH_BOARD_LINCOLN60
 	---help---
 		Micromint Lincoln 60 board using the NXP LPC1769 MCU.
 
+config ARCH_BOARD_JETSON_NANO
+	bool "NVidia Jetson board"
+	depends on ARCH_CHIP_JETSON
+	---help---
+		NVidia Jetson Nano
+
 config ARCH_BOARD_KWIKSTIK_K40
 	bool "NXP/FreeScale KwikStik-K40 development board"
 	depends on ARCH_CHIP_MK40X256VLQ100
@@ -3004,6 +3010,7 @@ config ARCH_BOARD
 	default "imxrt1050-evk"             if ARCH_BOARD_IMXRT1050_EVK
 	default "imxrt1060-evk"             if ARCH_BOARD_IMXRT1060_EVK
 	default "imxrt1064-evk"             if ARCH_BOARD_IMXRT1064_EVK
+	default "jetson-nano"               if ARCH_BOARD_JETSON_NANO
 	default "kwikstik-k40"              if ARCH_BOARD_KWIKSTIK_K40
 	default "launchxl-cc1310"           if ARCH_BOARD_LAUNCHXL_CC1310
 	default "launchxl-cc1312r1"         if ARCH_BOARD_LAUNCHXL_CC1312R1
@@ -3372,6 +3379,9 @@ source "boards/arm/kinetis/freedom-k64f/Kconfig"
 endif
 if ARCH_BOARD_FREEDOM_K66F
 source "boards/arm/kinetis/freedom-k66f/Kconfig"
+endif
+if ARCH_BOARD_JETSON_NANO
+source "boards/arm64/jetson/jetson-nano/Kconfig"
 endif
 if ARCH_BOARD_KWIKSTIK_K40
 source "boards/arm/kinetis/kwikstik-k40/Kconfig"

@@ -36,6 +36,15 @@ config ARCH_CHIP_A64
 	---help---
 		Allwinner A64 SoC
 
+config ARCH_CHIP_JETSON
+	bool "NVidia Jetson system"
+	select ARCH_CORTEX_A78AE
+	select ARCH_HAVE_ADDRENV
+	select ARCH_HAVE_RESET
+	select ARCH_NEED_ADDRENV_MAPPING
+	---help---
+		NVidia Jetson SoC
+
 config ARCH_CHIP_RK3399
 	bool "Rockchip RK3399"
 	select ARCH_CORTEX_A53
@@ -181,6 +190,18 @@ config ARCH_CORTEX_A72
 	select ARCH_HAVE_TESTSET
 	select ARM_HAVE_NEON
 
+config ARCH_CORTEX_A78AE
+	bool
+	default n
+	select ARCH_ARMV8A
+	select ARCH_HAVE_TRUSTZONE
+	select ARCH_DCACHE
+	select ARCH_ICACHE
+	select ARCH_HAVE_MMU
+	select ARCH_HAVE_FPU
+	select ARCH_HAVE_TESTSET
+	select ARM_HAVE_NEON
+
 config ARCH_CORTEX_R82
 	bool
 	default n
@@ -204,6 +225,7 @@ config ARCH_CHIP
 	default "qemu"      if ARCH_CHIP_QEMU
 	default "fvp-v8r"   if ARCH_CHIP_FVP_ARMV8R
 	default "imx8"      if ARCH_CHIP_IMX8
+	default "jetson"    if ARCH_CHIP_JETSON
 
 config ARM_HAVE_NEON
 	bool
