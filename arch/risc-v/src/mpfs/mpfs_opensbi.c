@@ -105,6 +105,8 @@ extern const uint8_t __mpfs_nuttx_start[];
 extern const uint8_t __mpfs_nuttx_end[];
 extern const uint8_t _ssbi_zerodev[];
 extern const uint8_t _esbi_zerodev[];
+extern const uint8_t _sbi_heap_start[];
+extern const uint8_t _sbi_heap_size[];
 
 /****************************************************************************
  * Private Function Prototypes
@@ -470,27 +472,41 @@ static void mpfs_opensbi_scratch_setup(uint32_t hartid)
       (unsigned long)mpfs_hart_to_scratch;
   g_scratches[hartid].scratch.platform_addr = (unsigned long)&platform;
 
-  /* Our FW area in l2lim section.  OpenSBI needs to be aware of it in order
-   * to protect the area.  However, we set the PMP values already and lock
-   * them so that OpenSBI has no chance override then.
+  /* Our FW area, heap and the scratch area are in l2lim.
+   *
+   * The memory is organized as follows:
+   *
+   * ----------------------------------------------------------------------
+   * |                   |                  |                             |
+   * | SBI .text (0000h) | SBI heap (8000h) | SBI scratch (8000h + 4000h) |
+   * |                   |                  |                             |
+   * ----------------------------------------------------------------------
+   *
+   * The reason for this organization is that the RX and RW areas can be set
+   * to the physical memory protection unit (PMP) as two contiguous areas.
    */
 
   g_scratches[hartid].scratch.fw_start = (unsigned long)_ssbi_zerodev;
   g_scratches[hartid].scratch.fw_size  = (unsigned long)_esbi_zerodev -
                                          (unsigned long)_ssbi_zerodev;
 
-  g_scratches[hartid].scratch.fw_rw_offset =
-      (unsigned long)g_scratches[hartid].scratch.fw_size;
-
-  /* fw_rw_offset needs to be an aligned address */
-
-  g_scratches[hartid].scratch.fw_rw_offset += 1024 * 2;
-  g_scratches[hartid].scratch.fw_rw_offset &= 0xffffff800;
-  g_scratches[hartid].scratch.fw_size =
-      g_scratches[hartid].scratch.fw_rw_offset;
+  /* RW area starts from the heap */
 
   g_scratches[hartid].scratch.fw_heap_offset =
-      (unsigned long)g_scratches[hartid].scratch.fw_size;
+      (unsigned long)_sbi_heap_start -
+      (unsigned long)g_scratches[hartid].scratch.fw_start;
+
+  g_scratches[hartid].scratch.fw_heap_size =
+      (unsigned long)_sbi_heap_size;
+
+  g_scratches[hartid].scratch.fw_rw_offset =
+    g_scratches[hartid].scratch.fw_heap_offset;
+
+  /* Because sbi_heap_init does not work otherwise */
+
+  g_scratches[hartid].scratch.fw_size      =
+      g_scratches[hartid].scratch.fw_heap_offset +
+      g_scratches[hartid].scratch.fw_heap_size;
 
   /* Heap minimum is 16k.  Otherwise sbi_heap.c fails:
    * hpctrl.hksize = hpctrl.size / HEAP_HOUSEKEEPING_FACTOR;
@@ -500,10 +516,17 @@ static void mpfs_opensbi_scratch_setup(uint32_t hartid)
    * hpctrl.hksize gets to be zero making the OpenSBI crash.
    */
 
-  g_scratches[hartid].scratch.fw_heap_size = 1024 * 16;
-  g_scratches[hartid].scratch.fw_size      =
-      g_scratches[hartid].scratch.fw_heap_offset +
-      g_scratches[hartid].scratch.fw_heap_size;
+  if (g_scratches[hartid].scratch.fw_heap_size < 0x4000)
+    {
+      sbi_panic(__func__);
+    }
+
+  /* fw_rw_offset needs to be an aligned address */
+
+  if (g_scratches[hartid].scratch.fw_rw_offset & 0x7ff)
+    {
+      sbi_panic(__func__);
+    }
 }
 
 /****************************************************************************
