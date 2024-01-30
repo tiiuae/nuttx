@@ -1503,6 +1503,20 @@ struct spi_dev_s *mpfs_corespibus_initialize(int port)
   struct mpfs_spi_priv_s *priv;
   int ret;
 
+  switch (port)
+  {
+    case 1:
+      _alert("Port 1");
+      break;
+
+    case 2:
+
+      _alert("Port 2");
+      break;
+    default:
+      break;
+  }
+
   if (port < MPFS_CORESPI_INSTANCES)
     {
       priv = &g_mpfs_spi_priv[port];
