@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/arm64/src/imx8/imx8_serial.h
+ * boards/arm64/imx8/imx8mp-evk/src/imx8_boardinit.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,91 +18,96 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM64_SRC_IMX8_IMX8_SERIAL_H
-#define __ARCH_ARM64_SRC_IMX8_IMX8_SERIAL_H
-
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
-
-#include "arm64_internal.h"
+#include <stdint.h>
+#include <nuttx/board.h>
+#include "imx8mp-evk.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
 /****************************************************************************
- * Public Types
+ * Private Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Inline Functions
- ****************************************************************************/
-
-#ifndef __ASSEMBLY__
-
-/****************************************************************************
- * Public Data
- ****************************************************************************/
-
-#ifdef CONFIG_ARCH_CHIP_IMX8_QUADMAX
-#define SPI_OFFSET                  32
-#define CONFIG_IMX8QM_UART1_BASE    0x5a060000
-#define CONFIG_IMX8QM_UART1_IRQ     (SPI_OFFSET + 345)
-#elif defined CONFIG_ARCH_CHIP_IMX8_MPLUS
-#define CONFIG_IMX8QM_UART1_BASE    0x30860000
-#define CONFIG_IMX8QM_UART1_IRQ     26
-#endif
-
-/****************************************************************************
- * Public Function Prototypes
+ * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: imx_earlyserialinit
+ * Name: imx8_memory_initialize
  *
  * Description:
- *   Performs the low level UART initialization early in debug so that the
- *   serial console will be available during bootup.  This must be called
- *   before arm_serialinit.
+ *   All i.MX8 architectures must provide the following entry point.  This
+ *   entry point is called early in the initialization before memory has
+ *   been configured.  This board-specific function is responsible for
+ *   configuring any on-board memories.
+ *
+ *   Logic in imx8_memory_initialize must be careful to avoid using any
+ *   global variables because those will be uninitialized at the time this
+ *   function is called.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   None
  *
  ****************************************************************************/
 
-#ifdef USE_EARLYSERIALINIT
-void imx8_earlyserialinit(void);
-
-#endif
+void imx8_memory_initialize(void)
+{
+  /* SDRAM was initialized by a bootloader in the supported configurations. */
+}
 
 /****************************************************************************
- * Name: uart_earlyserialinit
+ * Name: imx8_board_initialize
  *
  * Description:
- *   Performs the low level UART initialization early in debug so that the
- *   serial console will be available during bootup.  This must be called
- *   before arm_serialinit.
+ *   All i.MX8 architectures must provide the following entry point.  This
+ *   entry point is called in the initialization phase -- after
+ *   imx_memory_initialize and after all memory has been configured and
+ *   mapped but before any devices have been initialized.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   None
  *
  ****************************************************************************/
 
-#if defined(USE_EARLYSERIALINIT) && defined(IMX8_HAVE_UART)
-void uart_earlyserialinit(void);
+void imx8_board_initialize(void)
+{
+#ifdef CONFIG_ARCH_LEDS
+  /* Configure on-board LEDs if LED support has been selected. */
 
 #endif
+}
 
 /****************************************************************************
- * Name: uart_serialinit
+ * Name: board_late_initialize
  *
  * Description:
- *   Register the UART serial console and serial ports.  This assumes that
- *   uart_earlyserialinit was called previously.
+ *   If CONFIG_BOARD_LATE_INITIALIZE is selected, then an additional
+ *   initialization call will be performed in the boot-up sequence to a
+ *   function called board_late_initialize(). board_late_initialize() will be
+ *   called immediately after up_intitialize() is called and just before the
+ *   initial application is started.  This additional initialization phase
+ *   may be used, for example, to initialize board-specific device drivers.
  *
  ****************************************************************************/
 
-#ifdef IMX8_HAVE_UART
-void uart_serialinit(void);
+#ifdef CONFIG_BOARD_LATE_INITIALIZE
+void board_late_initialize(void)
+{
+  /* Perform board initialization */
 
-#endif
-
-#endif /* __ASSEMBLY__ */
-#endif /* __ARCH_ARM_SRC_IMX6_IMX_SERIAL_H */
+  imx8_bringup();
+}
+#endif /* CONFIG_BOARD_LATE_INITIALIZE */

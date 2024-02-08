@@ -17,6 +17,12 @@ config ARCH_CHIP_IMX8_QUADMAX
 	select ARMV8A_HAVE_GICv3
 	select ARCH_CORTEX_A53
 
+config ARCH_CHIP_IMX8_MPLUS
+	bool "i.MX8 M Plus Application Processor"
+	select ARCH_HAVE_MULTICPU
+	select ARMV8A_HAVE_GICv3
+	select ARCH_CORTEX_A53
+
 endchoice # i.MX8 Chip Selection
 
 endmenu # "i.MX8 Chip Selection"

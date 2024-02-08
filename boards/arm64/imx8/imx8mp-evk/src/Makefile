@@ -1,5 +1,5 @@
 ############################################################################
-# arch/arm64/src/imx8/Make.defs
+# boards/arm64/imx8/imx8mp-evk/src/Makefile
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -18,26 +18,12 @@
 #
 ############################################################################
 
-include common/Make.defs
+include $(TOPDIR)/Make.defs
 
-# i.MX8-specific C source files
+CSRCS = imx8_boardinit.c imx8_bringup.c
 
-CHIP_CSRCS  = imx8_boot.c
-
-ifeq ($(CONFIG_ARCH_CHIP_IMX8_QUADMAX),y)
-  CHIP_CSRCS += imx8qm_serial.c
-  ifeq ($(CONFIG_ARCH_EARLY_PRINT),y)
-    CHIP_ASRCS  = imx8qm_lowputc.S
-  endif
+ifeq ($(CONFIG_BOARDCTL),y)
+CSRCS += imx8_appinit.c
 endif
 
-ifeq ($(CONFIG_ARCH_CHIP_IMX8_MPLUS),y)
-  CHIP_CSRCS += imx8mp_serial.c
-  ifeq ($(CONFIG_ARCH_EARLY_PRINT),y)
-    CHIP_ASRCS  = imx8mp_lowputc.S
-  endif
-endif
-
-ifeq ($(CONFIG_IMX8_ECSPI),y)
-CHIP_CSRCS += imx8_ecspi.c
-endif
+include $(TOPDIR)/boards/Board.mk

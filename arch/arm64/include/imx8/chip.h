@@ -60,6 +60,28 @@
 
 #define MPID_TO_CLUSTER_ID(mpid)  ((mpid) & ~0xff)
 
+#elif defined(CONFIG_ARCH_CHIP_IMX8_MPLUS)
+
+#if CONFIG_ARM_GIC_VERSION == 3 || CONFIG_ARM_GIC_VERSION == 4
+
+#define CONFIG_GICD_BASE          0x38800000
+#define CONFIG_GICR_BASE          0x38900000
+#define CONFIG_GICR_OFFSET        0x20000
+
+#else
+
+#error CONFIG_ARM_GIC_VERSION should be 2, 3 or 4
+
+#endif /* CONFIG_ARM_GIC_VERSION */
+
+#define CONFIG_RAMBANK1_ADDR      0x40000000
+#define CONFIG_RAMBANK1_SIZE      MB(128)
+
+#define CONFIG_DEVICEIO_BASEADDR  0x30000000
+#define CONFIG_DEVICEIO_SIZE      MB(256)
+#define CONFIG_LOAD_BASE          0x40280000
+
+#define MPID_TO_CLUSTER_ID(mpid)  ((mpid) & ~0xff)
 #endif
 
 /****************************************************************************
