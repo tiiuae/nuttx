@@ -236,19 +236,6 @@ static inline int can_readahead(struct can_recvfrom_s *pstate)
   if ((iob = iob_peek_queue(&conn->readahead)) != NULL &&
       pstate->pr_buflen > 0)
     {
-      if (iob->io_flink != NULL ||
-          iob->io_pktlen == 0 ||
-          iob->io_offset <= 0)
-        {
-          if (iob->io_pktlen == 0 || iob->io_offset <= 0)
-            {
-              iob_free(iob);
-            }
-
-          iob_remove_queue(&conn->readahead);
-          return 0;
-        }
-
       DEBUGASSERT(iob->io_pktlen > 0);
 
 #ifdef CONFIG_NET_CANPROTO_OPTIONS
@@ -296,23 +283,31 @@ static inline int can_readahead(struct can_recvfrom_s *pstate)
        * beginning of the I/O buffer chain.
        */
 
-      /* No trimming needed since one CAN/CANFD frame can perfectly
-       * fit in one iob
-       */
+      if (recvlen >= iob->io_pktlen)
+        {
+          FAR struct iob_s *tmp;
 
-      FAR struct iob_s *tmp;
+          /* Remove the I/O buffer chain from the head of the read-ahead
+           * buffer queue.
+           */
 
-      /* Remove the I/O buffer chain from the head of the read-ahead
-       * buffer queue.
-       */
+          tmp = iob_remove_queue(&conn->readahead);
+          DEBUGASSERT(tmp == iob);
+          UNUSED(tmp);
 
-      tmp = iob_remove_queue(&conn->readahead);
-      DEBUGASSERT(tmp == iob);
-      UNUSED(tmp);
+          /* And free the I/O buffer chain */
 
-      /* And free the I/O buffer chain */
+          iob_free_chain(iob);
+        }
+      else
+        {
+          /* The bytes that we have received from the head of the I/O
+           * buffer chain (probably changing the head of the I/O
+           * buffer queue).
+           */
 
-      iob_free_chain(iob);
+          iob_trimhead_queue(&conn->readahead, recvlen);
+        }
 
       /* do not pass frames with DLC > 8 to a legacy socket */
 #if defined(CONFIG_NET_CANPROTO_OPTIONS) && defined(CONFIG_NET_CAN_CANFD)
