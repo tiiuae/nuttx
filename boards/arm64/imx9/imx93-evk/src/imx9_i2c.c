@@ -1,5 +1,5 @@
 /****************************************************************************
- * boards/arm64/imx9/imx93-evk/include/board.h
+ * boards/arm64/imx9/imx93-evk/src/imx9_i2c.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,54 +18,60 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM64_IMX9_IMX93_EVK_INCLUDE_BOARD_H
-#define __BOARDS_ARM64_IMX9_IMX93_EVK_INCLUDE_BOARD_H
-
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
 
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
+#include <debug.h>
+#include <errno.h>
+#include <sys/types.h>
 
-#define IOMUX_LPI2C_DEFAULT  (IOMUXC_PAD_OD_ENABLE | IOMUXC_PAD_FSEL_SFAST | IOMUXC_PAD_DSE_X6)
+#include <nuttx/i2c/i2c_master.h>
 
-/* LPI2Cs */
-
-#define MUX_LPI2C1_SCL       IOMUX_CFG(IOMUXC_PAD_I2C1_SCL_LPI2C1_SCL, IOMUX_LPI2C_DEFAULT, IOMUXC_MUX_SION_ON)
-#define MUX_LPI2C1_SDA       IOMUX_CFG(IOMUXC_PAD_I2C1_SDA_LPI2C1_SDA, IOMUX_LPI2C_DEFAULT, IOMUXC_MUX_SION_ON)
-
-/* I2C reset functionality */
-
-#define GPIO_LPI2C1_SCL_RESET  (GPIO_PORT1 | GPIO_PIN0 | GPIO_OUTPUT | GPIO_OUTPUT_ONE)
-#define GPIO_LPI2C1_SDA_RESET  (GPIO_PORT1 | GPIO_PIN1 | GPIO_OUTPUT | GPIO_OUTPUT_ONE)
+#include "imx9_lpi2c.h"
 
 /****************************************************************************
- * Public Data
+ * Public Functions
  ****************************************************************************/
 
-#ifndef __ASSEMBLY__
+/****************************************************************************
+ * Name: board_i2c_init
+ *
+ * Description:
+ *   Configure the I2C driver.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
 
-#undef EXTERN
-#if defined(__cplusplus)
-#define EXTERN extern "C"
-extern "C"
+int imx9_i2c_initialize(void)
 {
-#else
-#define EXTERN extern
+  int ret = OK;
+
+#ifdef CONFIG_IMX9_LPI2C1
+  struct i2c_master_s *i2c;
+
+  i2c = imx9_i2cbus_initialize(1);
+  if (i2c == NULL)
+    {
+      i2cerr("ERROR: Failed to init I2C0 interface\n");
+      return -ENODEV;
+    }
 #endif
 
-/****************************************************************************
- * Public Function Prototypes
- ****************************************************************************/
+#ifdef CONFIG_I2C_DRIVER
+  ret = i2c_register(i2c, 0);
+  if (ret < 0)
+    {
+      i2cerr("ERROR: Failed to register I2C0 driver: %d\n", ret);
+      imx9_i2cbus_uninitialize(i2c);
+      return ret;
+    }
+#endif
 
-#undef EXTERN
-#if defined(__cplusplus)
+  return OK;
 }
-#endif
-
-#endif /* __ASSEMBLY__ */
-#endif /* __BOARDS_ARM64_IMX9_IMX93_EVK_INCLUDE_BOARD_H */

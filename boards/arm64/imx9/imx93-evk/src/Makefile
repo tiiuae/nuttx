@@ -26,4 +26,8 @@ ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += imx9_appinit.c
 endif
 
+ifeq ($(CONFIG_IMX9_LPI2C),y)
+CSRCS += imx9_i2c.c
+endif
+
 include $(TOPDIR)/boards/Board.mk
