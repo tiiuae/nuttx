@@ -79,7 +79,7 @@ jobs:
           echo "app_ref=$APPS_REF" >> $GITHUB_OUTPUT
 
       - name: Checkout nuttx repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: tiiuae/nuttx
           ref: ${{ steps.gittargets.outputs.os_ref }}
@@ -89,21 +89,18 @@ jobs:
         run: git -C sources/nuttx fetch --tags
 
       - name: Checkout apps repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: tiiuae/incubator-nuttx-apps
           ref: ${{ steps.gittargets.outputs.apps_ref }}
           path: sources/apps
           fetch-depth: 1
 
-      - name: Tar sources
-        run: tar zcf sources.tar.gz sources
-
       - name: Archive Source Bundle
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: source-bundle
-          path: sources.tar.gz
+          path: sources/
 
   Build:
     runs-on: ubuntu-latest
@@ -114,13 +111,10 @@ jobs:
         boards: [ssrc-arm, ssrc-riscv]
     steps:
       - name: Download Source Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: source-bundle
-          path: .
-
-      - name: Extract sources
-        run: tar zxf sources.tar.gz
+          path: sources
 
       # cibuild.sh -i installs the tools for us
       - name: Run builds
