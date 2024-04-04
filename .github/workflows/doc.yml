@@ -14,7 +14,7 @@
 name: "Build Documentation"
 on:
   pull_request:
-  push:
+  #push:
 
 concurrency:
   group: docs-${{ github.event.pull_request.number || github.ref }}

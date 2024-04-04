@@ -14,11 +14,13 @@ name: Build
 
 on:
   push:
-    branches: [master]
+    #branches: [master]
   pull_request:
 
 permissions:
   contents: read
+  security-events: write
+  actions: read
 
 jobs:
   Fetch-Source:
@@ -127,4 +129,8 @@ jobs:
           export ARTIFACTDIR=`pwd`/buildartifacts
           cd sources/nuttx/tools/ci
           ./cibuild.sh -i -c -A -R testlist/${{matrix.boards}}.dat
+
+  CodeQL:
+    needs: Fetch-Source
+    uses: "./.github/workflows/CodeQL.yml"
 
