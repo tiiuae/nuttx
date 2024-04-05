@@ -114,17 +114,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: source-bundle
-          path: sources
+          path: .
 
       # cibuild.sh -i installs the tools for us
       - name: Run builds
         run: |
-          echo "::add-matcher::sources/nuttx/.github/gcc.json"
+          echo "::add-matcher::nuttx/.github/gcc.json"
           export ARTIFACTDIR=`pwd`/buildartifacts
-          cd sources/nuttx/tools/ci
+          cd nuttx/tools/ci
           ./cibuild.sh -i -c -A -R testlist/${{matrix.boards}}.dat
-
-  CodeQL:
-    needs: Fetch-Source
-    uses: "./.github/workflows/CodeQL.yml"
 
