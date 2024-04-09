@@ -98,69 +98,11 @@ struct spi_dev_s *imx9_lpspibus_initialize(int bus);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_IMX9_LPSPI1
-void imx9_lpspi1select(struct spi_dev_s *dev,
+void imx9_lpspi_select(struct spi_dev_s *dev,
                        uint32_t devid, bool selected);
-uint8_t imx9_lpspi1status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi1cmddata(struct spi_dev_s *dev,
+uint8_t imx9_lpspi_status(struct spi_dev_s *dev, uint32_t devid);
+int imx9_lpspi_cmddata(struct spi_dev_s *dev,
                        uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI2
-void imx9_lpspi2select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi2status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi2cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI3
-void imx9_lpspi3select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi3status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi3cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI4
-void imx9_lpspi4select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi4status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi4cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI5
-void imx9_lpspi5select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi5status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi5cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI6
-void imx9_lpspi6select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi6status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi6cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI7
-void imx9_lpspi7select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi7status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi7cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI8
-void imx9_lpspi8select(struct spi_dev_s *dev,
-                       uint32_t devid, bool selected);
-uint8_t imx9_lpspi8status(struct spi_dev_s *dev, uint32_t devid);
-int imx9_lpspi8cmddata(struct spi_dev_s *dev,
-                       uint32_t devid, bool cmd);
-#endif
 
 /****************************************************************************
  * Name: imx9_lpspi1/2/...register
@@ -183,51 +125,9 @@ int imx9_lpspi8cmddata(struct spi_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_SPI_CALLBACK
-#ifdef CONFIG_IMX9_LPSPI1
-int imx9_lpspi1register(struct spi_dev_s *dev,
+int imx9_lpspi_register(struct spi_dev_s *dev,
                         spi_mediachange_t callback,
                         void *arg);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI2
-int imx9_lpspi2register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI3
-int imx9_lpspi3register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI4
-int imx9_lpspi4register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI5
-int imx9_lpspi5register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
-
-#ifdef CONFIG_IMX9_LPSPI6
-int imx9_lpspi6register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
-#ifdef CONFIG_IMX9_LPSPI7
-int imx9_lpspi7register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
-#ifdef CONFIG_IMX9_LPSPI8
-int imx9_lpspi8register(struct spi_dev_s *dev,
-                        spi_mediachange_t callback,
-                        void *arg);
-#endif
 #endif
 
 #undef EXTERN
