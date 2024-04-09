@@ -213,20 +213,19 @@ static void imx9_lpspi_bus_initialize(struct imx9_lpspidev_s *priv);
  * Private Data
  ****************************************************************************/
 
-#ifdef CONFIG_IMX9_LPSPI1
-static const struct spi_ops_s g_spi1ops =
+static const struct spi_ops_s g_spiops =
 {
   .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi1select,
+  .select       = imx9_lpspi_select,
   .setfrequency = imx9_lpspi_setfrequency,
   .setmode      = imx9_lpspi_setmode,
   .setbits      = imx9_lpspi_setbits,
 #ifdef CONFIG_SPI_HWFEATURES
   .hwfeatures   = imx9_lpspi_hwfeatures,
 #endif
-  .status       = imx9_lpspi1status,
+  .status       = imx9_lpspi_status,
 #ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi1cmddata,
+  .cmddata      = imx9_lpspi_cmddata,
 #endif
   .send         = imx9_lpspi_send,
 #ifdef CONFIG_SPI_EXCHANGE
@@ -236,17 +235,18 @@ static const struct spi_ops_s g_spi1ops =
   .recvblock    = imx9_lpspi_recvblock,
 #endif
 #ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi1register,  /* Provided externally */
+  .registercallback = imx9_lpspi_register,  /* Provided externally */
 #else
   .registercallback = 0,                    /* Not implemented */
 #endif
 };
 
+#ifdef CONFIG_IMX9_LPSPI1
 static struct imx9_lpspidev_s g_lpspi1dev =
 {
   .spidev       =
   {
-    .ops        = &g_spi1ops,
+    .ops        = &g_spiops,
   },
   .spibase      = IMX9_LPSPI1_BASE,
   .clk_root     = CCM_CR_LPSPI1,
@@ -265,34 +265,6 @@ static struct imx9_lpspidev_s g_lpspi1dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI2
-static const struct spi_ops_s g_spi2ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi2select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi2status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi2cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi2register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi2dev =
 {
   .spidev       =
@@ -316,34 +288,6 @@ static struct imx9_lpspidev_s g_lpspi2dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI3
-static const struct spi_ops_s g_spi3ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi3select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi3status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi3cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi3register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi3dev =
 {
   .spidev       =
@@ -367,39 +311,11 @@ static struct imx9_lpspidev_s g_lpspi3dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI4
-static const struct spi_ops_s g_spi4ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi4select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi4status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi4cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi4register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi4dev =
 {
   .spidev       =
   {
-    .ops        = &g_spi4ops,
+    .ops        = &g_spiops,
   },
   .spibase      = IMX9_LPSPI4_BASE,
   .clk_root     = CCM_CR_LPSPI4,
@@ -418,39 +334,11 @@ static struct imx9_lpspidev_s g_lpspi4dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI5
-static const struct spi_ops_s g_spi5ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi5select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi5status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi5cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi5register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi5dev =
 {
   .spidev       =
   {
-    &g_spi5ops
+    &g_spiops
   },
   .spibase      = IMX9_LPSPI5_BASE,
   .clk_root     = CCM_CR_LPSPI5,
@@ -469,39 +357,11 @@ static struct imx9_lpspidev_s g_lpspi5dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI6
-static const struct spi_ops_s g_spi6ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi6select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi6status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi6cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi6register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi6dev =
 {
   .spidev       =
   {
-    &g_spi6ops
+    &g_spiops
   },
   .spibase      = IMX9_LPSPI6_BASE,
   .clk_root     = CCM_CR_LPSPI6,
@@ -520,39 +380,11 @@ static struct imx9_lpspidev_s g_lpspi6dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI7
-static const struct spi_ops_s g_spi7ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi7select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi7status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi7cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi7register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi7dev =
 {
   .spidev       =
   {
-    &g_spi7ops
+    &g_spiops
   },
   .spibase      = IMX9_LPSPI7_BASE,
   .clk_root     = CCM_CR_LPSPI7,
@@ -571,39 +403,11 @@ static struct imx9_lpspidev_s g_lpspi7dev =
 #endif
 
 #ifdef CONFIG_IMX9_LPSPI8
-static const struct spi_ops_s g_spi8ops =
-{
-  .lock         = imx9_lpspi_lock,
-  .select       = imx9_lpspi8select,
-  .setfrequency = imx9_lpspi_setfrequency,
-  .setmode      = imx9_lpspi_setmode,
-  .setbits      = imx9_lpspi_setbits,
-#ifdef CONFIG_SPI_HWFEATURES
-  .hwfeatures   = imx9_lpspi_hwfeatures,
-#endif
-  .status       = imx9_lpspi8status,
-#ifdef CONFIG_SPI_CMDDATA
-  .cmddata      = imx9_lpspi8cmddata,
-#endif
-  .send         = imx9_lpspi_send,
-#ifdef CONFIG_SPI_EXCHANGE
-  .exchange     = imx9_lpspi_exchange,
-#else
-  .sndblock     = imx9_lpspi_sndblock,
-  .recvblock    = imx9_lpspi_recvblock,
-#endif
-#ifdef CONFIG_SPI_CALLBACK
-  .registercallback = imx9_lpspi8register,  /* Provided externally */
-#else
-  .registercallback = 0,                    /* Not implemented */
-#endif
-};
-
 static struct imx9_lpspidev_s g_lpspi8dev =
 {
   .spidev       =
   {
-    &g_spi8ops
+    &g_spiops
   },
   .spibase      = IMX9_LPSPI8_BASE,
   .clk_root     = CCM_CR_LPSPI8,

@@ -59,7 +59,7 @@
  *
  ****************************************************************************/
 
-void imx9_lpspi6select(struct spi_dev_s *dev, uint32_t devid, bool selected)
+void imx9_lpspi_select(struct spi_dev_s *dev, uint32_t devid, bool selected)
 {
   imx9_gpio_write(GPIO_LPSPI6_CS, !selected);
 }
@@ -79,7 +79,7 @@ void imx9_lpspi6select(struct spi_dev_s *dev, uint32_t devid, bool selected)
  *
  ****************************************************************************/
 
-uint8_t imx9_lpspi6status(struct spi_dev_s *dev, uint32_t devid)
+uint8_t imx9_lpspi_status(struct spi_dev_s *dev, uint32_t devid)
 {
   return 0;
 }
@@ -108,7 +108,7 @@ uint8_t imx9_lpspi6status(struct spi_dev_s *dev, uint32_t devid)
  *
  ****************************************************************************/
 
-int imx9_lpspi6cmddata(struct spi_dev_s *dev, uint32_t devid, bool cmd)
+int imx9_lpspi_cmddata(struct spi_dev_s *dev, uint32_t devid, bool cmd)
 {
   return -ENODEV;
 }
