@@ -121,7 +121,7 @@ struct imx9_lpspidev_s
   uint32_t frequency;         /* Requested clock frequency */
   uint32_t actual;            /* Actual clock frequency */
   int8_t nbits;               /* Width of word in bits */
-  uint8_t mode;               /* Mode 0,1,2,3 */
+  int8_t mode;                /* Mode 0,1,2,3 */
 #ifdef CONFIG_IMX9_LPSPI_DMA
   volatile uint32_t rxresult;   /* Result of the RX DMA */
   volatile uint32_t txresult;   /* Result of the TX DMA */
@@ -1520,20 +1520,16 @@ static void imx9_lpspi_bus_initialize(struct imx9_lpspidev_s *priv)
   reg |= LPSPI_CFGR1_OUTCFG_RETAIN | LPSPI_CFGR1_PINCFG_SIN_SOUT;
   imx9_lpspi_putreg32(priv, IMX9_LPSPI_CFGR1_OFFSET, reg);
 
-  /* Set frequency and delay times */
-
-  imx9_lpspi_setfrequency((struct spi_dev_s *)priv, 400000);
-
   /* Set default watermarks */
 
   imx9_lpspi_putreg32(priv, IMX9_LPSPI_FCR_OFFSET,
                       LPSPI_FCR_TXWATER(0) | LPSPI_FCR_RXWATER(0));
 
-  /* Set Transmit Command Register */
+  /* Mark frequency, nbits and mode to invalid */
 
-  imx9_lpspi_setbits((struct spi_dev_s *)priv, 8);
-
-  imx9_lpspi_setmode((struct spi_dev_s *)priv, SPIDEV_MODE0);
+  priv->frequency = 0;
+  priv->nbits = -1;
+  priv->mode = -1;
 
   /* Enable LPSPI */
 
