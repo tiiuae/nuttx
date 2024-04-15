@@ -982,7 +982,7 @@ DMACH_HANDLE imx9_dmach_alloc(uint16_t dmamux, uint8_t dchpri)
       if (imx9_edma_tcdhasmux(dmach->base))
         {
           dmainfo("CH%d: MUX: %p\n", dmach->chan,
-                  (void *)base + IMX9_EDMA_CH_MUX_OFFSET);
+                  (char *)base + IMX9_EDMA_CH_MUX_OFFSET);
           putreg8(0, base + IMX9_EDMA_CH_MUX_OFFSET);
         }
     }
