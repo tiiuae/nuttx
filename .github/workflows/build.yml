@@ -112,7 +112,7 @@ jobs:
         boards: [ssrc-arm, ssrc-riscv]
     steps:
       - name: Download Source Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: source-bundle
           path: .
