@@ -544,6 +544,7 @@ static int imx9_edma_isr(int irq, void *context, void *arg)
   uint32_t  errval32;
   uint8_t   chan;
   int       result;
+  bool      done;
 
   /* 'arg' should the DMA channel instance. */
 
@@ -601,24 +602,12 @@ static int imx9_edma_isr(int irq, void *context, void *arg)
           regval32 |= EDMA_CH_CSR_DONE;
           putreg32(regval32, base + IMX9_EDMA_CH_CSR_OFFSET);
           result = OK;
+          done = true;
         }
       else
         {
-#if CONFIG_IMX9_EDMA_NTCD > 0
-          /* Perform the half or end-of-major-cycle DMA callback */
-
-          if (dmach->callback != NULL)
-            {
-              dmach->callback((DMACH_HANDLE)dmach, dmach->arg, false, OK);
-            }
-
-          return OK;
-#else
-          /* Otherwise the interrupt was not expected! */
-
-          DEBUGPANIC();
-          result = -EPIPE;
-#endif
+          result = OK;
+          done = false;
         }
 
       /* Terminate the transfer when it is done. */
@@ -629,7 +618,7 @@ static int imx9_edma_isr(int irq, void *context, void *arg)
         }
       else if (dmach->callback != NULL)
         {
-          dmach->callback((DMACH_HANDLE)dmach, dmach->arg, true, result);
+          dmach->callback((DMACH_HANDLE)dmach, dmach->arg, done, result);
         }
     }
 
