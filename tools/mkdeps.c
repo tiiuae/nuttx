@@ -794,6 +794,8 @@ static void do_dependency(const char *file)
   cmdlen++;
   g_command[cmdlen] = '\0';
 
+  ret = system(g_command);
+  
   /* Make a copy of g_altpath. We need to do this because at least the
    * version of strtok_r above does modify it.
    */
