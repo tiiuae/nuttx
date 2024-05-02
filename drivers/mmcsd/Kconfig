@@ -130,6 +130,10 @@ config MMCSD_SDIO
 
 if MMCSD_SDIO
 
+config SDIO_XFRDEBUG
+	bool "SDIO debug support"
+	default n
+
 config SDIO_MUXBUS
 	bool "SDIO bus share support"
 	default n
