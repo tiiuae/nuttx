@@ -91,5 +91,8 @@ int imx9_i2c_initialize(void);
 int imx9_spi_initialize(void);
 #endif
 
+
+int imx9_ele_initialize(void);
+
 #endif /* __ASSEMBLY__ */
 #endif /* __BOARDS_ARM64_IMX9_IMX93_EVK_SRC_IMX93_EVK_H */
