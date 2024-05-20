@@ -140,6 +140,17 @@ struct keyblob_msg
   uint32_t crc;
 };
 
+struct derived_key_msg
+{
+  struct header_t header;
+  uint32_t key_addr_h;
+  uint32_t key_addr_l;
+  uint32_t salt_addr_h;
+  uint32_t salt_addr_l;
+  uint32_t size
+  uint32_t crc;
+};
+
 struct get_info_msg
 {
   struct header_t header;
@@ -374,6 +385,14 @@ static int imx9_s3mua_write_read(struct imx9_s3muadev_s *priv)
   return err;
 }
 
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+
+
+
+
 int init_interface(void)
 {
   struct imx9_s3muadev_s *priv = &g_s3muadev_s;
@@ -393,6 +412,20 @@ int init_interface(void)
   return -1;
 }
 
+/****************************************************************************
+ * Name: imx9_pwm_setup
+ *
+ * Description:
+ *
+ *   Initialize PWM and register PWM devices
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   0 on success, negated error value on error
+ *
+ ****************************************************************************/
 int imx9_ele_ping(void)
 {
   struct imx9_s3muadev_s *priv = &g_s3muadev_s;
@@ -412,6 +445,21 @@ int imx9_ele_ping(void)
   return -1;
 
 }
+
+/****************************************************************************
+ * Name: imx9_pwm_setup
+ *
+ * Description:
+ *
+ *   Initialize PWM and register PWM devices
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   0 on success, negated error value on error
+ *
+ ****************************************************************************/
 
 int imx9_ele_fwstatus(void)
 {
@@ -437,6 +485,21 @@ int imx9_ele_fwstatus(void)
   return -1;
 
 }
+
+/****************************************************************************
+ * Name:  imx9_ele_get_info
+ *
+ * Description:
+ *
+ *   Fetch soc info and other indformation
+ *
+ * Input Parameters:
+ *   None, TBD, maybe a buffer to store intrested data
+ *
+ * Returned Value:
+ *   0 on success, negated error value on error
+ *
+ ****************************************************************************/
 
 int imx9_ele_get_info(void)
 {
@@ -473,9 +536,22 @@ int imx9_ele_get_info(void)
 
 }
 
+/****************************************************************************
+ * Name: imx9_ele_start_rng
+ *
+ * Description:
+ *
+ *   Start to generate rng entropy
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   0 on success, negated error value on error
+ *
+ ****************************************************************************/
 
-
-int imx9_start_rng(void)
+int imx9_ele_start_rng(void)
 {
   struct imx9_s3muadev_s *priv = &g_s3muadev_s;
   static struct ele_cmd cmd;
@@ -488,9 +564,6 @@ int imx9_start_rng(void)
   set_msg_header(&cmd.header.data , ELE_START_RNG_REQ, 1, MESSAGE_VER_6);
   priv->tx_m = &cmd;
   imx9_s3mua_write_read(priv);
-
-
-  s3info("rng start status: 0x%x\n",priv->rx_m.data[0]);
 
   if (priv->rx_m.data[0] == ELE_OK)
     {
@@ -513,7 +586,20 @@ int imx9_ele_initialize(void)
 
   return err;
 }
-
+/****************************************************************************
+ * Name: imx9_pwm_setupimx9_generate_key_blob
+ *
+ * Description:
+ *
+ *   Wrap a key to a blob
+ *
+ * Input Parameters:
+ *   key to be encrypted, key size in bits, id number for key, output buffer for wrapped key
+ *
+ * Returned Value:
+ *   0 on success, negated error value on error
+ *
+ ****************************************************************************/
 int imx9_generate_key_blob(uint8_t *key, uint32_t num_bits, uint32_t key_id, void *key_blob)
 {
   struct imx9_s3muadev_s *priv = &g_s3muadev_s;
@@ -565,5 +651,19 @@ int imx9_generate_key_blob(uint8_t *key, uint32_t num_bits, uint32_t key_id, voi
   return 0;
 
 }
+
+
+int imx9_ele_derive_key(uint8_t *key, uint32_t num_bits, uint32_t key_id, uint8_t *key_salt)
+{
+  struct derived_key_msg msg;
+
+  set_msg_header(&msg.header.data , ELE_DERIVE_KEY_REQ, 7, MESSAGE_VER_6);
+
+
+
+}
+
+
+
 
 //#endif /* CONFIG_IMX9_LPS3MUA */
