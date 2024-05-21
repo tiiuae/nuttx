@@ -56,6 +56,7 @@
 #define IMX9_FLEXIO1_BASE                  (0x425C0000UL)
 #define IMX9_FLEXIO2_BASE                  (0x425D0000UL)
 #define IMX9_FLEXSPI_BASE                  (0x425E0000UL)
+#define IMX9_FLEXSPI_PERIPHERAL_BASE       (0x28000000UL)
 #define IMX9_FLEXSPI_ARDF_BASE             (0x47420000UL)
 #define IMX9_FLEXSPI_ATDF_BASE             (0x47430000UL)
 #define IMX9_GPC_CTRL_CM33_BASE            (0x44470000UL)
@@ -171,5 +172,6 @@
 #define IMX9_WDOG5_BASE                    (0x424B0000UL)
 #define IMX9_LPCAC_PC_BASE                 (0x44400000UL)
 #define IMX9_LPCAC_PS_BASE                 (0x44400800UL)
+
 
 #endif /* __ARCH_ARM64_SRC_IMX9_HARDWARE_IMX93_IMX93_MEMORYMAP_H */
