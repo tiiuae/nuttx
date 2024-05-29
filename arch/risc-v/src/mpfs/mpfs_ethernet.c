@@ -134,8 +134,8 @@
  * issue when using the MTU size receive block
  */
 
-#define GMAC_RX_UNITSIZE  (512)                  /* Fixed size for RX buffer */
-#define GMAC_TX_UNITSIZE  CONFIG_NET_ETH_PKTSIZE /* MAX size for Ethernet packet */
+#define GMAC_RX_UNITSIZE  CONFIG_NET_ETH_PKTSIZE /* MAX size of RX ethernet packet */
+#define GMAC_TX_UNITSIZE  CONFIG_NET_ETH_PKTSIZE /* MAX size of TX ethernet packet */
 
 /* The MAC can support frame lengths up to 1536 bytes */
 
