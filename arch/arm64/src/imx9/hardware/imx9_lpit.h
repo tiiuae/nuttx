@@ -50,6 +50,9 @@
 #define IMX9_LPIT_TVAL3_OFFSET        0x0050 /* Timer Channel 3 Value */
 #define IMX9_LPIT_CVAL3_OFFSET        0x0054 /* Current Timer Channel 3 Value */
 #define IMX9_LPIT_TCTRL3_OFFSET       0x0058 /* Timer Channel 3 Control */
+#define IMX9_LPIT_TVAL_OFFSET(ch)     (IMX9_LPIT_TVAL0_OFFSET + ((ch) * 0x10))
+#define IMX9_LPIT_CVAL_OFFSET(ch)     (IMX9_LPIT_CVAL0_OFFSET + ((ch) * 0x10))
+#define IMX9_LPIT_TCTRL_OFFSET(ch)    (IMX9_LPIT_TCTRL0_OFFSET + ((ch) * 0x10))
 
 /* Register access */
 

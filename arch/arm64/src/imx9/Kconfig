@@ -246,6 +246,20 @@ endmenu # LPUART Configuration
 
 endmenu # LPUART
 
+config IMX9_LPIT
+	bool
+	default n
+
+config IMX9_LPIT1
+	bool "Enable LPIT1 timer module"
+	select IMX9_LPIT
+	default n
+
+config IMX9_LPIT2
+	bool "Enable LPIT2 timer module"
+	select IMX9_LPIT
+	default n
+
 config IMX9_FLEXIO1_PWM
 	depends on PWM
 	bool "Enable FLEXIO1 based PWM generation"
