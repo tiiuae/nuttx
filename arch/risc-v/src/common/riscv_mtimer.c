@@ -363,7 +363,7 @@ riscv_mtimer_initialize(uintptr_t mtime, uintptr_t mtimecmp,
 
       riscv_mtimer_set_mtimecmp(priv, priv->alarm);
       irq_attach(irq, riscv_mtimer_interrupt, priv);
-      up_enable_irq(irq);
+      //up_enable_irq(irq);
     }
 
   return (struct oneshot_lowerhalf_s *)priv;

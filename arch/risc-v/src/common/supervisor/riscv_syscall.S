@@ -130,4 +130,70 @@ sys_call6:
   .size sys_call5, .-sys_call5
   .size sys_call6, .-sys_call6
 
-  .end
+  #.end
+
+.globl switch_context
+
+switch_context:
+
+  /* Create a stack frame */
+
+  addi        sp, sp, -XCPTCONTEXT_SIZE
+  REGSTORE    sp, 0(a0)           /* set tcb->xcp.regs = context */
+  mv          a0, sp
+  mv          tp, a2
+
+  /* Save the CPU status */
+
+  csrr        a2, CSR_STATUS
+  li          a3, STATUS_PPP      /* set previous privilege */
+  or          a2, a2, a3
+  REGSTORE    a2, REG_INT_CTX(a0)
+
+  REGSTORE    x1, REG_EPC(a0)     /* save ra to epc */
+
+  /* Save the callee registers */
+
+  REGSTORE    s0,  REG_S0(a0)
+  REGSTORE    s1,  REG_S1(a0)
+  REGSTORE    s2,  REG_S2(a0)
+  REGSTORE    s3,  REG_S3(a0)
+  REGSTORE    s4,  REG_S4(a0)
+  REGSTORE    s5,  REG_S5(a0)
+  REGSTORE    s6,  REG_S6(a0)
+  REGSTORE    s7,  REG_S7(a0)
+  REGSTORE    s8,  REG_S8(a0)
+  REGSTORE    s9,  REG_S9(a0)
+  REGSTORE    s10, REG_S10(a0)
+  REGSTORE    s11, REG_S11(a0)
+
+  addi        a2, sp, XCPTCONTEXT_SIZE
+  REGSTORE    a2, REG_SP(a0)
+  REGSTORE    x1, REG_RA(a0)
+
+  /* Load the callee registers */
+
+  REGLOAD     s0,  REG_S0(a1)
+  REGLOAD     s1,  REG_S1(a1)
+  REGLOAD     s2,  REG_S2(a1)
+  REGLOAD     s3,  REG_S3(a1)
+  REGLOAD     s4,  REG_S4(a1)
+  REGLOAD     s5,  REG_S5(a1)
+  REGLOAD     s6,  REG_S6(a1)
+  REGLOAD     s7,  REG_S7(a1)
+  REGLOAD     s8,  REG_S8(a1)
+  REGLOAD     s9,  REG_S9(a1)
+  REGLOAD     s10, REG_S10(a1)
+  REGLOAD     s11, REG_S11(a1)
+
+  REGLOAD     sp,  REG_SP(a1)
+  REGLOAD     x1,  REG_RA(a1)
+
+  /* Load the CPU status */
+
+  REGLOAD     a2, REG_INT_CTX(a1)
+  csrw        CSR_STATUS, a2
+
+  /* Return to (new) context */
+
+  ret

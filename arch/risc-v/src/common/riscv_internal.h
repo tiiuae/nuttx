@@ -435,8 +435,50 @@ void *riscv_perform_syscall(uintptr_t *regs);
  * riscv_switchcontext(struct tcb_s *prev, struct tcb_s *next);
  */
 
+static inline void riscv_saveaux(struct tcb_s *tcb)
+{
+#ifdef CONFIG_ARCH_FPU
+  /* Save current process FPU state to TCB */
+
+  riscv_savefpu(tcb->xcp.regs, riscv_fpuregs(tcb));
+#endif
+
+#ifdef CONFIG_ARCH_RV_ISA_V
+  /* Save current process VPU state to TCB */
+
+  riscv_savevpu(tcb->xcp.regs, riscv_vpuregs(tcb));
+#endif
+}
+
+static inline void riscv_restoreaux(struct tcb_s *tcb)
+{
+#ifdef CONFIG_ARCH_FPU
+  /* Restore FPU state for next process */
+
+  riscv_restorefpu(tcb->xcp.regs, riscv_fpuregs(tcb));
+#endif
+
+#ifdef CONFIG_ARCH_RV_ISA_V
+  /* Restore VPU state for next process */
+
+  riscv_restorevpu(tcb->xcp.regs, riscv_vpuregs(tcb));
+#endif
+}
+
+void switch_context(uintptr_t **prev, uintptr_t *next, struct tcb_s *tp);
+
 #define riscv_switchcontext(prev, next) \
-  sys_call2(SYS_switch_context, (uintptr_t)prev, (uintptr_t)next)
+  do \
+    { \
+      struct tcb_s *__prev = (prev); \
+      struct tcb_s *__next = (next); \
+      switch_context(&__prev->xcp.regs, __next->xcp.regs, __next); \
+      riscv_saveaux(__prev); \
+      riscv_restoreaux(__next); \
+    } \
+  while(0)
+
+//  sys_call2(SYS_switch_context, (uintptr_t)prev, (uintptr_t)next)
 
 #undef EXTERN
 #ifdef __cplusplus

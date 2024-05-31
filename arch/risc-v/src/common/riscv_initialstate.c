@@ -144,7 +144,7 @@ void up_initial_state(struct tcb_s *tcb)
 
   /* Save the task entry point */
 
-  xcp->regs[REG_EPC]     = (uintptr_t)tcb->start;
+  xcp->regs[REG_RA]      = (uintptr_t)tcb->start;
 
   /* Setup thread local storage pointer */
 

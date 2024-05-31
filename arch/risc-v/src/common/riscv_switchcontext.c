@@ -57,6 +57,8 @@
 
 void up_switch_context(struct tcb_s *tcb, struct tcb_s *rtcb)
 {
+  volatile uintptr_t *regs = NULL;
+
   /* Update scheduler parameters */
 
   nxsched_suspend_scheduler(rtcb);
@@ -65,39 +67,22 @@ void up_switch_context(struct tcb_s *tcb, struct tcb_s *rtcb)
 
   if (CURRENT_REGS)
     {
-      /* Yes, then we have to do things differently.
-       * Just copy the CURRENT_REGS into the OLD rtcb.
-       */
-
-      riscv_savecontext(rtcb);
-
-      /* Update scheduler parameters */
-
-      nxsched_resume_scheduler(tcb);
-
-      /* Then switch contexts.  Any necessary address environment
-       * changes will be made when the interrupt returns.
-       */
-
-      riscv_restorecontext(tcb);
+      regs = CURRENT_REGS;
+      CURRENT_REGS = NULL;
     }
 
-  /* No, then we will need to perform the user context switch */
+  /* Then switch contexts */
 
-  else
+  riscv_switchcontext(rtcb, tcb);
+
+  /* riscv_switchcontext forces a context switch to the task at the
+   * head of the ready-to-run list.  It does not 'return' in the
+   * normal sense.  When it does return, it is because the blocked
+   * task is again ready to run and has execution priority.
+   */
+
+  if (regs)
     {
-      /* Update scheduler parameters */
-
-      nxsched_resume_scheduler(tcb);
-
-      /* Then switch contexts */
-
-      riscv_switchcontext(rtcb, tcb);
-
-      /* riscv_switchcontext forces a context switch to the task at the
-       * head of the ready-to-run list.  It does not 'return' in the
-       * normal sense.  When it does return, it is because the blocked
-       * task is again ready to run and has execution priority.
-       */
+      CURRENT_REGS = regs;
     }
 }
