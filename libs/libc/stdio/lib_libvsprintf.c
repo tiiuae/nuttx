@@ -159,6 +159,15 @@ static int vsprintf_internal(FAR struct lib_outstream_s *stream,
                              FAR struct arg_s *arglist, int numargs,
                              FAR const IPTR char *fmt, va_list ap)
 {
+  // DO NOT MERGE:
+  int test_int = 0;
+  uint8_t test_uint8_t = 0;
+
+  if ( test_int < test_uint8_t ) {
+    test_uint8_t = test_int;
+  }
+
+
   unsigned char c; /* Holds a char from the format string */
   uint16_t flags;
   int width;
