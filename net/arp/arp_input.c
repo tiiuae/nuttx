@@ -135,7 +135,7 @@ static int arp_in(FAR struct net_driver_s *dev)
         break;
 
       case HTONS(ARP_REPLY):
-        ninfo("ARP reply for IP %04lx\n", (unsigned long)ipaddr);
+        nwarn("ARP reply for IP %04lx\n", (unsigned long)ipaddr);
 
         /* ARP reply. We insert or update the ARP table if it was meant
          * for us.
