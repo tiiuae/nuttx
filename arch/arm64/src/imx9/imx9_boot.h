@@ -35,6 +35,13 @@
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+#define SRC_CTRL_OFFSET                 0x10
+#define SRC_SP_ISO_CTRL_OFFSET          0x10C
+#define MEM_CTRL_OFFSET                 0x4
+#define SRC_SLICE_SW_CTRL_OFFSET        0x20
+#define SRC_SLICE_FUNC_STAT_OFFSET      0xb4
+#define SRC_SLICE_AUTHEN_CTRL_OFFSET    0x4
+#define SRC_SLICE_PSW_ACK_CTRL0_OFFSET  0x80
 
 /****************************************************************************
  * Public Function Prototypes

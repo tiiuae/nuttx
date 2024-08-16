@@ -72,6 +72,82 @@ const struct arm_mmu_config g_mmu_config =
   .num_regions = nitems(g_mmu_regions),
   .mmu_regions = g_mmu_regions,
 };
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: imx9_mix_powerup
+ ****************************************************************************/
+#ifdef CONFIG_IMX9_BOOTLOADER
+static void imx9_mix_powerup(void)
+{
+
+  uint32_t val = 0;
+
+  /* Authen ctrl, enable NS access to slice registers */
+  modifyreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_AUTHEN_CTRL_OFFSET, 0, BIT(9));
+  modifyreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_AUTHEN_CTRL_OFFSET, 0, BIT(9));
+
+  /* Counter mode to "01" */
+  modifyreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_PSW_ACK_CTRL0_OFFSET, BIT(28), BIT(29));
+  modifyreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_PSW_ACK_CTRL0_OFFSET, BIT(28), BIT(29));
+
+  /* release media and ml from reset */
+  modifyreg32(IMX9_SRC_GENERAL_REG_BASE + SRC_CTRL_OFFSET, 0, (BIT(4) | BIT(5)));
+
+/* Enable mem in Low power auto sequence */
+  modifyreg32(IMX9_SRC_MEDIA_MEM_BASE + MEM_CTRL_OFFSET, 0, BIT(2));
+  modifyreg32(IMX9_SRC_ML_MEM_BASE + MEM_CTRL_OFFSET, 0, BIT(2));
+
+  /* Mediamix powerdown */
+  modifyreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_SW_CTRL_OFFSET, 0, BIT(31));
+
+  val = getreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+  if (val & 1)
+    {
+      while (!(val & BIT(12)))
+        val = getreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+
+      up_udelay(1);
+    }
+  else
+    {
+      while (!(val & BIT(0)))
+        val = getreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+    }
+
+  /* Power on Mediamix*/
+  modifyreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_SW_CTRL_OFFSET, BIT(31), 0);
+    while (!(val & BIT(4)))
+      val = getreg32(IMX9_SRC_MEDIA_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+
+  /* ML powerdown */
+  modifyreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_SW_CTRL_OFFSET, 0, BIT(31));
+
+  val = getreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+  if (val & 1)
+    {
+      while (!(val & BIT(12)))
+        val = getreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+      up_udelay(1);
+    }
+  else
+    {
+      while (!(val & BIT(0)))
+        val = getreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+    }
+
+  /* Power on ML */
+  modifyreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_SW_CTRL_OFFSET, BIT(31), 0);
+    while (!(val & BIT(4)))
+      val = getreg32(IMX9_SRC_ML_SLICE_BASE + SRC_SLICE_FUNC_STAT_OFFSET);
+
+  /* Disable isolation usb, dsi, csi */
+  putreg32(0, IMX9_SRC_GENERAL_REG_BASE + SRC_SP_ISO_CTRL_OFFSET);
+
+}
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -113,6 +189,10 @@ void arm64_chip_boot(void)
 
   arm64_mmu_init(true);
 
+#ifdef CONFIG_IMX9_BOOTLOADER
+  /* Powrup subsystems */
+  imx9_mix_powerup();
+#endif
   /* Initialize system clocks to some sensible state */
 
   imx9_clockconfig();
