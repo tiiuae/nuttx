@@ -43,7 +43,7 @@
 #include "imx9_serial.h"
 #include "imx9_gpio.h"
 #include "imx9_lowputc.h"
-
+#include "imx9_system_ctl.h"
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -109,6 +109,9 @@ void arm64_el_init(void)
 
 void arm64_chip_boot(void)
 {
+#ifdef CONFIG_IMX9_BOOTLOADER
+  imx9_mix_powerup();
+#endif
   /* MAP IO and DRAM, enable MMU. */
 
   arm64_mmu_init(true);
@@ -118,7 +121,6 @@ void arm64_chip_boot(void)
   imx9_clockconfig();
 
   /* Do UART early initialization & pin muxing */
-
 #ifdef CONFIG_IMX9_LPUART
   imx9_lowsetup();
 #endif
