@@ -62,6 +62,8 @@
 #define KSZ9477_PHY_MMD_SETUP(p)           KSZ9477_PORT_REG(p, 0x11A)
 #define KSZ9477_PHY_MMD_DATA(p)            KSZ9477_PORT_REG(p, 0x11C)
 
+#define KSZ9477_PHY_REMOTE_LP(p)           KSZ9477_PORT_REG(p, 0x122)
+
 /* Note! Unlike in data sheet, the indirect data register reads and
  * writes must be done with 32-bit accesses and the address is
  * 0x204
