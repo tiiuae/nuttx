@@ -959,6 +959,11 @@ config IMX9_ENET1_RGMII
 
 endchoice
 
+config IMX9_ENET1_TX_CLOCK_IS_INPUT
+	bool "ENET1 TX clock is input"
+	default y if IMX9_ENET1_RMII
+	default n if IMX9_ENET1_RGMII
+
 config IMX9_ENET1_PHY_AUTONEG
 	bool "ENET1 PHY autonegotiation enable"
 	default y
