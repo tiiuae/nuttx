@@ -58,6 +58,7 @@ config IMX9_HAVE_ATF_FIRMWARE
 config IMX9_BOOTLOADER
 	bool "Bootloader"
 	select ARM64_DECODEFIQ
+	select IMX9_DDR_TRAINING
 	default n
 	---help---
 		Configure NuttX as the bootloader. NuttX will be compiled
@@ -70,6 +71,13 @@ config BOOTLOADER_SYS_CLOCK
 	---help---
 		If the sysclk is set to a certain value, this should be it.
 		The value is used by the timer interrupt infrastructure.
+
+config IMX9_DDR_TRAINING
+	bool "DDR Training"
+	depends on IMX9_BOOTLOADER
+	default n
+	---help---
+		Perform DDR training to prepare the external memory for use.
 
 menu "i.MX9 Peripheral Selection"
 
