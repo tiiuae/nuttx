@@ -38,14 +38,18 @@ ifeq ($(CONFIG_ARCH_ARMV8R),y)
   ARCHCPUFLAGS += -march=armv8-r
 endif
 
+
 ifeq ($(CONFIG_ARCH_CORTEX_A53),y)
   ARCHCPUFLAGS += -mcpu=cortex-a53
+else ifeq ($(CONFIG_ARCH_CORTEX_A55),y)
+  ARCHCPUFLAGS += -mtune=cortex-a55
 else ifeq ($(CONFIG_ARCH_CORTEX_A57),y)
   ARCHCPUFLAGS += -mcpu=cortex-a57
 else ifeq ($(CONFIG_ARCH_CORTEX_A72),y)
   ARCHCPUFLAGS += -mcpu=cortex-a72
 else ifeq ($(CONFIG_ARCH_CORTEX_R82),y)
   ARCHCPUFLAGS += -mcpu=cortex-r82
+
 endif
 
 ifeq ($(CONFIG_DEBUG_CUSTOMOPT),y)
@@ -96,6 +100,10 @@ ifeq ($(CONFIG_ARCH_FPU),y)
 endif
 
 ARCHCFLAGS += -fno-common
+
+ifeq ($(CONFIG_IMX9_BOOTLOADER),y)
+ARCHCFLAGS +=-mstrict-align
+endif
 ARCHCXXFLAGS += -fno-common -nostdinc++
 
 ARCHCFLAGS += -Wall -Wstrict-prototypes -Wshadow -Wundef -Werror -Wno-attributes -Wno-unknown-pragmas
