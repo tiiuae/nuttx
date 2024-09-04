@@ -85,7 +85,6 @@ void arm64_boot_el3_init(void)
 #endif
           SCR_RW_BIT |    /* EL2 execution state is AArch64 */
           SCR_ST_BIT |    /* Do not trap EL1 accesses to timer */
-          SCR_HCE_BIT |   /* Do not trap HVC */
           SCR_SMD_BIT);   /* Do not trap SMC */
   write_sysreg(reg, scr_el3);
 
@@ -100,19 +99,6 @@ void arm64_boot_el3_init(void)
   ARM64_ISB();
 }
 
-void arm64_boot_el3_get_next_el(uint64_t switch_addr)
-{
-  uint64_t spsr;
-
-  write_sysreg(switch_addr, elr_el3);
-
-  /* Mask the DAIF */
-
-  spsr = SPSR_DAIF_MASK;
-  spsr |= SPSR_MODE_EL2T;
-
-  write_sysreg(spsr, spsr_el3);
-}
 #endif
 
 void arm64_boot_el2_init(void)

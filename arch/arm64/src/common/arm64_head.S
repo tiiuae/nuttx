@@ -158,7 +158,7 @@ real_start:
 
     ldr    x24, [x0, #BOOT_PARAM_SP]
 
-#  ifdef CONFIG_STACK_COLORATION
+#ifdef CONFIG_STACK_COLORATION
     /* Write a known value to the IDLE thread stack to support stack
      * monitoring logic
      */
@@ -171,10 +171,9 @@ real_start:
     str    w2, [x24], #4
     cmp    w1, #0
     bne    .loop
-#  endif
+#endif
 
     ldr    x25, =arm64_boot_secondary_c_routine
-    bl     __reset_prep_c
 
     PRINT(second_boot, "- Ready to Boot Second CPU\r\n")
 
@@ -199,13 +198,14 @@ primary_core:
     /* load stack and entry point */
 
     ldr    x24, =(g_idle_stack + CONFIG_IDLETHREAD_STACKSIZE)
+    /* Make sure that stack align is 16B */
+    and    x24, x24, #0xfffffffffffffff0
 #endif /* CONFIG_SMP */
 
     ldr    x25, =arm64_boot_primary_c_routine
 
-    /* Prepare for calling C code */
-
-    bl     __reset_prep_c
+    /* Prepare for calling C code, set stack */
+    mov sp, x24
 
 #ifdef CONFIG_ARCH_EARLY_PRINT
     /* Initialize the UART for early print.
@@ -232,6 +232,8 @@ switch_el:
     PRINT(switch_el3, "- Boot from EL3\r\n")
 
     /* EL3 init */
+    ldr   x0, =(SCTLR_EL3_RES1 | SCTLR_SA_BIT)
+    msr   sctlr_el3, x0
 
     bl    arm64_boot_el3_init
 
@@ -244,15 +246,17 @@ switch_el:
     b     el3_boot
 #endif
     /* Jump to EL2 */
+    ldr   x0, =(SPSR_DAIF_MASK | SPSR_MODE_EL2T)
+    msr   spsr_el3, x0
     adr   x0, 2f
-    bl    arm64_boot_el3_get_next_el
+    msr   elr_el3, x0
     eret
 #endif
 2:
     PRINT(switch_el2, "- Boot from EL2\r\n")
 
     /* EL2 init */
-
+    mov   sp, x24
     bl    arm64_boot_el2_init
 
     /* Move to EL1 with all exceptions masked */
@@ -267,13 +271,14 @@ switch_el:
 1:
     PRINT(switch_el1, "- Boot from EL1\r\n")
 
+    /* set el1 stack */
+    msr   SPSel, #1
+    mov  sp, x24
     /* EL1 init */
 
     bl    arm64_boot_el1_init
 
-    /* set SP_ELx and Enable SError interrupts */
-
-    msr   SPSel, #1
+    /* Enable SError interrupts */
     msr   DAIFClr, #(DAIFCLR_ABT_BIT)
 
 el3_boot:
@@ -291,58 +296,6 @@ fail:
 1:  wfe
     b     1b
 
-/* Set the minimum necessary to safely call C code */
-
-__reset_prep_c:
-
-    /* return address: x23 */
-
-    mov   x23, lr
-
-    switch_el x0, 3f, 2f, 1f
-3:
-#ifdef CONFIG_ARCH_HAVE_EL3
-    /* Reinitialize SCTLR from scratch in EL3 */
-
-    ldr   w0, =(SCTLR_EL3_RES1 | SCTLR_SA_BIT)
-    msr   sctlr_el3, x0
-#endif
-
-    /* Set SP_EL1 */
-
-    msr   sp_el1, x24
-    b     out
-2:
-    /* Disable alignment fault checking */
-
-    mrs   x0, sctlr_el2
-    bic   x0, x0, SCTLR_A_BIT
-    msr   sctlr_el2, x0
-
-    /* Set SP_EL1 */
-
-    msr   sp_el1, x24
-    b     out
-1:
-    /* Disable alignment fault checking */
-
-    mrs   x0, sctlr_el1
-    bic   x0, x0, SCTLR_A_BIT
-    msr   sctlr_el1, x0
-
-    /* Set SP_EL1. We cannot use sp_el1 at EL1 */
-
-    msr   SPSel, #1
-    mov   sp, x24
-out:
-    isb
-
-    /* Select SP_EL0 and Initialize stack */
-
-    msr   SPSel, #0
-    mov   sp, x24
-
-    ret   x23
 
 #ifdef CONFIG_ARCH_EARLY_PRINT
 
