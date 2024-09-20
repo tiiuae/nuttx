@@ -46,6 +46,10 @@
 #include "imx9_gpio.h"
 #include "imx9_lowputc.h"
 #include "imx9_system_ctl.h"
+#ifdef CONFIG_IMX9_DDR_TRAINING
+#include "ddr/imx9_ddr_training.h"
+#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -129,6 +133,9 @@ void arm64_chip_boot(void)
 
   imx9_clockconfig();
 
+#ifdef CONFIG_IMX9_DDR_TRAINING
+  imx9_dram_init();
+#endif
 #endif
   /* MAP IO and DRAM, enable MMU. */
 
