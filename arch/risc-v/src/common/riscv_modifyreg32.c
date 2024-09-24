@@ -51,7 +51,7 @@ static spinlock_t g_modifyreg_lock = SP_UNLOCKED;
  *
  ****************************************************************************/
 
-void modifyreg32(uintreg_t addr, uint32_t clearbits, uint32_t setbits)
+void modifyreg32(uintptr_t addr, uint32_t clearbits, uint32_t setbits)
 {
   irqstate_t flags;
   uint32_t   regval;
