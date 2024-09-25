@@ -60,7 +60,7 @@
 #endif
 
 #define DCACHE_LINEMASK (ARMV8A_DCACHE_LINESIZE - 1)
-
+#define CACHE_ALIGN_UP(a)   (((a) + DCACHE_LINEMASK) & ~DCACHE_LINEMASK)
 #if !defined(CONFIG_ARM64_DCACHE_DISABLE)
 #  define cache_aligned_alloc(s) kmm_memalign(ARMV8A_DCACHE_LINESIZE,(s))
 #  define CACHE_ALIGNED_DATA     aligned_data(ARMV8A_DCACHE_LINESIZE)
@@ -541,7 +541,7 @@ static struct imx9_dtd_s g_usb1_td[IMX9_NPHYSENDPOINTS];
 
 static struct imx9_usb_s g_usbdev[] =
 {
-#ifdef CONFIG_IMX9_USBDEV_USBC1 
+#ifdef CONFIG_IMX9_USBDEV_USBC1
   {
     .id = 0,
     .base = IMX9_USB_OTG1_BASE,
@@ -696,6 +696,7 @@ static inline void imx9_modifyreg(struct imx9_usb_s *priv, off_t offset,
   reg &= ~clear;
   reg |= set;
   imx9_putreg(priv, offset, reg);
+  ARM64_DSB();
 }
 
 /****************************************************************************
@@ -764,6 +765,9 @@ static inline void imx9_writedtd(struct imx9_dtd_s *dtd,
                                   const uint8_t *data,
                                   uint32_t nbytes)
 {
+  up_invalidate_dcache((uintptr_t)data,
+                  (uintptr_t)data + CACHE_ALIGN_UP(nbytes));
+
   dtd->nextdesc  = DTD_NEXTDESC_INVALID;
   dtd->config    = DTD_CONFIG_LENGTH(nbytes) | DTD_CONFIG_IOC |
       DTD_CONFIG_ACTIVE;
@@ -776,8 +780,9 @@ static inline void imx9_writedtd(struct imx9_dtd_s *dtd,
 
   up_clean_dcache((uintptr_t)dtd,
                   (uintptr_t)dtd + sizeof(struct imx9_dtd_s));
-  up_clean_dcache((uintptr_t)data,
-                  (uintptr_t)data + nbytes);
+
+  up_invalidate_dcache((uintptr_t)dtd->buffer0,
+                       (uintptr_t)dtd->buffer0 + CACHE_ALIGN_UP(nbytes) * 3);
 }
 
 /****************************************************************************
@@ -803,8 +808,8 @@ static void imx9_queuedtd(struct imx9_usb_s *priv, uint8_t epphy,
   dqh->overlay.nextdesc = (uint32_t)(uintptr_t)dtd;
   dqh->overlay.config  &= ~(DTD_CONFIG_ACTIVE | DTD_CONFIG_HALTED);
 
-  up_flush_dcache((uintptr_t)dqh,
-                  (uintptr_t)dqh + sizeof(struct imx9_dqh_s));
+  up_clean_dcache((uintptr_t)dqh,
+                           (uintptr_t)dqh + sizeof(struct imx9_dqh_s));
 
   uint32_t bit = IMX9_ENDPTMASK(epphy);
 
@@ -845,21 +850,19 @@ static void imx9_readsetup(struct imx9_usb_s *priv, uint8_t epphy,
   struct imx9_dqh_s *dqh = &priv->qh[epphy];
   int i;
 
-  do
+  /* Set the trip wire */
+
+  imx9_modifyreg(priv, IMX9_USBDEV_USBCMD_OFFSET, 0, USBDEV_USBCMD_SUTW);
+  ARM64_DSB();
+
+  up_invalidate_dcache((uintptr_t)dqh,
+                        (uintptr_t)dqh + sizeof(struct imx9_dqh_s));
+
+  /* Copy the request... */
+
+  for (i = 0; i < 8; i++)
     {
-      /* Set the trip wire */
-
-      imx9_modifyreg(priv, IMX9_USBDEV_USBCMD_OFFSET, 0, USBDEV_USBCMD_SUTW);
-
-      up_invalidate_dcache((uintptr_t)dqh,
-                           (uintptr_t)dqh + sizeof(struct imx9_dqh_s));
-
-      /* Copy the request... */
-
-      for (i = 0; i < 8; i++)
-        {
-          ((uint8_t *) ctrl)[i] = ((uint8_t *) dqh->setup)[i];
-        }
+      ((uint8_t *) ctrl)[i] = ((uint8_t *) dqh->setup)[i];
     }
 
   while (!(imx9_getreg(priv,
@@ -869,13 +872,11 @@ static void imx9_readsetup(struct imx9_usb_s *priv, uint8_t epphy,
 
   imx9_modifyreg(priv, IMX9_USBDEV_USBCMD_OFFSET, USBDEV_USBCMD_SUTW, 0);
 
-  up_clean_dcache((uintptr_t)dqh,
-                  (uintptr_t)dqh + sizeof(struct imx9_dqh_s));
-
   /* Clear the Setup Interrupt */
 
   imx9_putreg(priv, IMX9_USBDEV_ENDPTSETUPSTAT_OFFSET,
               IMX9_ENDPTMASK(IMX9_EP0_OUT));
+  ARM64_DSB();
 }
 
 /****************************************************************************
@@ -1303,6 +1304,8 @@ static inline void imx9_ep0state(struct imx9_usb_s *priv,
       imx9_putreg(priv, IMX9_USBDEV_ENDPTNAKEN_OFFSET, 0);
       break;
     }
+
+  ARM64_DSB();
 }
 
 /****************************************************************************
@@ -1346,7 +1349,6 @@ static inline void imx9_ep0setup(struct imx9_usb_s *priv)
   value = GETUINT16(ctrl->value);
   index = GETUINT16(ctrl->index);
   len   = GETUINT16(ctrl->len);
-
   priv->ep0.buf_len = len;
 
   uinfo("type=%02x req=%02x value=%04x index=%04x len=%04x\n",
@@ -1870,8 +1872,16 @@ bool imx9_epcomplete(struct imx9_usb_s *priv, uint8_t epphy)
 
   up_invalidate_dcache((uintptr_t)dtd,
                        (uintptr_t)dtd + sizeof(struct imx9_dtd_s));
+
   up_invalidate_dcache((uintptr_t)dtd->buffer0,
-                       (uintptr_t)dtd->buffer0 + dtd->xfer_len);
+    (uintptr_t)dtd->buffer0 + CACHE_ALIGN_UP(dtd->xfer_len));
+
+  up_invalidate_dcache((uintptr_t)dtd->buffer1,
+    (uintptr_t)dtd->buffer1 + CACHE_ALIGN_UP(dtd->xfer_len));
+  up_invalidate_dcache((uintptr_t)dtd->buffer2,
+    (uintptr_t)dtd->buffer2 + CACHE_ALIGN_UP(dtd->xfer_len));
+  up_invalidate_dcache((uintptr_t)dtd->buffer3,
+    (uintptr_t)dtd->buffer3 + CACHE_ALIGN_UP(dtd->xfer_len));
 
   int xfrd = dtd->xfer_len - (dtd->config >> 16);
 
