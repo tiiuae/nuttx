@@ -33,7 +33,7 @@
 #include "imx9_ccm.h"
 #include "imx9_clockconfig.h"
 #include "hardware/imx93/imx93_memorymap.h"
-#include "hardware/imx9_ddr_training.h"
+#include <arch/board/imx9_ddr_training.h>
 
 #include "imx9_trdc.h"
 
