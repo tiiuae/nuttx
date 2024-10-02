@@ -395,7 +395,7 @@ static int cdcacm_sndpacket(FAR struct cdcacm_dev_s *priv)
 
   /* Get the maximum number of bytes that will fit into one bulk IN request */
 
-  reqlen = MAX(CONFIG_CDCACM_BULKIN_REQLEN, ep->maxpacket);
+  reqlen = MIN(CONFIG_CDCACM_BULKIN_REQLEN, ep->maxpacket);
 
   while (!sq_empty(&priv->txfree))
     {
