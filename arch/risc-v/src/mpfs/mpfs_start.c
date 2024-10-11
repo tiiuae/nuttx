@@ -77,6 +77,13 @@ void __mpfs_start(uint64_t mhartid)
       riscv_fpuconfig();
     }
 
+  /* Hart 1 handles the boot, the rest wait */
+
+  if (mhartid > 1)
+    {
+      goto cpux;
+    }
+
   /* Clear .bss.  We'll do this inline (vs. calling memset) just to be
    * certain that there are no issues with the state of global variables.
    */
@@ -180,6 +187,12 @@ void __mpfs_start(uint64_t mhartid)
   nx_start();
 
   showprogress('a');
+
+cpux:
+
+#ifdef CONFIG_SMP
+  riscv_cpu_boot(riscv_hartid_to_cpuid(mhartid));
+#endif
 
   while (true)
     {
