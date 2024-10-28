@@ -1364,6 +1364,7 @@ static bool up_rxflowcontrol(struct uart_dev_s *dev,
 {
   struct up_dev_s *priv = (struct up_dev_s *)dev->priv;
   bool ret = false;
+  uint32_t bytes = 0;
 
   if (nbuffered == 0 || upper == false)
     {
@@ -1378,6 +1379,9 @@ static bool up_rxflowcontrol(struct uart_dev_s *dev,
       /* Full buffer. Disable RX ints and clear the RX FIFO */
 
       up_rxint(dev, false);
+
+      bytes = up_serialin(priv, MPFS_UART_RFC_OFFSET);
+      _info("Dropping %u" PRIu32 " bytes.\n", bytes);
 
       up_serialout(priv, MPFS_UART_FCR_OFFSET, UART_FCR_RFIFOR);
 

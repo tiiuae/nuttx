@@ -52,6 +52,7 @@
 #define MPFS_UART_MM1_OFFSET       0x0034 /* UART Multi-mode control register 1 */
 #define MPFS_UART_MM2_OFFSET       0x0038 /* UART Multi-mode control register 2 */
 #define MPFS_UART_DFR_OFFSET       0x003C /* UART Fractional divisor register */
+#define MPFS_UART_RFC_OFFSET       0x0040 /* UART Receive FIFO count register */
 #define MPFS_UART_GFR_OFFSET       0x0044 /* UART Glitch filter register */
 #define MPFS_UART_TTG_OFFSET       0x0048 /* UART Transmitter time guard register */
 #define MPFS_UART_RTO_OFFSET       0x004C /* UART Receiver time-out register */
