@@ -48,6 +48,14 @@ __start:
   csrw mie, zero
   csrw mip, zero
 
+  /* Clear all IPIs */
+
+  csrr a0, mhartid
+  slli t1, a0, 2
+  li   t0, MPFS_CLINT_BASE
+  add  t1, t1, t0
+  sw   zero, 0(t1)
+
   /* Initialize the Machine Trap Vector */
 
   la   t0, __trap_vec
@@ -97,6 +105,7 @@ __start:
   li   x31, 0
 
   /* Skip delegation register, mmu and floating point initializations if E51 */
+
   csrr a0, mhartid
   beqz a0, .skip_e51
 

@@ -25,6 +25,7 @@
 # POSTBUILD -- Perform post build operations
 
 ifeq ($(CONFIG_MPFS_OPENSBI),y)
+ifneq ($(CONFIG_MPFS_SSBL),y)
 define POSTBUILD
 	$(Q) echo "SBI: Creating nuttx.sbi file"
 	$(Q) $(OBJCOPY) -O binary -j .text.sbi $(BIN) nuttx.sbi
@@ -34,4 +35,13 @@ define POSTBUILD
 	$(Q) $(OBJCOPY) -O binary -R .text.sbi -R .l2_scratchpad $(BIN) nuttx.bin
 	$(Q) ([ $$? -eq 0 ] && echo "Done.")
 endef
+else
+define POSTBUILD
+	$(Q) echo "SBI: Removing unnecessary sections from nuttx binary"
+	$(Q) $(OBJCOPY) -O binary -j .main_toc $(BIN) nuttx.toc
+	$(Q) $(OBJCOPY) -O binary -j .main_toc_sig $(BIN) toc_sig
+	$(Q) $(OBJCOPY) -O binary -R .main_toc -R .main_toc_sig -R .l2_scratchpad $(BIN) nuttx.bin
+	$(Q) $(OBJCOPY) -O binary -R .l2_scratchpad $(BIN) nuttx_final.bin
+endef
+endif
 endif
