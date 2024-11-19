@@ -76,6 +76,10 @@ config NET_ARP_DUMP
 	---help---
 		Dump ARP packets to the SYSLOG device.
 
+config NET_ARP_DUMP_ONLY
+	bool "Dump ARP packet headers only"
+	default n
+
 config NET_ARP_ACD
 	bool "Support of ARP address Address Conflict Detection"
 	default n

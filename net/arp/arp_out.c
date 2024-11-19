@@ -57,6 +57,11 @@
 
 #ifdef CONFIG_NET_ARP
 
+#ifdef CONFIG_NET_ARP_DUMP_ONLY
+#  undef ninfo
+#  define ninfo(...) printf(__VA_ARGS__)
+#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/

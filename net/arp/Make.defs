@@ -37,6 +37,10 @@ ifeq ($(CONFIG_NET_ARP_DUMP),y)
 NET_CSRCS += arp_dump.c
 endif
 
+ifeq ($(CONFIG_NET_ARP_DUMP_ONLY),y)
+NET_CSRCS += arp_dump.c
+endif
+
 ifeq ($(CONFIG_NET_ARP_ACD),y)
 NET_CSRCS += arp_acd.c
 endif

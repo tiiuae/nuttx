@@ -31,7 +31,7 @@ if(CONFIG_NET_ARP)
     list(APPEND SRCS arp_send.c arp_poll.c arp_notify.c)
   endif()
 
-  if(CONFIG_NET_ARP_DUMP)
+  if(CONFIG_NET_ARP_DUMP OR CONFIG_NET_ARP_DUMP_ONLY)
     list(APPEND SRCS arp_dump.c)
   endif()
 

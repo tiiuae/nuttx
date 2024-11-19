@@ -49,7 +49,11 @@
 
 #include "arp/arp.h"
 
-#ifdef CONFIG_NET_ARP_DUMP
+#if defined(CONFIG_NET_ARP_DUMP) || defined(CONFIG_NET_ARP_DUMP_ONLY)
+#ifdef CONFIG_NET_ARP_DUMP_ONLY
+#  undef ninfo
+#  define ninfo(...) printf(__VA_ARGS__)
+#endif
 
 /****************************************************************************
  * Public Functions

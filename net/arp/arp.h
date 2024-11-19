@@ -549,7 +549,7 @@ unsigned int arp_snapshot(FAR struct arpreq *snapshot,
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NET_ARP_DUMP
+#if defined(CONFIG_NET_ARP_DUMP) || defined(CONFIG_NET_ARP_DUMP_ONLY)
 void arp_dump(FAR struct arp_hdr_s *arp);
 #else
 #  define arp_dump(arp)
