@@ -505,6 +505,11 @@ config NET_KSZ9477_PORT_SNIFF
 		All the packets received on port A and/or transmitted on port B
 		can be mirrored on the sniffer port.
 
+config NET_KSZ9477_DUMP_SGMII
+	bool "Enable SGMII register dump on init"
+	depends on NET_KSZ9477
+	default n
+
 menuconfig NET_LAN9250
 	bool "Microchip LAN9250 support"
 	default n

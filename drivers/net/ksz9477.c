@@ -341,6 +341,43 @@ out:
   return ret;
 }
 
+#ifdef CONFIG_NET_KSZ9477_DUMP_SGMII
+static void sgmii_reg_dump()
+{
+  int ret = OK;
+  int i = 0;
+  uint16_t regval16;
+  uint32_t regs[11] = {KSZ9477_SGMII_CONTROL,
+                       KSZ9477_SGMII_STATUS,
+                       KSZ9477_SGMII_ID1,
+                       KSZ9477_SGMII_ID2,
+                       KSZ9477_SGMII_AUTONEG_ADVERTISE,
+                       KSZ9477_SGMII_LINK_PARTNER_ABILITY,
+                       KSZ9477_SGMII_AUTONEG_EXPANSION,
+                       KSZ9477_SGMII_DIGITAL_CONTROL,
+                       KSZ9477_SGMII_AUTONEG_CONTROL,
+                       KSZ9477_SGMII_AUTONEG_STATUS,
+                       0
+                      };
+
+
+
+  while (regs[i] != 0)
+    {
+      ret = ksz9477_sgmii_read_indirect(regs[i],
+                                        &regval16, 1);
+      if (ret != OK)
+        {
+          _alert("Failed to fetch SGMII reg value.\n");
+          break;
+        }
+
+      _alert("%i: 0x%04x\n", i, regval16);
+      i++;
+    }
+}
+#endif
+
 static int ksz9477_custom_error_fixes(ksz9477_port_t port)
 {
   int ret = OK;
@@ -727,6 +764,10 @@ int ksz9477_init(ksz9477_port_t master_port)
       ret = ksz9477_sgmii_write_indirect(KSZ9477_SGMII_AUTONEG_ADVERTISE,
                                          &regval16, 1);
     }
+
+#ifdef CONFIG_NET_KSZ9477_DUMP_SGMII
+    sgmii_reg_dump();
+#endif
 
   /* Configure the static port-based VLANs */
 
