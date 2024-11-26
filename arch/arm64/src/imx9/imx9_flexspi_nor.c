@@ -790,14 +790,13 @@ static ssize_t imx9_flexspi_nor_read(struct mtd_dev_s *dev,
     }
 
   src = priv->ahb_base + offset;
-  DEBUGASSERT(((uintptr_t)src & ALIGN_MASK) == 0);
 
-  up_invalidate_dcache((uintptr_t)buffer,
-                       (uintptr_t)buffer + ALIGN_UP(nbytes));
+  int n = nbytes;
 
-  memcpy(buffer, src, nbytes);
-
-  up_clean_dcache((uintptr_t)buffer, (uintptr_t)buffer + ALIGN_UP(nbytes));
+  while (n-- > 0)
+    {
+      *buffer++ = *src++;
+    }
 
   finfo("return nbytes: %d\n", (int)nbytes);
   return (ssize_t)nbytes;
