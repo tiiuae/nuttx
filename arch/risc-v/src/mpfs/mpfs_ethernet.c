@@ -3390,6 +3390,10 @@ static int mpfs_phyinit(struct mpfs_ethmac_s *priv)
     {
       ret = ksz9477_i2c_init(bus, KSZ9477_PORT_SGMII);
     }
+  else
+    {
+      ret = -EINVAL;
+    }
 
 #endif
 
