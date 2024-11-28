@@ -729,6 +729,12 @@ int ksz9477_init(ksz9477_port_t master_port)
       ret = ksz9477_sgmii_write_indirect(KSZ9477_SGMII_AUTONEG_CONTROL,
                                          &regval16, 1);
 
+      if (ret != OK)
+        {
+          nerr("Failed to set SGMII port into PHY mode, ret %d\n", ret);
+          return ret ? ret : -EINVAL;
+        }
+
       /* Write to autonegotiation advertisement register activates the new
        * setting. Advertise only full duplex.
        */
@@ -736,6 +742,12 @@ int ksz9477_init(ksz9477_port_t master_port)
       regval16 = SGMII_AUTONEG_ADVERTISE_FD;
       ret = ksz9477_sgmii_write_indirect(KSZ9477_SGMII_AUTONEG_ADVERTISE,
                                          &regval16, 1);
+
+      if (ret != OK)
+        {
+          nerr("Failed to set autoneg, ret %d\n", ret);
+          return ret ? ret : -EINVAL;
+        }
     }
 
   /* Configure the static port-based VLANs */
@@ -755,6 +767,12 @@ int ksz9477_init(ksz9477_port_t master_port)
               g_port_vlan_config[i]);
     }
 
+  if (ret != OK)
+    {
+      nerr("Failed to configure VLANs, ret %d\n", ret);
+      return ret ? ret : -EINVAL;
+    }
+
 #endif
 
 #ifdef CONFIG_NET_KSZ9477_PORT_SNIFF
@@ -766,6 +784,12 @@ int ksz9477_init(ksz9477_port_t master_port)
       ret = ksz9477_reg_write8(
               KSZ9477_PORT_MIRROR_CONTROL(KSZ9477_PORT_PHY1 + i),
               g_port_mirror_config[i]);
+    }
+
+  if (ret != OK)
+    {
+      nerr("Failed to configure sniffer port, ret %d\n", ret);
+      return ret ? ret : -EINVAL;
     }
 
 #endif
