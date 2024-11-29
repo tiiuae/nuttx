@@ -42,6 +42,7 @@
 
 #include "mpfs.h"
 #include "mpfs_clockconfig.h"
+#include "riscv_sbi.h"
 
 /****************************************************************************
  * Pre-processor Definitions
