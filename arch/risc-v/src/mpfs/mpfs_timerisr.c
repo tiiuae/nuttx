@@ -33,6 +33,7 @@
 #include <nuttx/spinlock.h>
 
 #include "riscv_internal.h"
+#include "riscv_sbi.h"
 
 #include "mpfs.h"
 #include "mpfs_clockconfig.h"
