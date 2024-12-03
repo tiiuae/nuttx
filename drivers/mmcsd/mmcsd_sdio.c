@@ -55,6 +55,8 @@
 #include "mmcsd.h"
 #include "mmcsd_sdio.h"
 
+#undef ferr
+#define ferr _err
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -1527,7 +1529,7 @@ static ssize_t mmcsd_readsingle(FAR struct mmcsd_state_s *priv,
       ret = SDIO_DMARECVSETUP(priv->dev, buffer, priv->blocksize);
       if (ret != OK)
         {
-          finfo("SDIO_DMARECVSETUP: error %d\n", ret);
+          ferr("SDIO_DMARECVSETUP: error %d\n", ret);
           SDIO_CANCEL(priv->dev);
           return ret;
         }
