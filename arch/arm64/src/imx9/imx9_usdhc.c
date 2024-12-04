@@ -65,6 +65,7 @@
 #endif
 
 #define DCACHE_LINEMASK (ARMV8A_DCACHE_LINESIZE - 1)
+#define DCACHE_ALIGN_UP(a)   (((a) + DCACHE_LINEMASK) & ~DCACHE_LINEMASK)
 
 #if !defined(CONFIG_ARM64_DCACHE_DISABLE)
 #  define cache_aligned_alloc(s) kmm_memalign(ARMV8A_DCACHE_LINESIZE,(s))
@@ -126,6 +127,10 @@
 
 #define SDMMC_MAX_BLOCK_SIZE        (512)
 
+/* Vendor register default value */
+
+#define USDHC_VENDOR_REG_DEFAULT    0x20007809
+
 /* Data transfer / Event waiting interrupt mask bits */
 
 #define USDHC_RESPERR_INTS          (USDHC_INT_CCE | USDHC_INT_CTOE | \
@@ -180,11 +185,11 @@ struct imx9_dev_s
 
   /* Event support */
 
-  sem_t waitsem;                      /* Implements event waiting */
-  sdio_eventset_t waitevents;         /* Set of events to be waited for */
-  uint32_t waitints;                  /* Interrupt enables for event waiting */
-  volatile sdio_eventset_t wkupevent; /* The event that caused the wakeup */
-  struct wdog_s waitwdog;             /* Watchdog that handles event timeouts */
+  sem_t waitsem;                          /* Implements event waiting */
+  volatile sdio_eventset_t waitevents;    /* Set of events to be waited for */
+  volatile uint32_t waitints;             /* Interrupt enables for event waiting */
+  volatile sdio_eventset_t wkupevent;     /* The event that caused the wakeup */
+  struct wdog_s waitwdog;                 /* Watchdog that handles event timeouts */
 
   /* Callback support */
 
@@ -197,7 +202,7 @@ struct imx9_dev_s
   /* Interrupt mode data transfer support */
 
   uint32_t *buffer;                   /* Address of current R/W buffer */
-  size_t remaining;                   /* Number of bytes remaining in the
+  volatile size_t remaining;          /* Number of bytes remaining in the
                                        * transfer */
   uint32_t xfrints;                   /* Interrupt enables for data transfer */
 
@@ -786,16 +791,13 @@ static void imx9_dataconfig(struct imx9_dev_s *priv, bool bwrite,
                              unsigned int datalen, unsigned int timeout)
 {
   unsigned int watermark;
-  uint32_t regval = 0;
 
   /* Set the data timeout value in the USDHC_SYSCTL field to the selected
    * value.
    */
 
-  regval  = getreg32(priv->addr + IMX9_USDHC_SYSCTL_OFFSET);
-  regval &= ~USDHC_SYSCTL_DTOCV_MASK;
-  regval |= timeout << USDHC_SYSCTL_DTOCV_SHIFT;
-  putreg32(regval, priv->addr + IMX9_USDHC_SYSCTL_OFFSET);
+  modifyreg32(priv->addr + IMX9_USDHC_SYSCTL_OFFSET,
+              USDHC_SYSCTL_DTOCV_MASK, timeout << USDHC_SYSCTL_DTOCV_SHIFT);
 
 #if defined(CONFIG_IMX9_USDHC_DMA) && !defined(CONFIG_ARM64_DCACHE_DISABLE)
       /* If cache is enabled, and this is an unaligned receive,
@@ -1165,6 +1167,11 @@ static void imx9_endwait(struct imx9_dev_s *priv,
 
   wd_cancel(&priv->waitwdog);
 
+  /* disable force clock */
+
+  modifyreg32(priv->addr + IMX9_USDHC_VENDOR_OFFSET,
+              USDHC_VENDOR_FRC_SDCLK_ON, 0);
+
   /* Disable event-related interrupts */
 
   imx9_configwaitints(priv, 0, 0, wkupevent);
@@ -1380,9 +1387,8 @@ static int imx9_interrupt(int irq, void *context, void *arg)
             {
               /* Yes.. mask further interrupts and wake the thread up */
 
-              regval  = getreg32(priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET);
-              regval &= ~USDHC_RESPDONE_INTS;
-              putreg32(regval, priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET);
+              modifyreg32(priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET,
+                          USDHC_RESPDONE_INTS, 0);
 
               imx9_endwait(priv, SDIOWAIT_RESPONSEDONE);
             }
@@ -1469,6 +1475,16 @@ static void imx9_reset(struct sdio_dev_s *dev)
     }
 
   mcinfo("Reset complete\n");
+
+  /* Set VENDOR to default value and reset registers
+   * that are not resetted by RSTA
+   */
+
+  putreg32(0x20007809, priv->addr + IMX9_USDHC_VENDOR_OFFSET);
+  putreg32(0, priv->addr + IMX9_USDHC_MMCBOOT_OFFSET);
+  putreg32(0, priv->addr + IMX9_USDHC_MIX_OFFSET);
+  putreg32(0, priv->addr + IMX9_USDHC_CLK_TUNE_CTRL_OFFSET);
+  putreg32(0, priv->addr + IMX9_USDHC_DLL_CONTROL_OFFSET);
 
   /* Make sure that all clocking is disabled */
 
@@ -1839,7 +1855,7 @@ static void imx9_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
       {
         /* Initial ID mode clocking (<400KHz) */
 
-        mcinfo("IDMODE\n");
+        mcerr("IDMODE\n");
 
         /* Put out an additional 80 clocks in case this is a power-up
          * sequence.
@@ -2378,10 +2394,6 @@ static int imx9_cancel(struct sdio_dev_s *dev)
 {
   struct imx9_dev_s *priv = (struct imx9_dev_s *)dev;
 
-#ifdef CONFIG_IMX9_USDHC_DMA
-  uint32_t regval;
-#endif
-
   /* Disable all transfer- and event- related interrupts */
 
   imx9_configxfrints(priv, 0); imx9_configwaitints(priv, 0, 0, 0);
@@ -2402,9 +2414,8 @@ static int imx9_cancel(struct sdio_dev_s *dev)
 
   /* Stop the DMA by resetting the data path */
 
-  regval = getreg32(priv->addr + IMX9_USDHC_SYSCTL_OFFSET);
-  regval |= USDHC_SYSCTL_RSTD;
-  putreg32(regval, priv->addr + IMX9_USDHC_SYSCTL_OFFSET);
+  modifyreg32(priv->addr + IMX9_USDHC_SYSCTL_OFFSET, 0, USDHC_SYSCTL_RSTD);
+
 #endif
 
   /* Mark no transfer in progress */
@@ -2792,6 +2803,12 @@ static void imx9_waitenable(struct sdio_dev_s *dev,
       /* Start the watchdog timer */
 
       delay = MSEC2TICK(timeout);
+
+      /* Force clock */
+
+      modifyreg32(priv->addr + IMX9_USDHC_VENDOR_OFFSET,
+                  0, USDHC_VENDOR_FRC_SDCLK_ON);
+
       ret = wd_start(&priv->waitwdog, delay,
                      imx9_eventtimeout, (wdparm_t)priv);
 
@@ -2833,9 +2850,6 @@ static sdio_eventset_t imx9_eventwait(struct sdio_dev_s *dev)
    * will be non-zero (and, hopefully, the semaphore count will also be
    * non-zero.
    */
-
-  DEBUGASSERT((priv->waitevents != 0 && priv->wkupevent == 0) ||
-              (priv->waitevents == 0 && priv->wkupevent != 0));
 
   /* Loop until the event (or the timeout occurs). Race conditions are
    * avoided by calling imx9_waitenable prior to triggering the logic
@@ -3075,7 +3089,7 @@ static int imx9_dmarecvsetup(struct sdio_dev_s *dev,
   else
     {
       up_invalidate_dcache((uintptr_t)buffer,
-                           (uintptr_t)buffer + buflen);
+                           (uintptr_t)buffer + DCACHE_ALIGN_UP(buflen));
 
       priv->unaligned_rx = false;
     }
@@ -3285,8 +3299,6 @@ static void imx9_callback(void *arg)
 void imx9_usdhc_set_sdio_card_isr(struct sdio_dev_s *dev,
                                    int (*func)(void *), void *arg)
 {
-  irqstate_t flags;
-  uint32_t regval;
   struct imx9_dev_s *priv = (struct imx9_dev_s *)dev;
 
   priv->do_sdio_card = func;
@@ -3308,11 +3320,8 @@ void imx9_usdhc_set_sdio_card_isr(struct sdio_dev_s *dev,
     }
 #endif
 
-  flags  = enter_critical_section();
-  regval = getreg32(priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET);
-  regval = (regval & ~USDHC_INT_CINT) | priv->cintints;
-  putreg32(regval, priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET);
-  leave_critical_section(flags);
+  modifyreg32(priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET,
+              USDHC_INT_CINT, priv->cintints);
 }
 
 /****************************************************************************
