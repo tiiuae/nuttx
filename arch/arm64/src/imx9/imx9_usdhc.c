@@ -1123,6 +1123,7 @@ static void imx9_recvdma(struct imx9_dev_s *priv)
 static void imx9_eventtimeout(wdparm_t arg)
 {
   struct imx9_dev_s *priv = (struct imx9_dev_s *)arg;
+  int sval;
 
   DEBUGASSERT(priv != NULL);
   DEBUGASSERT((priv->waitevents & SDIOWAIT_TIMEOUT) != 0);
@@ -1131,14 +1132,24 @@ static void imx9_eventtimeout(wdparm_t arg)
 
   if ((priv->waitevents & SDIOWAIT_TIMEOUT) != 0)
     {
-      /* Yes.. Sample registers at the time of the timeout */
 
-      imx9_sample(priv, SAMPLENDX_END_TRANSFER);
+     putreg32(priv->cintints,
+               priv->addr + IMX9_USDHC_IRQSIGEN_OFFSET);
 
       /* Wake up any waiting threads */
+      sem_getvalue(&priv->waitsem, &sval);
+      if (sval < 0)
+        {
+          /* Sample registers at the time of the timeout */
 
-      imx9_endwait(priv, SDIOWAIT_TIMEOUT);
-      mcerr("ERROR: Timeout: remaining: %lu\n", priv->remaining);
+          imx9_sample(priv, SAMPLENDX_END_TRANSFER);
+
+          /* End wait with timeout */
+
+          imx9_endwait(priv, SDIOWAIT_TIMEOUT);
+
+          mcerr("ERROR: Timeout: remaining: %lu\n", priv->remaining);
+        }
     }
 }
 
@@ -2396,7 +2407,8 @@ static int imx9_cancel(struct sdio_dev_s *dev)
 
   /* Disable all transfer- and event- related interrupts */
 
-  imx9_configxfrints(priv, 0); imx9_configwaitints(priv, 0, 0, 0);
+  imx9_configxfrints(priv, 0);
+  imx9_configwaitints(priv, 0, 0, 0);
 
   /* Clearing pending interrupt status on all transfer- and event- related
    * interrupts
@@ -2843,62 +2855,21 @@ static void imx9_waitenable(struct sdio_dev_s *dev,
 static sdio_eventset_t imx9_eventwait(struct sdio_dev_s *dev)
 {
   struct imx9_dev_s *priv = (struct imx9_dev_s *)dev;
-  sdio_eventset_t wkupevent = 0; int ret;
 
-  /* There is a race condition here... the event may have completed before
-   * we get here.  In this case waitevents will be zero, but wkupevents
-   * will be non-zero (and, hopefully, the semaphore count will also be
-   * non-zero.
+  /* Wait for an event in event set to occur.  If this the event has
+   * already occurred, then the semaphore will already have been
+   * incremented and there will be no wait.
    */
 
-  /* Loop until the event (or the timeout occurs). Race conditions are
-   * avoided by calling imx9_waitenable prior to triggering the logic
-   * that will cause the wait to terminate.  Under certain race
-   * conditions, the waited-for may have already occurred before this
-   * function was called!
-   */
-
-  for (; ; )
-    {
-      /* Wait for an event in event set to occur.  If this the event has
-       * already occurred, then the semaphore will already have been
-       * incremented and there will be no wait.
-       */
-
-      ret = nxsem_wait_uninterruptible(&priv->waitsem);
-      if (ret < 0)
-        {
-          /* Task canceled.  Cancel the wdog (assuming it was started) and
-           * return an SDIO error.
-           */
-
-          wd_cancel(&priv->waitwdog);
-          return SDIOWAIT_ERROR;
-        }
-
-      wkupevent = priv->wkupevent;
-
-      /* Check if the event has occurred.  When the event has occurred, then
-       * evenset will be set to 0 and wkupevent will be set to a non-zero
-       * value.
-       */
-
-      if (wkupevent != 0)
-        {
-          /* Yes... break out of the loop with wkupevent non-zero */
-
-          break;
-        }
-    }
+  nxsem_wait_uninterruptible(&priv->waitsem);
 
   /* Disable event-related interrupts */
 
-  imx9_configwaitints(priv, 0, 0, 0);
 #ifdef CONFIG_IMX9_USDHC_DMA
   priv->xfrflags = 0;
 #endif
   imx9_dumpsamples(priv);
-  return wkupevent;
+  return priv->wkupevent;
 }
 
 /****************************************************************************
