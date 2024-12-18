@@ -1095,7 +1095,7 @@ static void mpfs_interrupt_work(void *arg)
       if ((rsr & RECEIVE_STATUS_BUFFER_NOT_AVAILABLE) != 0)
         {
           ++rx_error;
-//          nerr("ERROR: Buffer not available RSR: %08" PRIx32 "\n", rsr);
+          nerr("ERROR: Buffer not available RSR: %08" PRIx32 "\n", rsr);
         }
 
       /* Check for HRESP not OK */
@@ -1112,7 +1112,7 @@ static void mpfs_interrupt_work(void *arg)
 
       if (rx_error != 0)
         {
-//          nerr("RX ERROR: reset\n");
+          nerr("RX ERROR: reset\n");
           mpfs_rxreset(priv);
           *priv->queue[queue].int_status = 0xffffffff;
           mac_putreg(priv, RECEIVE_STATUS, 0xffffffff);

@@ -656,8 +656,6 @@ int ksz9477_init(ksz9477_port_t master_port)
   uint32_t regval32;
   uint16_t backup;
 
-  nerr("Initializing..\n");
-
   /* Read the ID registers */
 
   ret = ksz9477_reg_read16(KSZ9477_ID1, &regval16);
@@ -833,8 +831,6 @@ int ksz9477_init(ksz9477_port_t master_port)
     }
 
 #endif
-
-  nerr("Init done, ret %d\n", ret);
 
   return ret;
 }
