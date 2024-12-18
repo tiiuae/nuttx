@@ -964,7 +964,6 @@ static void mpfs_interrupt_work(void *arg)
   uint32_t tsr;
   uint32_t regval;
   uint32_t queue = 0; /* todo: get from arg */
-  uint32_t retries = 5;
 
   /* Process pending Ethernet interrupts */
 
@@ -984,7 +983,7 @@ static void mpfs_interrupt_work(void *arg)
    *   one to this bit.
    */
 
-  while (tsr != 0 && retries > 0)
+  if (tsr != 0)
     {
       ninfo("TX tsr=0x%X\n", tsr);
       uint32_t tx_error = 0;
@@ -1069,12 +1068,6 @@ static void mpfs_interrupt_work(void *arg)
 
           mpfs_txdone(priv, queue);
         }
-
-      /* Re-read transmit status */
-
-      tsr = mac_getreg(priv, TRANSMIT_STATUS);
-
-      retries--;
     }
 
   /* Check for the receipt of an RX packet.
@@ -1084,9 +1077,7 @@ static void mpfs_interrupt_work(void *arg)
    *   in memory. This indication is cleared by writing a one to this bit.
    */
 
-  retries = 5;
-
-  while (rsr != 0 && retries > 0)
+  if (rsr != 0)
     {
       uint32_t rx_error = 0;
       ninfo("RX: rsr=0x%X\n", rsr);
@@ -1104,7 +1095,7 @@ static void mpfs_interrupt_work(void *arg)
       if ((rsr & RECEIVE_STATUS_BUFFER_NOT_AVAILABLE) != 0)
         {
           ++rx_error;
-          nerr("ERROR: Buffer not available RSR: %08" PRIx32 "\n", rsr);
+//          nerr("ERROR: Buffer not available RSR: %08" PRIx32 "\n", rsr);
         }
 
       /* Check for HRESP not OK */
@@ -1121,7 +1112,7 @@ static void mpfs_interrupt_work(void *arg)
 
       if (rx_error != 0)
         {
-          nerr("RX ERROR: reset\n");
+//          nerr("RX ERROR: reset\n");
           mpfs_rxreset(priv);
           *priv->queue[queue].int_status = 0xffffffff;
           mac_putreg(priv, RECEIVE_STATUS, 0xffffffff);
@@ -1138,18 +1129,7 @@ static void mpfs_interrupt_work(void *arg)
 
           mpfs_receive(priv, queue);
         }
-
-      /* Re-read receive status */
-
-      rsr = mac_getreg(priv, RECEIVE_STATUS);
-
-      retries--;
     }
-
-  /* NOTE: We might lost an interrupt here.
-   * Re-enabling interrupts does not trigger an interrupt from events that
-   * have occured during interrupts were disabled.
-   */
 
   net_unlock();
 
