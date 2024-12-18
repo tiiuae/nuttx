@@ -574,6 +574,13 @@ static void mpfs_txdone(struct mpfs_ethmac_s *priv, unsigned int queue)
 
           priv->queue[queue].txtail = 0;
         }
+
+      /* At least one TX descriptor is available.  Re-enable RX interrupts.
+       * RX interrupts may previously have been disabled when we ran out of
+       * TX descriptors (see comments in mpfs_transmit()).
+       */
+
+      *priv->queue[queue].int_enable = INT_RX;
     }
 
   /* Then poll the network for new XMIT data */
