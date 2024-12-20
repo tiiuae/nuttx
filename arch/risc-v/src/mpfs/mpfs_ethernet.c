@@ -969,8 +969,6 @@ static void mpfs_interrupt_work(void *arg)
 
   net_lock();
   isr = *priv->queue[queue].int_status;
-  rsr = mac_getreg(priv, RECEIVE_STATUS);
-  tsr = mac_getreg(priv, TRANSMIT_STATUS);
 
   ninfo("isr: %08" PRIx32 "\n", isr);
 
@@ -982,6 +980,8 @@ static void mpfs_interrupt_work(void *arg)
    * TSR:COMP is set when a frame has been transmitted. Cleared by writing a
    *   one to this bit.
    */
+
+  tsr = mac_getreg(priv, TRANSMIT_STATUS);
 
   if (tsr != 0)
     {
@@ -1077,6 +1077,8 @@ static void mpfs_interrupt_work(void *arg)
    *   in memory. This indication is cleared by writing a one to this bit.
    */
 
+  rsr = mac_getreg(priv, RECEIVE_STATUS);
+
   if (rsr != 0)
     {
       uint32_t rx_error = 0;
@@ -1125,6 +1127,14 @@ static void mpfs_interrupt_work(void *arg)
         }
       else if ((rsr & RECEIVE_STATUS_FRAME_RECEIVED) != 0)
         {
+           if ((isr & GEM_INT_RECEIVE_COMPLETE) != 0)
+              {
+                /* Reset RX watchdog here if was not done in interrupt handler */
+
+                wd_start(&priv->rxtimeout, MPFS_RXTIMEOUT,
+                          mpfs_timeout_expiry, (wdparm_t)priv);
+              }
+
           /* Handle the received packet only in case there are no RX errors */
 
           mpfs_receive(priv, queue);
