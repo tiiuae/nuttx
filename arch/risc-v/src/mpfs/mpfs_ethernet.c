@@ -393,7 +393,7 @@ static int  mpfs_ethconfig(struct mpfs_ethmac_s *priv);
 static void mpfs_ethreset(struct mpfs_ethmac_s *priv);
 
 static void mpfs_interrupt_work(void *arg);
-static void mpfs_txtimeout_expiry(wdparm_t arg);
+static void mpfs_timeout_expiry(wdparm_t arg);
 
 /****************************************************************************
  * Private Functions
@@ -480,7 +480,7 @@ static int mpfs_interrupt_0(int irq, void *context, void *arg)
       /* If a RX transfer just completed, restart the timeout */
 
       wd_start(&priv->rxtimeout, MPFS_RXTIMEOUT,
-               mpfs_txtimeout_expiry, (wdparm_t)priv);
+               mpfs_timeout_expiry, (wdparm_t)priv);
     }
 
   /* Schedule to perform the interrupt processing on the worker thread. */
@@ -1459,7 +1459,7 @@ static int mpfs_txpoll(struct net_driver_s *dev)
  *   1. After completion of a transmission (mpfs_txdone),
  *   2. When new TX data is available (mpfs_txavail), and
  *   3. After a TX timeout to restart the sending process
- *      (mpfs_txtimeout_expiry).
+ *      (mpfs_timeout_expiry).
  *
  * Input Parameters:
  *   priv - Reference to the driver state structure
@@ -1576,7 +1576,7 @@ static int mpfs_ifup(struct net_driver_s *dev)
    */
 
   wd_start(&priv->rxtimeout, MPFS_RXTIMEOUT,
-           mpfs_txtimeout_expiry, (wdparm_t)priv);
+           mpfs_timeout_expiry, (wdparm_t)priv);
 
   return OK;
 }
@@ -2841,10 +2841,10 @@ static void mpfs_buffer_free(struct mpfs_ethmac_s *priv, unsigned int queue)
 }
 
 /****************************************************************************
- * Function: mpfs_txtimeout_work
+ * Function: mpfs_timeout_work
  *
  * Description:
- *   Perform TX timeout related work from the worker thread
+ *   Perform RX/TX timeout related work from the worker thread
  *
  * Input Parameters:
  *   arg - The argument passed when work_queue() as called.
@@ -2857,11 +2857,11 @@ static void mpfs_buffer_free(struct mpfs_ethmac_s *priv, unsigned int queue)
  *
  ****************************************************************************/
 
-static void mpfs_txtimeout_work(void *arg)
+static void mpfs_timeout_work(void *arg)
 {
   struct mpfs_ethmac_s *priv = (struct mpfs_ethmac_s *)arg;
 
-  nerr("ERROR: TX-Timeout!\n");
+  nerr("ERROR: Timeout!\n");
 
   /* Reset the hardware.  Just take the interface down, then back up again. */
 
@@ -2876,7 +2876,7 @@ static void mpfs_txtimeout_work(void *arg)
 }
 
 /****************************************************************************
- * Function: mpfs_txtimeout_expiry
+ * Function: mpfs_timeout_expiry
  *
  * Description:
  *   Our TX watchdog timed out.  Called from the timer interrupt handler.
@@ -2893,7 +2893,7 @@ static void mpfs_txtimeout_work(void *arg)
  *
  ****************************************************************************/
 
-static void mpfs_txtimeout_expiry(wdparm_t arg)
+static void mpfs_timeout_expiry(wdparm_t arg)
 {
   struct mpfs_ethmac_s *priv = (struct mpfs_ethmac_s *)arg;
   unsigned int qi;
@@ -2908,9 +2908,17 @@ static void mpfs_txtimeout_expiry(wdparm_t arg)
       *priv->queue[qi].int_disable = 0xffffffff;
     }
 
+  if (wd_gettime(&priv->rxtimeout) == 0) {
+    _alert("RX timeout!");
+  }
+
+  if (wd_gettime(&priv->txtimeout) == 0) {
+    _alert("TX timeout!");
+  }
+
   /* Schedule to perform the TX timeout processing on the worker thread. */
 
-  work_queue(ETHWORK, &priv->irqwork, mpfs_txtimeout_work, priv, 0);
+  work_queue(ETHWORK, &priv->irqwork, mpfs_timeout_work, priv, 0);
 }
 
 /****************************************************************************
@@ -3011,7 +3019,7 @@ static int mpfs_transmit(struct mpfs_ethmac_s *priv, unsigned int queue)
   /* Set up the TX timeout watchdog (perhaps restarting the timer) */
 
   wd_start(&priv->txtimeout, MPFS_TXTIMEOUT,
-           mpfs_txtimeout_expiry, (wdparm_t)priv);
+           mpfs_timeout_expiry, (wdparm_t)priv);
 
   /* Set d_len to zero meaning that the d_buf[] packet buffer is again
    * available.
