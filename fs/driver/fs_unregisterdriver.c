@@ -50,10 +50,12 @@ int unregister_driver(FAR const char *path)
   /* Call unlink to release driver resource and inode. */
 
   ret = nx_unlink(path);
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   if (ret >= 0)
     {
       return ret;
     }
+#endif
 
   /* If unlink failed, only remove inode. */
 
