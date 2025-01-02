@@ -170,9 +170,9 @@
 
 #define MPFS_TXTIMEOUT   (60 * CLK_TCK)
 
-/* RX timeout = 30s */
+/* RX timeout = 60s */
 
-#define MPFS_RXTIMEOUT   (30 * CLK_TCK)
+#define MPFS_RXTIMEOUT   (60 * CLK_TCK)
 
 /* PHY reset tim in loop counts */
 
