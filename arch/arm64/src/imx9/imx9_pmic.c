@@ -56,58 +56,25 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: imx9_pmic_reset
+ * Name: imx9_pmic_reg_read
  *
  * Description:
- *   Reset SoC via pmic
+ *   Read 8-bit register value from pmic
  *
  ****************************************************************************/
 
-void imx9_pmic_reset(void)
-{
-  struct i2c_master_s *i2c;
-  struct i2c_msg_s msg;
-  uint8_t buffer[2];
-  int ret;
-
-  i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
-
-  if (i2c == NULL)
-    {
-      return;
-    }
-
-  buffer[0] = REG_SW_RST;
-  buffer[1] = COLD_RESET;
-
-  msg.frequency = 400000;
-  msg.addr      = PCA9451A_I2C_ADDR;
-  msg.flags     = 0;
-  msg.buffer    = buffer;
-  msg.length    = 2;
-
-  ret = I2C_TRANSFER(i2c, &msg, 1);
-  if (ret < 0)
-    {
-      _err("ERROR: Failed to write reset via I2C2 interface\n");
-    }
-}
-
-/****************************************************************************
- * Name: imx9_get_pmic_reset_reason
- *
- * Description:
- *   Read reset reason from pmic
- *
- ****************************************************************************/
-
-uint32_t imx9_pmic_getreset_reason(void)
+static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
 {
   struct i2c_master_s *i2c;
   struct i2c_msg_s msgs[2];
-  uint8_t reg_addr = REG_POWERON_STAT;
-  uint8_t data;
+  uint8_t reg_addr = reg;
   int ret;
+
+  if (!value)
+    {
+      _err("Invalid value parameter\n");
+      return -EINVAL;
+    }
 
   i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
   if (i2c == NULL)
@@ -125,17 +92,85 @@ uint32_t imx9_pmic_getreset_reason(void)
   msgs[1].frequency = 400000;
   msgs[1].addr      = PCA9451A_I2C_ADDR;
   msgs[1].flags     = I2C_M_READ;
-  msgs[1].buffer    = &data;
+  msgs[1].buffer    = value;
   msgs[1].length    = 1;
 
   ret = I2C_TRANSFER(i2c, msgs, 2);
   if (ret < 0)
     {
       _err("I2C transfer failed: %d\n", ret);
-      imx9_i2cbus_uninitialize(i2c);
-      return ret;
     }
 
   imx9_i2cbus_uninitialize(i2c);
-  return (uint32_t)data;
+
+  return ret < 0 ? ret : 0; /* negative errno or 0 */
 }
+
+/****************************************************************************
+ * Name: imx9_pmic_reg_read
+ *
+ * Description:
+ *   Write 8-bit register value to pmic
+ *
+ ****************************************************************************/
+
+static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
+{
+  struct i2c_master_s *i2c;
+  struct i2c_msg_s msg;
+  uint8_t buffer[2];
+  int ret;
+
+  i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+  if (i2c == NULL)
+    {
+      _err("Failed to initialize I2C bus\n");
+      return -ENODEV;
+    }
+
+  buffer[0] = reg;
+  buffer[1] = val;
+
+  msg.frequency = 400000;
+  msg.addr      = PCA9451A_I2C_ADDR;
+  msg.flags     = 0;
+  msg.buffer    = buffer;
+  msg.length    = 2;
+
+  ret = I2C_TRANSFER(i2c, &msg, 1);
+  if (ret < 0)
+    {
+      _err("I2C transfer failed: %d\n", ret);
+    }
+
+  imx9_i2cbus_uninitialize(i2c);
+
+  return ret < 0 ? ret : 0; /* negative errno or 0 */
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_reset
+ *
+ * Description:
+ *   Reset SoC via pmic
+ *
+ ****************************************************************************/
+
+int imx9_pmic_reset(void)
+{
+  return imx9_pmic_reg_write(REG_SW_RST, COLD_RESET);
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_get_reset_reason
+ *
+ * Description:
+ *   Read reset reason from pmic
+ *
+ ****************************************************************************/
+
+int imx9_pmic_get_reset_reason(uint8_t *value)
+{
+  return imx9_pmic_reg_read(REG_POWERON_STAT, value);
+}
+
