@@ -45,20 +45,20 @@ extern "C"
 #endif
 
 /****************************************************************************
- * Name: imx9_pmic_getreset_reason
+ * Name: imx9_pmic_get_reset_reason
  *
  * Description:
  *  Read reset reason from pmic via i2c
  *
  * Input Parameters:
- *   None
+ *   Pointer to reset reason value
  *
  * Returned Value:
- *   uin32_t, reset reason
+ *   Zero on success or error code
  *
  ****************************************************************************/
 
-uint32_t imx9_pmic_getreset_reason(void);
+int imx9_pmic_get_reset_reason(uint8_t *value);
 
 /****************************************************************************
  * Name: imx9_pmic_reset
@@ -70,11 +70,11 @@ uint32_t imx9_pmic_getreset_reason(void);
  *   None
  *
  * Returned Value:
- *   None
+ *   Zero on success or error code
  *
  ****************************************************************************/
 
-void imx9_pmic_reset(void);
+int imx9_pmic_reset(void);
 
 #undef EXTERN
 #if defined(__cplusplus)
