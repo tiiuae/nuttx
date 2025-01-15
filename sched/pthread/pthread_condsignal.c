@@ -30,6 +30,8 @@
 #include <errno.h>
 #include <debug.h>
 
+#include <nuttx/atomic.h>
+
 #include "pthread/pthread.h"
 
 /****************************************************************************
@@ -41,10 +43,6 @@
  *
  * Description:
  *    A thread can signal on a condition variable.
- *    pthread_cond_signal shall unblock a thread currently blocked on a
- *    specified condition variable cond. We need own the mutex that threads
- *    calling pthread_cond_wait or pthread_cond_timedwait have associated
- *    with the condition variable during their wait.
  *
  * Input Parameters:
  *   None
@@ -68,10 +66,13 @@ int pthread_cond_signal(FAR pthread_cond_t *cond)
     }
   else
     {
-      if (cond->wait_count > 0)
+      int wcnt = atomic_read((FAR atomic_t *)&cond->wait_count);
+
+      if (wcnt && atomic_cmpxchg((FAR atomic_t *)&cond->wait_count,
+                                 &wcnt,
+                                 wcnt - 1))
         {
           sinfo("Signalling...\n");
-          cond->wait_count--;
           ret = -nxsem_post(&cond->sem);
         }
     }
