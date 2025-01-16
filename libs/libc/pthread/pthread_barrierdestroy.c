@@ -73,9 +73,9 @@ int pthread_barrier_destroy(FAR pthread_barrier_t *barrier)
   else
     {
       ret = sem_getvalue(&barrier->sem, &semcount);
-      if (ret != OK)
+      if (ret < 0)
         {
-          return ret;
+          return get_errno();
         }
 
       if (semcount < 0)
