@@ -93,6 +93,17 @@ extern "C++"
 #  include <nuttx/lib/stdatomic.h>
 #endif
 
+#ifndef atomic_read
+#define atomic_read atomic_load
+#endif
+
+#ifndef atomic_cmpxchg
+#define atomic_cmpxchg atomic_compare_exchange_strong
+#endif
+
+typedef volatile int32_t atomic_t;
+typedef volatile int64_t atomic64_t;
+
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
