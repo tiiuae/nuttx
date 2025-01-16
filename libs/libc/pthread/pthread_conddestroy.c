@@ -72,7 +72,7 @@ int pthread_cond_destroy(FAR pthread_cond_t *cond)
       ret = sem_getvalue(&cond->sem, &sval);
       if (ret < 0)
         {
-          ret = -ret;
+          ret = get_errno();
         }
       else
         {
