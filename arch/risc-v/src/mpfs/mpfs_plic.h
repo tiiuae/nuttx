@@ -58,7 +58,7 @@ void mpfs_plic_init_hart(uintptr_t hartid);
  *
  ****************************************************************************/
 
-uintptr_t mpfs_plic_get_iebase(void);
+uintptr_t mpfs_plic_get_iebase(uintptr_t hartid);
 
 /****************************************************************************
  * Name: mpfs_plic_get_claimbase
@@ -71,7 +71,7 @@ uintptr_t mpfs_plic_get_iebase(void);
  *
  ****************************************************************************/
 
-uintptr_t mpfs_plic_get_claimbase(void);
+uintptr_t mpfs_plic_get_claimbase(uintptr_t hartid);
 
 /****************************************************************************
  * Name: mpfs_plic_get_thresholdbase
