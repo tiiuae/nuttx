@@ -655,6 +655,11 @@ config MPFS_CORESPI_IRQNUM_OFFSET
 	default 1
 	depends on MPFS_CORESPI
 
+config MPFS_CORESPI_DMA
+	bool "CoreSPI FPGA DMA support"
+	default n
+	depends on MPFS_CORESPI
+
 endif # MPFS_HAVE_CORESPI
 
 comment "CorePWM Options"
