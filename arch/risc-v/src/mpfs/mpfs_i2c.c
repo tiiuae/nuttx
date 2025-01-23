@@ -759,6 +759,49 @@ static void mpfs_i2c_sendstart(struct mpfs_i2c_priv_s *priv)
   modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STA_MASK);
 }
 
+/****************************************************************************
+ * Name: mpfs_i2c_recover_buserror
+ *
+ * Description:
+ *   Attempt to recover I2C from bus error.
+ *
+ * Parameters:
+ *   priv          - Pointer to the internal driver state structure.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success, ERROR is returned on failure.
+ *
+ ****************************************************************************/
+
+static int mpfs_i2c_recover_buserror(struct mpfs_i2c_priv_s *priv)
+{
+  uint32_t status;
+  uint32_t retries = 1000;
+
+  /* Try to recover the bus by sending stop and clearing interrupts */
+
+  modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STO_MASK);
+  modifyreg32(MPFS_I2C_CTRL, MPFS_I2C_CTRL_SI_MASK, 0);
+
+  /* Read the control register again to ensure write goes through */
+
+  status = getreg32(MPFS_I2C_CTRL);
+
+  /* Read status to see if we are idle */
+
+  do
+    {
+      status = getreg32(MPFS_I2C_STATUS);
+      if (status == MPFS_I2C_ST_IDLE)
+        {
+          return OK;
+        }
+    }
+  while (retries--);
+
+  return ERROR;
+}
+
 static int mpfs_i2c_transfer(struct i2c_master_s *dev,
                              struct i2c_msg_s *msgs,
                              int count)
@@ -786,8 +829,13 @@ static int mpfs_i2c_transfer(struct i2c_master_s *dev,
   if (status != MPFS_I2C_ST_IDLE)
     {
       i2cerr("I2C bus not idle before transfer! Status: 0x%x\n", status);
-      ret = -EAGAIN;
-      goto errout_with_mutex;
+
+      if (mpfs_i2c_recover_buserror(priv) < 0)
+        {
+          i2cerr("I2C cannot recover bus error!\n");
+          ret = -EAGAIN;
+          goto errout_with_mutex;
+        }
     }
 
   priv->msgv = msgs;
@@ -804,7 +852,7 @@ static int mpfs_i2c_transfer(struct i2c_master_s *dev,
   status = getreg32(MPFS_I2C_CTRL);
   if (status & MPFS_I2C_CTRL_SI_MASK)
     {
-      i2cerr("I2C cannot clear pending interrupt!\n");
+      i2cerr("I2C cannot clear pending interrupt: 0x%x!\n", status);
       ret = -EAGAIN;
       goto errout_with_mutex;
     }
