@@ -101,6 +101,31 @@
 #define SPI_TTOA_US(n, f)   ((((n) << 20) / (f)) + 1)
 #define SPI_TTOA_MARGIN_US  5
 
+/* SPI DNA related registers and constants */
+
+#define MPFS_DMA_BASE      0x4a000000
+#define MPFS_DMA_RAM_BASE  0x60020000
+#define MPFS_DMA_BUF_SIZE  0xd0
+#define MPFS_DMA_THRESHOLD 10
+
+#define MPFS_DMA_RX_CTR    (MPFS_DMA_BASE + 0x00 + priv->id * 0x40)
+#define MPFS_DMA_RX_CNF    (MPFS_DMA_BASE + 0x04 + priv->id * 0x40)
+#define MPFS_DMA_RX_STA    (MPFS_DMA_BASE + 0x08 + priv->id * 0x40)
+#define MPFS_DMA_RX_ADR    (MPFS_DMA_BASE + 0x0c + priv->id * 0x40)
+#define MPFS_DMA_RX_BTT    (MPFS_DMA_BASE + 0x10 + priv->id * 0x40)
+
+#define MPFS_DMA_TX_CTR    (MPFS_DMA_BASE + 0x20 + priv->id * 0x40)
+#define MPFS_DMA_TX_CNF    (MPFS_DMA_BASE + 0x24 + priv->id * 0x40)
+#define MPFS_DMA_TX_STA    (MPFS_DMA_BASE + 0x28 + priv->id * 0x40)
+#define MPFS_DMA_TX_ADR    (MPFS_DMA_BASE + 0x2c + priv->id * 0x40)
+#define MPFS_DMA_TX_BTT    (MPFS_DMA_BASE + 0x30 + priv->id * 0x40)
+
+#define MPFS_DMA_IRQ_MSK   (MPFS_DMA_BASE + 0x38 + priv->id * 0x40)
+#define MPFS_DMA_IRQ_STA   (MPFS_DMA_BASE + 0x3c + priv->id * 0x40)
+
+#define MPFS_DMA_RX_IRQ    (1 << 0)
+#define MPFS_DMA_TX_IRQ    (1 << 1)
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -112,7 +137,8 @@ struct mpfs_spi_config_s
   uint32_t        clk_freq;  /* SPI clock frequency */
   enum spi_mode_e mode;      /* SPI default mode */
   uint32_t        nbits;     /* SPI default amount of bits in frame */
-  bool            use_irq;   /* Use DMA */
+  bool            use_irq;   /* Use IRQ */
+  bool            use_dma;   /* Use DMA */
 };
 
 struct mpfs_spi_priv_s
@@ -122,6 +148,7 @@ struct mpfs_spi_priv_s
 
   uintptr_t                      hw_base;   /* Bus base address */
   uint16_t                       plic_irq;  /* Platform IRQ */
+  uint16_t                       dma_irq;   /* DMA IRQ */
 
   int                            refs;      /* Reference count */
   int                            enabled;   /* Enable flag */
@@ -198,6 +225,11 @@ static const struct mpfs_spi_config_s mpfs_spi_config =
   .mode     = SPIDEV_MODE3,
   .nbits    = 8,
   .use_irq  = true,
+#ifdef CONFIG_MPFS_CORESPI_DMA
+  .use_dma  = true,
+#else
+  .use_dma  = false,
+#endif
 };
 
 static const struct spi_ops_s mpfs_spi_ops =
@@ -242,6 +274,7 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(0),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(0),
+    .dma_irq           = MPFS_IRQ_FABRIC_F2H_34,
     .id                = 0,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
@@ -258,7 +291,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(1),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(1),
-    .id                = 0,
+    .dma_irq           = MPFS_IRQ_FABRIC_F2H_34 + 1,
+    .id                = 1,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -274,7 +308,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(2),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(2),
-    .id                = 0,
+    .dma_irq           = MPFS_IRQ_FABRIC_F2H_34 + 2,
+    .id                = 2,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -290,7 +325,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(3),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(3),
-    .id                = 0,
+    .dma_irq           = 0,
+    .id                = 3,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -306,7 +342,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(4),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(4),
-    .id                = 0,
+    .dma_irq           = 0,
+    .id                = 4,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -322,7 +359,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(5),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(5),
-    .id                = 0,
+    .dma_irq           = 0,
+    .id                = 5,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -338,7 +376,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(6),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(6),
-    .id                = 0,
+    .dma_irq           = 0,
+    .id                = 6,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -354,7 +393,8 @@ static struct mpfs_spi_priv_s g_mpfs_spi_priv[MPFS_CORESPI_INSTANCES] =
     .config            = &mpfs_spi_config,
     .hw_base           = MPFS_CORESPI_BASE + MPFS_CORESPI_INST_OFFSET(7),
     .plic_irq          = MPFS_CORESPI_IRQNUM + MPFS_CORESPI_IRQ_OFFSET(7),
-    .id                = 0,
+    .dma_irq           = 0,
+    .id                = 7,
     .devid             = 0,
     .lock              = NXMUTEX_INITIALIZER,
     .sem_isr           = SEM_INITIALIZER(0),
@@ -933,7 +973,7 @@ static void mpfs_spi_unload_rx_fifo(struct mpfs_spi_priv_s *priv,
  * Name: mpfs_spi_irq_exchange
  *
  * Description:
- *   Exchange a block of data from SPI by DMA.
+ *   Exchange a block of data from SPI by IRQ.
  *
  * Input Parameters:
  *   priv     - SPI private state data
@@ -1033,6 +1073,80 @@ static void mpfs_spi_irq_exchange(struct mpfs_spi_priv_s *priv,
            MPFS_SPI_RXCHOVRFLW |
            MPFS_SPI_DATA_RX |
            MPFS_SPI_TXDONE, MPFS_SPI_INT_CLEAR);
+}
+
+/****************************************************************************
+ * Name: mpfs_spi_dma_exchange
+ *
+ * Description:
+ *   Exchange a block of data from SPI by DMA.
+ *
+ * Input Parameters:
+ *   priv     - SPI private state data
+ *   txbuffer - A pointer to the buffer of data to be sent
+ *   rxbuffer - A pointer to the buffer in which to receive data
+ *   nwords   - the length of data that to be exchanged in units of words.
+ *              The wordsize is determined by the number of bits-per-word
+ *              selected for the SPI interface.  If nbits <= 8, the data is
+ *              packed into uint8_t's; if nbits >8, the data is packed into
+ *              uint16_t's
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
+                                      const void *txbuffer,
+                                      void *rxbuffer, size_t nwords)
+{
+  uint32_t status;
+
+  if (nwords >= MPFS_DMA_BUF_SIZE)
+    {
+      spierr("Transfer size too long! %zu (max: %u)\n", nwords,
+             MPFS_DMA_BUF_SIZE);
+
+      return 0;
+    }
+
+  /* Recover from RX overflow condition if present */
+
+  status = getreg32(MPFS_SPI_STATUS);
+  if (status & MPFS_SPI_RXOVERFLOW)
+    {
+      mpfs_spi_rxoverflow_recover(priv);
+    }
+
+  putreg32(2, MPFS_DMA_RX_CTR);       /* RX DMA stop          */
+  putreg32(2, MPFS_DMA_TX_CTR);       /* TX DMA stop          */
+
+  putreg32(nwords, MPFS_DMA_RX_BTT);  /* RX bytes to transfer */
+  putreg32(nwords, MPFS_DMA_TX_BTT);  /* TX bytes to transfer */
+
+  putreg32(1, MPFS_DMA_RX_CNF);       /* IRQ enable */
+
+  /* Copy TX data into area DMA can handle */
+
+  memcpy((uint8_t *)MPFS_DMA_RAM_BASE + MPFS_DMA_BUF_SIZE +
+         priv->id * (MPFS_DMA_BUF_SIZE * 2), (uint8_t *)txbuffer, nwords);
+
+  putreg32(1, MPFS_DMA_RX_CTR); /* RX DMA start */
+  putreg32(1, MPFS_DMA_TX_CTR); /* TX DMA start */
+
+  if (mpfs_spi_sem_waitdone(priv) < 0)
+    {
+      spiinfo("Message timed out\n");
+    }
+  else
+    {
+      /* Copy data from area DMA has received the data */
+
+      memcpy((uint8_t *)rxbuffer, (uint8_t *)MPFS_DMA_RAM_BASE +
+             priv->id * 2 * MPFS_DMA_BUF_SIZE, nwords);
+    }
+
+  return 0;
 }
 
 /****************************************************************************
@@ -1223,7 +1337,11 @@ static void mpfs_spi_exchange(struct spi_dev_s *dev,
 {
   struct mpfs_spi_priv_s *priv = (struct mpfs_spi_priv_s *)dev;
 
-  if (priv->config->use_irq)
+  if (priv->config->use_dma && (nwords >= MPFS_DMA_THRESHOLD))
+    {
+      mpfs_spi_dma_exchange(priv, txbuffer, rxbuffer, nwords);
+    }
+  else if (priv->config->use_irq)
     {
       mpfs_spi_irq_exchange(priv, txbuffer, rxbuffer, nwords);
     }
@@ -1465,6 +1583,35 @@ static int mpfs_spi_irq(int cpuint, void *context, void *arg)
 }
 
 /****************************************************************************
+ * Name: mpfs_spi_dma_irq
+ *
+ * Description:
+ *   This is the common SPI DMA interrupt handler. It will be invoked when an
+ *   interrupt is received on the device.
+ *
+ * Parameters:
+ *   cpuint        - CPU interrupt index
+ *   context       - Context data from the ISR
+ *   arg           - Opaque pointer to the internal driver state structure.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success. A negated errno value is returned on
+ *   failure.
+ *
+ ****************************************************************************/
+
+static int mpfs_spi_dma_irq(int cpuint, void *context, void *arg)
+{
+  struct mpfs_spi_priv_s *priv = (struct mpfs_spi_priv_s *)arg;
+
+  putreg32(MPFS_DMA_RX_IRQ | MPFS_DMA_TX_IRQ, MPFS_DMA_IRQ_STA);
+
+  nxsem_post(&priv->sem_isr);
+
+  return OK;
+}
+
+/****************************************************************************
  * Name: mpfs_spi_enable
  *
  * Description:
@@ -1512,13 +1659,39 @@ static void mpfs_spi_init(struct spi_dev_s *dev)
   const struct mpfs_spi_config_s *config = priv->config;
 
   up_disable_irq(priv->plic_irq);
+  if (priv->dma_irq)
+    {
+      up_disable_irq(priv->dma_irq);
+    }
+
+  if (priv->config->use_dma)
+    {
+      /* Setup the RX and TX buffers */
+
+      putreg32(MPFS_DMA_BUF_SIZE + priv->id * (MPFS_DMA_BUF_SIZE * 2),
+               MPFS_DMA_TX_ADR);
+      putreg32(priv->id * (MPFS_DMA_BUF_SIZE * 2), MPFS_DMA_RX_ADR);
+
+      /* Mask TX IRQ */
+
+      putreg32(MPFS_DMA_TX_IRQ, MPFS_DMA_IRQ_MSK);
+    }
 
   /* Release FIC reset and enable clocks */
 
   modifyreg32(MPFS_SYSREG_SOFT_RESET_CR,
               SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3,
               0);
+#ifdef CONFIG_MPFS_CORESPI_DMA
+  modifyreg32(MPFS_SYSREG_SOFT_RESET_CR, SYSREG_SOFT_RESET_CR_FIC0, 0);
+#endif
+
   modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, MPFS_SYSREG_SUBBLK_CORESPI);
+
+  modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, SYSREG_SUBBLK_CLOCK_CR_FIC3);
+#ifdef CONFIG_MPFS_CORESPI_DMA
+  modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, SYSREG_SUBBLK_CLOCK_CR_FIC0);
+#endif
 
   /* Make sure the RX interrupt is disabled (we don't use it) */
 
@@ -1552,6 +1725,10 @@ static void mpfs_spi_init(struct spi_dev_s *dev)
   /* Then enable the interrupt */
 
   up_enable_irq(priv->plic_irq);
+  if (priv->dma_irq)
+    {
+      up_enable_irq(priv->dma_irq);
+    }
 }
 
 /****************************************************************************
@@ -1573,8 +1750,17 @@ static void mpfs_spi_deinit(struct spi_dev_s *dev)
   struct mpfs_spi_priv_s *priv = (struct mpfs_spi_priv_s *)dev;
 
   up_disable_irq(priv->plic_irq);
+  if (priv->dma_irq)
+    {
+      up_disable_irq(priv->dma_irq);
+    }
+
   mpfs_spi_enable(priv, 0);
   irq_detach(priv->plic_irq);
+  if (priv->dma_irq)
+    {
+      irq_detach(priv->dma_irq);
+    }
 
   /* Note: cannot disable FIC clock, others might still need it */
 
@@ -1629,6 +1815,16 @@ struct spi_dev_s *mpfs_corespibus_initialize(int port)
     {
       nxmutex_unlock(&priv->lock);
       return NULL;
+    }
+
+  if (priv->dma_irq)
+    {
+      ret = irq_attach(priv->dma_irq, mpfs_spi_dma_irq, priv);
+      if (ret != OK)
+        {
+          nxmutex_unlock(&priv->lock);
+          return NULL;
+        }
     }
 
   mpfs_spi_init(spi_dev);
