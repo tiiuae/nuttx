@@ -78,8 +78,6 @@
 #  define mutex_setprioceiling(m,p,o) nxmutex_setprioceiling(m,p,o)
 #endif
 
-#define COND_WAIT_COUNT(cond) ((FAR atomic_t *)&(cond)->wait_count)
-
 /****************************************************************************
  * Public Data
  ****************************************************************************/

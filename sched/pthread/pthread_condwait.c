@@ -32,7 +32,6 @@
 #include <errno.h>
 #include <debug.h>
 
-#include <nuttx/atomic.h>
 #include <nuttx/cancelpt.h>
 
 #include "pthread/pthread.h"
@@ -89,7 +88,7 @@ int pthread_cond_wait(FAR pthread_cond_t *cond, FAR pthread_mutex_t *mutex)
 
       sinfo("Give up mutex / take cond\n");
 
-      atomic_fetch_add(COND_WAIT_COUNT(cond), 1);
+      cond->wait_count++;
       ret = pthread_mutex_breaklock(mutex, &nlocks);
 
       status = -nxsem_wait_uninterruptible(&cond->sem);
