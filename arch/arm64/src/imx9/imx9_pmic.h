@@ -44,6 +44,12 @@ extern "C"
 #define EXTERN extern
 #endif
 
+#define IMX9_PMIC_RESET_CTRL_DEFAULT                0x21
+
+/* WDOG_B_CFG [7:6]: 11b (Cold Reset) */
+
+#define IMX9_PMIC_RESET_CTRL_WDOG_COLD_RESET_MASK   0xC0
+
 /****************************************************************************
  * Name: imx9_pmic_get_reset_reason
  *
@@ -75,6 +81,38 @@ int imx9_pmic_get_reset_reason(uint8_t *value);
  ****************************************************************************/
 
 int imx9_pmic_reset(void);
+
+/****************************************************************************
+ * Name: imx9_pmic_get_reset_ctrl
+ *
+ * Description:
+ *  Read reset control register value
+ *
+ * Input Parameters:
+ *   Pointer to reset reason value
+ *
+ * Returned Value:
+ *   Zero on success or error code
+ *
+ ****************************************************************************/
+
+int imx9_pmic_get_reset_ctrl(uint8_t *value);
+
+/****************************************************************************
+ * Name: imx9_pmic_set_reset_ctrl
+ *
+ * Description:
+ *  Set reset control register value
+ *
+ * Input Parameters:
+ *   Register value
+ *
+ * Returned Value:
+ *   Zero on success or error code
+ *
+ ****************************************************************************/
+
+int imx9_pmic_set_reset_ctrl(uint8_t val);
 
 #undef EXTERN
 #if defined(__cplusplus)
