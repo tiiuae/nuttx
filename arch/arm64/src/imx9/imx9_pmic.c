@@ -48,6 +48,7 @@
 #define PCA9451A_I2C_ADDR       0x25
 #define REG_SW_RST              0x06
 #define REG_POWERON_STAT        0x05
+#define REG_RESET_CTRL          0x08
 #define COLD_RESET              0x64
 #define WARM_RESET              0x35
 
@@ -174,3 +175,34 @@ int imx9_pmic_get_reset_reason(uint8_t *value)
   return imx9_pmic_reg_read(REG_POWERON_STAT, value);
 }
 
+/****************************************************************************
+ * Name: imx9_pmic_get_reset_ctrl
+ *
+ * Description:
+ *  Read reset control register value
+ *
+ ****************************************************************************/
+
+int imx9_pmic_get_reset_ctrl(uint8_t *value)
+{
+  return imx9_pmic_reg_read(REG_RESET_CTRL, value);
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_set_reset_ctrl
+ *
+ * Description:
+ *  Set reset control register value
+ *
+ * Input Parameters:
+ *   Register value
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+int imx9_pmic_set_reset_ctrl(uint8_t val)
+{
+  return imx9_pmic_reg_write(REG_RESET_CTRL, val);
+}
