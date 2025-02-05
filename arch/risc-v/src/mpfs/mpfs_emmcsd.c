@@ -414,6 +414,10 @@ struct mpfs_dev_s g_emmcsd_dev =
   .waitsem           = SEM_INITIALIZER(0),
 };
 
+/* Not all requests are 32-bit aligned, use a spare buffer workaround */
+
+static uint32_t g_aligned_buffer[4096 / 4];
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -2139,7 +2143,11 @@ static int mpfs_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
   mcinfo("Receive: %zu bytes\n", nbytes);
 
   DEBUGASSERT(priv != NULL && buffer != NULL && nbytes > 0);
-  DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
+  if (((uintptr_t)buffer & 3) != 0)
+    {
+      mcerr("Unaligned buffer: %p\n", buffer);
+      return -EFAULT;
+    }
 
   priv->buffer       = (uint32_t *)buffer;
   priv->remaining    = nbytes;
@@ -2194,13 +2202,33 @@ static int mpfs_sendsetup(struct sdio_dev_s *dev, const
   mcinfo("Send: %zu bytes\n", nbytes);
 
   DEBUGASSERT(priv != NULL && buffer != NULL && nbytes > 0);
-  DEBUGASSERT(((uintptr_t)buffer & 3) == 0);
 
   mpfs_check_lines_busy(priv);
 
+  /* Unaligned (not 32-bit aligned) writes seem to be possible.  Copy data to
+   * an aligned buffer in this case.
+   */
+
+  if (((uintptr_t)buffer & 3) != 0)
+    {
+      if (nbytes <= sizeof(g_aligned_buffer))
+        {
+          memcpy((uint8_t *)g_aligned_buffer, buffer, nbytes);
+          priv->buffer = g_aligned_buffer;
+        }
+      else
+        {
+          mcerr("Request doesn't fit the aligned buffer!\n");
+          return -EFAULT;
+        }
+    }
+  else
+    {
+      priv->buffer = (uint32_t *)buffer;
+    }
+
   /* Save the source buffer information for use by the interrupt handler */
 
-  priv->buffer       = (uint32_t *)buffer;
   priv->remaining    = nbytes;
   priv->receivecnt   = 0;
   priv->polltransfer = true;
@@ -2317,13 +2345,24 @@ static int mpfs_dmasendsetup(struct sdio_dev_s *dev,
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
   if (((uintptr_t)buffer & 3) != 0)
     {
-      mcerr("Unaligned buffer: %p\n", buffer);
-      return -EFAULT;
+      if (buflen <= sizeof(g_aligned_buffer))
+        {
+          memcpy((uint8_t *)g_aligned_buffer, buffer, buflen);
+          priv->buffer = g_aligned_buffer;
+        }
+      else
+        {
+          mcerr("Request doesn't fit the aligned buffer!\n");
+          return -EFAULT;
+        }
+    }
+  else
+    {
+      priv->buffer = (uint32_t *)buffer;
     }
 
   /* Save the source buffer information for use by the interrupt handler */
 
-  priv->buffer       = (uint32_t *)buffer;
   priv->remaining    = buflen;
   priv->receivecnt   = 0;
   priv->polltransfer = false;
