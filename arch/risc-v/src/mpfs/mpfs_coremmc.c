@@ -252,7 +252,7 @@ struct mpfs_dev_s g_coremmc_dev =
 
 /* Not all requests are 32-bit aligned, use a spare buffer workaround */
 
-static uint32_t g_aligned_buffer[512 / 4];
+static uint32_t g_aligned_buffer[4096 / 4];
 
 /****************************************************************************
  * Private Functions
