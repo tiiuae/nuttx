@@ -123,7 +123,7 @@
 
 /* Clocks and timing */
 
-#define MPFS_FPGA_FIC0_CLK                 (50000000)
+#define MPFS_FPGA_FIC0_CLK                 (125000000)
 
 #define COREMMC_CMDTIMEOUT                 (100000)
 #define COREMMC_LONGTIMEOUT                (100000000)
@@ -1070,6 +1070,11 @@ static sdio_capset_t mpfs_capabilities(struct sdio_dev_s *dev)
   if (priv->onebit)
     {
       caps |= SDIO_CAPS_1BIT_ONLY;
+    }
+
+  if ((getreg8(MPFS_COREMMC_VR) >> 2) & 3)
+    {
+      caps |= SDIO_CAPS_4BIT;
     }
 
   return caps;
