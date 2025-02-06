@@ -5,7 +5,7 @@
 
 config FS_SHMFS
 	bool "Shared memory support"
-	default n
+	default y
 	select ARCH_VMA_MAPPING if BUILD_KERNEL
 	---help---
 		Include support for shm_open() and shm_close.
