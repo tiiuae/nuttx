@@ -125,6 +125,7 @@
 
 #define MPFS_FPGA_FIC0_CLK                 (50000000)
 
+#define COREMMC_BUSYTIMEOUT                (180)
 #define COREMMC_CMDTIMEOUT                 (100000)
 #define COREMMC_LONGTIMEOUT                (100000000)
 #define COREMMC_DATA_TIMEOUT               (500000)
@@ -371,9 +372,9 @@ static void mpfs_reset_lines(struct mpfs_dev_s *priv)
  *
  ****************************************************************************/
 
-static bool mpfs_check_lines_busy(struct mpfs_dev_s *priv)
+static bool mpfs_check_lines_busy(struct mpfs_dev_s *priv, uint32_t timeout)
 {
-  uint32_t retries = COREMMC_LONGTIMEOUT;
+  uint32_t retries = timeout;
   uint8_t  ctrl;
 
   do
@@ -384,7 +385,6 @@ static bool mpfs_check_lines_busy(struct mpfs_dev_s *priv)
 
   if (retries == 0)
     {
-      mcerr("Lines are still busy!\n");
       return true;
     }
 
@@ -1341,7 +1341,7 @@ static int mpfs_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
 
   /* Check if command / data lines are busy */
 
-  if (mpfs_check_lines_busy(priv))
+  if (mpfs_check_lines_busy(priv, COREMMC_LONGTIMEOUT))
     {
       mcerr("Busy!\n");
       return -EBUSY;
@@ -1444,7 +1444,7 @@ static int mpfs_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
   priv->receivecnt   = nbytes;
   priv->polltransfer = true;
 
-  mpfs_check_lines_busy(priv);
+  mpfs_check_lines_busy(priv, COREMMC_LONGTIMEOUT);
 
   /* Set up the SDIO data path, reset DAT and CMD lines */
 
@@ -1511,8 +1511,7 @@ static int mpfs_sendsetup(struct sdio_dev_s *dev, const
 
   DEBUGASSERT(priv->fifo_depth >= nbytes);
 
-  mpfs_reset_lines(priv);
-  mpfs_check_lines_busy(priv);
+  mpfs_check_lines_busy(priv, COREMMC_LONGTIMEOUT);
 
   /* Unaligned (not 32-bit aligned) writes seem to be possible.  Copy data to
    * an aligned buffer in this case.
@@ -2063,6 +2062,20 @@ static sdio_eventset_t mpfs_eventwait(struct sdio_dev_s *dev)
         {
           /* Yes... break out of the loop with wkupevent non-zero */
 
+#ifdef CONFIG_BUILD_FLAT
+
+          /* There is no "transfer complete" interrupt in coremmc, so
+           * we need to poll for DAT[0] busy state.
+           * This workaround is for flat build only, because kernel
+           * build has has 10 ms tick length, so the sleep period
+           * would drop the writing speed drastically.
+           */
+
+          while (mpfs_check_lines_busy(priv, COREMMC_BUSYTIMEOUT))
+            {
+              usleep(1);
+            }
+#endif
           break;
         }
     }
