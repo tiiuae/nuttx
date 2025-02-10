@@ -23,10 +23,19 @@
  ****************************************************************************/
 
 #include <stdbool.h>
+#include <nuttx/cache.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/pgalloc.h>
 
 #include "shm/shmfs.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#ifndef ALIGN_UP
+#  define ALIGN_UP(x,a)        ((((x) + (a) - 1) / (a)) * (a))
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -42,10 +51,25 @@ FAR struct shmfs_object_s *shmfs_alloc_object(size_t length)
    * chunk in kernel heap
    */
 
-  object = kmm_zalloc(sizeof(struct shmfs_object_s) + length);
+  size_t hdr_size = sizeof(struct shmfs_object_s);
+  size_t alloc_size = length;
+  size_t cachesize = up_get_dcache_linesize();
+
+  if (cachesize > 0)
+    {
+      hdr_size = ALIGN_UP(hdr_size, cachesize);
+      alloc_size = ALIGN_UP(alloc_size, cachesize);
+      object = memalign(cachesize, hdr_size + alloc_size);
+    }
+  else
+    {
+      object = malloc(hdr_size + alloc_size);
+    }
+
   if (object)
     {
-      object->paddr = (FAR char *)object + sizeof(struct shmfs_object_s);
+      memset(object, 0, hdr_size + alloc_size);
+      object->paddr = (void *)((uintptr_t)object + hdr_size);
       allocated = true;
     }
 
@@ -54,14 +78,27 @@ FAR struct shmfs_object_s *shmfs_alloc_object(size_t length)
    * memory in user heap
    */
 
+  size_t alloc_size = length;
+
   object = kmm_zalloc(sizeof(struct shmfs_object_s));
   if (object)
     {
-      object->paddr = kumm_zalloc(length);
+      size_t cachesize = up_get_dcache_linesize();
+
+      if (cachesize > 0)
+        {
+          alloc_size = ALIGN_UP(alloc_size, cachesize);
+          object->paddr = kumm_memalign(cachesize, alloc_size);
+        }
+      else
+        {
+          object->paddr = kumm_malloc(alloc_size);
+        }
 
       if (object->paddr)
         {
-           allocated = true;
+          memset(object->paddr, 0, alloc_size);
+          allocated = true;
         }
     }
 
