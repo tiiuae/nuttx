@@ -80,4 +80,5 @@ SAVEMake.defs
 SAVEconfig
 .aider*
 imx9-norimage.img
+signed-imx9-norimage.img
 
