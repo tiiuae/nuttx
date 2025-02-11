@@ -746,6 +746,35 @@ config MPFS_CANFD_DATA_BITRATE1
 	default 4000000
 	depends on MPFS_CANFD1
 
+comment "MSS CAN 2.0 Options"
+
+config MPFS_HAVE_MSS_CAN
+	bool "MSS CAN 2.0 peripheral"
+	select ARCH_HAVE_CAN_ERRORS
+	select NET_CAN_EXTID
+	select NET_CAN_HAVE_TX_DEADLINE
+	default n
+
+config MPFS_MSS_CAN0
+	bool "MSS CAN block 0 configured"
+	default n
+	depends on MPFS_HAVE_MSS_CAN
+
+config MPFS_MSS_CAN1
+	bool "MSS CAN block 1 configured"
+	default n
+	depends on MPFS_HAVE_MSS_CAN
+
+config MPFS_MSS_CAN_BITRATE0
+	int "MSS CAN block 0 bitrate"
+	default 1000000
+	depends on MPFS_MSS_CAN0
+
+config MPFS_MSS_CAN_BITRATE1
+	int "MSS CAN block 1 bitrate"
+	default 1000000
+	depends on MPFS_MSS_CAN1
+
 endmenu
 
 config MPFS_DMA
