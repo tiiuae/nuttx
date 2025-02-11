@@ -127,6 +127,9 @@
 #define MPFS_DMA_RX_IRQ    (1 << 0)
 #define MPFS_DMA_TX_IRQ    (1 << 1)
 
+#define MPFS_DMA_CNF_IRQ_ENABLE  (1 << 0)
+#define MPFS_DMA_CNF_ENDIAN_SWAP (1 << 1)
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -1103,6 +1106,11 @@ static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
 {
   uint32_t status;
 
+  if (priv->nbits == 16)
+    {
+      nwords *= 2;
+    }
+
   if (nwords >= MPFS_DMA_BUF_SIZE)
     {
       spierr("Transfer size too long! %zu (max: %u)\n", nwords,
@@ -1125,7 +1133,21 @@ static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
   putreg32(nwords, MPFS_DMA_RX_BTT);  /* RX bytes to transfer */
   putreg32(nwords, MPFS_DMA_TX_BTT);  /* TX bytes to transfer */
 
-  putreg32(1, MPFS_DMA_RX_CNF);       /* IRQ enable */
+  if (priv->nbits == 16)
+    {
+      /* RX IRQ enable and endian swap */
+
+      putreg32(MPFS_DMA_CNF_IRQ_ENABLE | MPFS_DMA_CNF_ENDIAN_SWAP,
+               MPFS_DMA_RX_CNF);
+      putreg32(MPFS_DMA_CNF_ENDIAN_SWAP, MPFS_DMA_TX_CNF);
+    }
+  else
+    {
+      /* RX IRQ enable only */
+
+      putreg32(MPFS_DMA_CNF_IRQ_ENABLE, MPFS_DMA_RX_CNF);
+      putreg32(0, MPFS_DMA_TX_CNF);
+    }
 
   /* Copy TX data into area DMA can handle */
 
