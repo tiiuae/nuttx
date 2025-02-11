@@ -85,3 +85,4 @@ SAVEconfig
 .aider*
 imx9-norimage.img
 config.txt
+signed-imx9-norimage.img
