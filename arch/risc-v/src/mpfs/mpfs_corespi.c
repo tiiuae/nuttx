@@ -106,7 +106,9 @@
 #define MPFS_DMA_BASE      0x4a000000
 #define MPFS_DMA_RAM_BASE  0x60020000
 #define MPFS_DMA_BUF_SIZE  0xd0
-#define MPFS_DMA_THRESHOLD 10
+#ifdef CONFIG_MPFS_CORESPI_DMA
+#define MPFS_DMA_THRESHOLD CONFIG_MPFS_CORESPI_DMATHRESHOLD
+#endif
 
 #define MPFS_DMA_RX_CTR    (MPFS_DMA_BASE + 0x00 + priv->id * 0x40)
 #define MPFS_DMA_RX_CNF    (MPFS_DMA_BASE + 0x04 + priv->id * 0x40)
@@ -1099,6 +1101,7 @@ static void mpfs_spi_irq_exchange(struct mpfs_spi_priv_s *priv,
  *
  ****************************************************************************/
 
+#ifdef CONFIG_MPFS_CORESPI_DMA
 static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
                                       const void *txbuffer,
                                       void *rxbuffer, size_t nwords)
@@ -1170,6 +1173,8 @@ static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
 
   return 0;
 }
+
+#endif
 
 /****************************************************************************
  * Name: mpfs_spi_poll_send
@@ -1359,11 +1364,15 @@ static void mpfs_spi_exchange(struct spi_dev_s *dev,
 {
   struct mpfs_spi_priv_s *priv = (struct mpfs_spi_priv_s *)dev;
 
+#ifdef CONFIG_MPFS_CORESPI_DMA
   if (priv->config->use_dma && (nwords >= MPFS_DMA_THRESHOLD))
     {
       mpfs_spi_dma_exchange(priv, txbuffer, rxbuffer, nwords);
     }
   else if (priv->config->use_irq)
+#else
+  if (priv->config->use_irq)
+#endif
     {
       mpfs_spi_irq_exchange(priv, txbuffer, rxbuffer, nwords);
     }
