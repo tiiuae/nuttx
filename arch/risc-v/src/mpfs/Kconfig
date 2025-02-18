@@ -648,6 +648,15 @@ config MPFS_CORESPI_DMA
 	default n
 	depends on MPFS_CORESPI
 
+config MPFS_CORESPI_DMATHRESHOLD
+	int "CoreSPI DMA threshold"
+	default 10
+	depends on MPFS_CORESPI_DMA
+	---help---
+		When SPI DMA is enabled, small DMA transfers will still be performed
+		by interrupt/polling logic.  But we need a threshold value to determine what
+		is small.
+
 endif # MPFS_HAVE_CORESPI
 
 comment "CorePWM Options"
