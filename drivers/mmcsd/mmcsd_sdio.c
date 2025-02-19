@@ -1320,6 +1320,11 @@ static int mmcsd_transferready(FAR struct mmcsd_state_s *priv)
     {
       ferr("ERROR: mmcsd_eventwait for transfer ready failed: %d\n", ret);
     }
+  else
+    {
+      priv->wrbusy = false;
+      return OK;
+    }
 #endif
 
   starttime = clock_systime_ticks();
