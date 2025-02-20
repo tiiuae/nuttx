@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <debug.h>
+#include <nuttx/spinlock.h>
 
 #include <nuttx/arch.h>
 #include <arch/irq.h>
@@ -50,6 +51,12 @@
 #  define MPFS_PLIC_CLAIMPRIV_OFFSET      (0)
 #  define MPFS_PLIC_THRESHOLDPRIV_OFFSET  (0)
 #endif
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+static volatile spinlock_t g_enable_lock = SP_UNLOCKED;
 
 /****************************************************************************
  * Private Functions
@@ -231,6 +238,8 @@ void mpfs_plic_disable_irq(int extirq)
   uintptr_t claim_address;
   int i;
 
+  irqstate_t flags = spin_lock_irqsave(&g_enable_lock);
+
   /* Disable the irq on all harts */
 
   for (i = 0; i < CONFIG_SMP_NCPUS; i++)
@@ -254,6 +263,8 @@ void mpfs_plic_disable_irq(int extirq)
       iebase = mpfs_plic_get_iebase(riscv_cpuid_to_hartid(i));
       modifyreg32(iebase + (4 * (extirq / 32)), 1 << (extirq % 32), 0);
     }
+
+  spin_unlock_irqrestore(&g_enable_lock, flags);
 }
 
 /****************************************************************************
@@ -264,8 +275,6 @@ void mpfs_plic_disable_irq(int extirq)
  *
  * Assumptions:
  *   - Irq can only be pending, all the irq sources are disabled
- *   - This and mpfs_plic_disable_irq are never called concurrently -
- *     if they were, there would be mutual exclusion needed (spinlock)
  *
  * Returned Value:
  *   None
@@ -280,7 +289,8 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
   uintptr_t pending_address = MPFS_PLIC_IP0 + (4 * (extirq / 32));
   int i;
   uint32_t claim;
-  irqstate_t flags;
+
+  irqstate_t flags = spin_lock_irqsave(&g_enable_lock);
 
   /* Check if the extirq is pending */
 
@@ -295,13 +305,6 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
        */
 
       putreg32(MPFS_PLIC_PRIO_MAX, MPFS_PLIC_PRIORITY + (4 * extirq));
-
-      /* Prevent interrupts on this hart, so that when we enable the
-       * interrupt source, we don trap in case we are now not inside
-       * critical section or in interrupt context
-       */
-
-      flags = up_irq_save();
 
       /* Enable the irq on this hart */
 
@@ -318,8 +321,6 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
       /* Return the irq priority to mininum */
 
       putreg32(MPFS_PLIC_PRIO_MIN, MPFS_PLIC_PRIORITY + (4 * extirq));
-
-      up_irq_restore(flags);
     }
 
   /* Enable the irq on all harts */
@@ -331,4 +332,6 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
       iebase = mpfs_plic_get_iebase(riscv_cpuid_to_hartid(i));
       modifyreg32(iebase + (4 * (extirq / 32)), 0, 1 << (extirq % 32));
     }
+
+  spin_unlock_irqrestore(&g_enable_lock, flags);
 }
