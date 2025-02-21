@@ -234,7 +234,9 @@ uintptr_t mpfs_plic_get_thresholdbase(void)
 
 void mpfs_plic_disable_irq(int extirq)
 {
-  uintptr_t iebase;
+  uintptr_t ie_address;
+  uintptr_t ie_address_offset = 4 * (extirq / 32);
+  uint32_t ie_bit = 1 << (extirq % 32);
   uintptr_t claim_address;
   int i;
 
@@ -260,8 +262,10 @@ void mpfs_plic_disable_irq(int extirq)
 
       /* Clear enable bit for the irq for every hart */
 
-      iebase = mpfs_plic_get_iebase(riscv_cpuid_to_hartid(i));
-      modifyreg32(iebase + (4 * (extirq / 32)), 1 << (extirq % 32), 0);
+      ie_address =
+        mpfs_plic_get_iebase(riscv_cpuid_to_hartid(i)) + ie_address_offset;
+
+      putreg32(getreg32(ie_address) & (~ie_bit), ie_address);
     }
 
   spin_unlock_irqrestore(&g_enable_lock, flags);
@@ -285,8 +289,10 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
 {
   int hartid = up_cpu_index();
   uintptr_t claim_address = mpfs_plic_get_claimbase(hartid);
-  uintptr_t iebase = mpfs_plic_get_iebase(hartid);
   uintptr_t pending_address = MPFS_PLIC_IP0 + (4 * (extirq / 32));
+  uintptr_t ie_address;
+  uintptr_t ie_address_offset = 4 * (extirq / 32);
+  uint32_t ie_bit = 1 << (extirq % 32);
   int i;
   uint32_t claim;
 
@@ -308,7 +314,8 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
 
       /* Enable the irq on this hart */
 
-      modifyreg32(iebase + (4 * (extirq / 32)), 0, 1 << (extirq % 32));
+      ie_address = mpfs_plic_get_iebase(hartid) + ie_address_offset;
+      putreg32(getreg32(ie_address) | ie_bit, ie_address);
 
       /* Now we can claim and ack the pending irq */
 
@@ -329,8 +336,9 @@ void mpfs_plic_clear_and_enable_irq(int extirq)
     {
       /* Set enable bit for the irq */
 
-      iebase = mpfs_plic_get_iebase(riscv_cpuid_to_hartid(i));
-      modifyreg32(iebase + (4 * (extirq / 32)), 0, 1 << (extirq % 32));
+      ie_address =
+        mpfs_plic_get_iebase(riscv_cpuid_to_hartid(i)) + ie_address_offset;
+      putreg32(getreg32(ie_address) | ie_bit, ie_address);
     }
 
   spin_unlock_irqrestore(&g_enable_lock, flags);
