@@ -111,4 +111,54 @@ uint32_t imx9_ele_read_common_fuse(uint32_t fuse_id);
 int imx9_ele_get_key(uint8_t *key, size_t key_size,
                      uint8_t *ctx, size_t ctx_size);
 
+/****************************************************************************
+ * Name: imx9_ele_get_events
+ *
+ * Description:
+ *   Trusted Resource Domain Controller AHAB interface.  This function
+ *   communicates with the Advanced High Assurance Boot (AHAB) image that
+ *   should reside in the particular address. This returns ELE events.
+ *
+ * Input Parameters:
+ *   buffer        -  Event buffer
+ *   buffer_size   -  Event buffer size
+ *
+ * Returned Value:
+ *  Zero (OK) is returned if no envents success. A negated errno value
+ *  is returned on failure. Positive value is number of events read.
+ *
+ ****************************************************************************/
+
+int imx9_ele_get_events(uint32_t *buffer, size_t buffer_size);
+
+/****************************************************************************
+ * Name: imx9_ele_close_device
+ *
+ * Description:
+ *   Trusted Resource Domain Controller AHAB interface.  This function
+ *   communicates with the Advanced High Assurance Boot (AHAB) image that
+ *   should reside in the particular address. This sets device to
+ *   OEM close state. This operation is irreversible.
+ *
+ * Returned Value:
+ *  Zero (OK) is returned if no envents success. A negated errno value
+ *  is returned on failure.
+ *
+ ****************************************************************************/
+
+int imx9_ele_close_device(void);
+
+/****************************************************************************
+ * Name: imx9_ele_get_lifecycle
+ *
+ * Description:
+ *   This returns devices lifecycle value
+ *
+ * Returned Value:
+ *  Lifecycle value
+ *
+ ****************************************************************************/
+
+uint32_t imx9_ele_get_lifecycle(void);
+
 #endif /* __ARCH_ARM64_SRC_IMX9_IMX9_ELE_H */
