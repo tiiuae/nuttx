@@ -37,7 +37,9 @@
 #define AHAB_RESP_TAG           0xe1
 #define ELE_RELEASE_RDC_REQ     0xc4
 #define ELE_READ_FUSE_REQ       0x97
+#define ELE_GET_EVENTS          0xa2
 #define ELE_DERIVE_KEY_REQ      0xa9
+#define ELE_FWD_LIFECYCLE_UP    0x95
 #define ELE_OK                  0xd6
 
 #define ELE_MU_TCR (IMX9_S3MUA_BASE+ 0x120)
@@ -49,6 +51,8 @@
 #define ELE_TR_NUM        8
 #define ELE_MU_TR(i) (IMX9_S3MUA_BASE + 0x200 + (i) * 4)
 #define ELE_MU_RR(i) (IMX9_S3MUA_BASE + 0x280 + (i) * 4)
+
+#define FSB_LC_REG              0x4751041cUL
 
 struct ele_header_t
 {

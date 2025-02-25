@@ -257,3 +257,61 @@ int imx9_ele_get_key(uint8_t *key, size_t key_size,
   return -EIO;
 }
 
+int imx9_ele_get_events(uint32_t *buffer, size_t buffer_size)
+{
+  size_t events_num;
+  size_t i;
+
+  msg.header.version = AHAB_VERSION;
+  msg.header.tag = AHAB_CMD_TAG;
+  msg.header.size = 1;
+  msg.header.command = ELE_GET_EVENTS;
+
+  imx9_ele_sendmsg(&msg);
+  imx9_ele_receivemsg(&msg);
+
+  if ((msg.data[0] & 0xff) == ELE_OK)
+    {
+      events_num = msg.data[1] & 0xffff;
+      if (buffer)
+        {
+          for (i = 0; (i < buffer_size) && (i < events_num); i++)
+            {
+              buffer[i] =  msg.data[i + 2];
+            }
+
+          return (int)i;
+        }
+      else
+        {
+          return (int)events_num;
+        }
+    }
+
+  return -EIO;
+}
+
+int imx9_ele_close_device(void)
+{
+  msg.header.version = AHAB_VERSION;
+  msg.header.tag = AHAB_CMD_TAG;
+  msg.header.size = 2;
+  msg.header.command = ELE_FWD_LIFECYCLE_UP;
+  msg.data[0] = 0x08;
+
+  imx9_ele_sendmsg(&msg);
+  imx9_ele_receivemsg(&msg);
+
+  if ((msg.data[0] & 0xff) == ELE_OK)
+    {
+      return 0;
+    }
+
+  return -EIO;
+}
+
+uint32_t imx9_ele_get_lifecycle(void)
+{
+  return (getreg32(FSB_LC_REG) & 0x3ff);
+}
+
