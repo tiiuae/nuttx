@@ -369,54 +369,54 @@ __attribute__((section(".ram"))) void mpfs_mux_post_mss_pll_config(void)
  *
  ****************************************************************************/
 
-static int mpfs_pll_config(void)
-{
-  uint32_t retries = MPFS_DEFAULT_RETRIES;
+// static int mpfs_pll_config(void)
+// {
+//   uint32_t retries = MPFS_DEFAULT_RETRIES;
 
-  putreg32(PLL_INIT_AND_OUT_OF_RESET, MPFS_IOSCB_MSS_PLL_SOFT_RESET);
-  putreg32(PLL_INIT_AND_OUT_OF_RESET, MPFS_IOSCB_DDR_PLL_SOFT_RESET);
+//   putreg32(PLL_INIT_AND_OUT_OF_RESET, MPFS_IOSCB_MSS_PLL_SOFT_RESET);
+//   putreg32(PLL_INIT_AND_OUT_OF_RESET, MPFS_IOSCB_DDR_PLL_SOFT_RESET);
 
-  putreg32(LIBERO_SETTING_MSS_PLL_CTRL & ~(PLL_CTRL_REG_POWERDOWN_B_MASK),
-           MPFS_IOSCB_MSS_PLL_CTRL);
+//   putreg32(LIBERO_SETTING_MSS_PLL_CTRL & ~(PLL_CTRL_REG_POWERDOWN_B_MASK),
+//            MPFS_IOSCB_MSS_PLL_CTRL);
 
-  putreg32(LIBERO_SETTING_MSS_PLL_REF_FB, MPFS_IOSCB_MSS_PLL_REF_FB);
+//   putreg32(LIBERO_SETTING_MSS_PLL_REF_FB, MPFS_IOSCB_MSS_PLL_REF_FB);
 
-  putreg32(LIBERO_SETTING_MSS_PLL_DIV_0_1, MPFS_IOSCB_MSS_PLL_DIV_0_1);
-  putreg32(LIBERO_SETTING_MSS_PLL_DIV_2_3, MPFS_IOSCB_MSS_PLL_DIV_2_3);
-  putreg32(LIBERO_SETTING_MSS_PLL_CTRL2, MPFS_IOSCB_MSS_PLL_CTRL2);
-  putreg32(LIBERO_SETTING_MSS_PLL_FRACN, MPFS_IOSCB_MSS_PLL_FRACN);
-  putreg32(LIBERO_SETTING_MSS_SSCG_REG_0, MPFS_IOSCB_MSS_PLL_SSCG_REG_0);
-  putreg32(LIBERO_SETTING_MSS_SSCG_REG_1, MPFS_IOSCB_MSS_PLL_SSCG_REG_1);
-  putreg32(LIBERO_SETTING_MSS_SSCG_REG_2, MPFS_IOSCB_MSS_PLL_SSCG_REG_2);
-  putreg32(LIBERO_SETTING_MSS_SSCG_REG_3, MPFS_IOSCB_MSS_PLL_SSCG_REG_3);
+//   putreg32(LIBERO_SETTING_MSS_PLL_DIV_0_1, MPFS_IOSCB_MSS_PLL_DIV_0_1);
+//   putreg32(LIBERO_SETTING_MSS_PLL_DIV_2_3, MPFS_IOSCB_MSS_PLL_DIV_2_3);
+//   putreg32(LIBERO_SETTING_MSS_PLL_CTRL2, MPFS_IOSCB_MSS_PLL_CTRL2);
+//   putreg32(LIBERO_SETTING_MSS_PLL_FRACN, MPFS_IOSCB_MSS_PLL_FRACN);
+//   putreg32(LIBERO_SETTING_MSS_SSCG_REG_0, MPFS_IOSCB_MSS_PLL_SSCG_REG_0);
+//   putreg32(LIBERO_SETTING_MSS_SSCG_REG_1, MPFS_IOSCB_MSS_PLL_SSCG_REG_1);
+//   putreg32(LIBERO_SETTING_MSS_SSCG_REG_2, MPFS_IOSCB_MSS_PLL_SSCG_REG_2);
+//   putreg32(LIBERO_SETTING_MSS_SSCG_REG_3, MPFS_IOSCB_MSS_PLL_SSCG_REG_3);
 
-  /* PLL phase register */
+//   /* PLL phase register */
 
-  putreg32(LIBERO_SETTING_MSS_PLL_PHADJ, MPFS_IOSCB_MSS_PLL_PHADJ);
+//   putreg32(LIBERO_SETTING_MSS_PLL_PHADJ, MPFS_IOSCB_MSS_PLL_PHADJ);
 
-  /* Write powerdown_int_b = 1, start up the PLL with new parameters
-   * and wait for it to lock.
-   */
+//   /* Write powerdown_int_b = 1, start up the PLL with new parameters
+//    * and wait for it to lock.
+//    */
 
-  mss_mux_pre_mss_pll_config();
+//   mss_mux_pre_mss_pll_config();
 
-  putreg32(LIBERO_SETTING_MSS_PLL_CTRL | 0x01, MPFS_IOSCB_MSS_PLL_CTRL);
+//   putreg32(LIBERO_SETTING_MSS_PLL_CTRL | 0x01, MPFS_IOSCB_MSS_PLL_CTRL);
 
-  /* Start up the PLL with new parameters. Wait for it to lock. */
+//   /* Start up the PLL with new parameters. Wait for it to lock. */
 
-  while (!(getreg32(MPFS_IOSCB_MSS_PLL_CTRL) & PLL_CTRL_LOCK_BIT) &&
-        --retries);
+//   while (!(getreg32(MPFS_IOSCB_MSS_PLL_CTRL) & PLL_CTRL_LOCK_BIT) &&
+//         --retries);
 
-  DEBUGASSERT(retries > 0);
+//   DEBUGASSERT(retries > 0);
 
-  /* Processor enables all 4 PLL outputs. Set mssclk_mux_sel_int = 1 to
-   * select the MSS PLL clock.
-   */
+//   /* Processor enables all 4 PLL outputs. Set mssclk_mux_sel_int = 1 to
+//    * select the MSS PLL clock.
+//    */
 
-  mpfs_mux_post_mss_pll_config();
+//   mpfs_mux_post_mss_pll_config();
 
-  return 0;
-}
+//   return 0;
+// }
 
 /****************************************************************************
  * Name: mpfs_sgmii_setup
