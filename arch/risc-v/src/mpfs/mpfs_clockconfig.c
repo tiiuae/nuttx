@@ -272,17 +272,17 @@ static void mpfs_set_early_late_thresholds(uint8_t n_late_threshold,
  *
  ****************************************************************************/
 
-static void mss_mux_pre_mss_pll_config(void)
-{
-  putreg32(LIBERO_SETTING_MSS_PLL_CKMUX, MPFS_IOSCB_MSS_MUX_PLL_CKMUX);
-  putreg32(LIBERO_SETTING_SGMII_CLK_XCVR, MPFS_IOSCB_SGMII_MUX_CLK_XCVR);
-  putreg32(LIBERO_SETTING_MSS_BCLKMUX, MPFS_IOSCB_MSS_MUX_BCLKMUX);
-  putreg32(LIBERO_SETTING_MSS_FMETER_ADDR, MPFS_IOSCB_MSS_MUX_FMETER_ADDR);
-  putreg32(LIBERO_SETTING_MSS_FMETER_DATAW, MPFS_IOSCB_MSS_MUX_FMETER_DATAW);
-  putreg32(LIBERO_SETTING_MSS_FMETER_DATAR, MPFS_IOSCB_MSS_MUX_FMETER_DATAR);
+// static void mss_mux_pre_mss_pll_config(void)
+// {
+//   putreg32(LIBERO_SETTING_MSS_PLL_CKMUX, MPFS_IOSCB_MSS_MUX_PLL_CKMUX);
+//   putreg32(LIBERO_SETTING_SGMII_CLK_XCVR, MPFS_IOSCB_SGMII_MUX_CLK_XCVR);
+//   putreg32(LIBERO_SETTING_MSS_BCLKMUX, MPFS_IOSCB_MSS_MUX_BCLKMUX);
+//   putreg32(LIBERO_SETTING_MSS_FMETER_ADDR, MPFS_IOSCB_MSS_MUX_FMETER_ADDR);
+//   putreg32(LIBERO_SETTING_MSS_FMETER_DATAW, MPFS_IOSCB_MSS_MUX_FMETER_DATAW);
+//   putreg32(LIBERO_SETTING_MSS_FMETER_DATAR, MPFS_IOSCB_MSS_MUX_FMETER_DATAR);
 
-  mpfs_wait_cycles(400);
-}
+//   mpfs_wait_cycles(400);
+// }
 
 /****************************************************************************
  * Name: mss_mux_pre_mss_pll_config
