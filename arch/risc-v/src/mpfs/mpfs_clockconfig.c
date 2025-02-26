@@ -629,7 +629,7 @@ void mpfs_clockconfig(void)
 
   /* Setup the MSS PLL */
 
-  mpfs_pll_config();
+  //mpfs_pll_config();
 }
 
 #endif
