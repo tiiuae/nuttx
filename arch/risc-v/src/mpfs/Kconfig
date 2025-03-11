@@ -907,13 +907,6 @@ config MPFS_ETHMAC_HPWORK
 	---help---
 		Select HPWORK workqueue for eth ISR work
 
-config MPFS_ETHMAC_LPWORK
-	bool "Use LP workqueue"
-	default n
-	depends on MPFS_ETHMAC
-	---help---
-		Select LPWORK workqueue for eth ISR work
-
 config MPFS_ETHMAC_MDC_CLOCK_SOURCE_HZ
 	int "MDC Clock Source (Hz)"
 	default 125000000
