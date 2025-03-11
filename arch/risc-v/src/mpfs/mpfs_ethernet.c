@@ -100,10 +100,8 @@
 
 #  if defined(CONFIG_MPFS_ETHMAC_HPWORK)
 #    define ETHWORK HPWORK
-#  elif defined(CONFIG_MPFS_ETHMAC_LPWORK)
-#    define ETHWORK LPWORK
 #  else
-#    define ETHWORK HPWORK
+#    define ETHWORK LPWORK
 #  endif
 #endif
 
@@ -274,6 +272,7 @@ struct mpfs_ethmac_s
   struct wdog_s rxtimeout;                       /* RX timeout timer */
   struct work_s irqwork;                         /* For deferring interrupt work to the work queue */
   struct work_s pollwork;                        /* For deferring poll work to the work queue */
+  struct work_s timeoutwork;                     /* For managing timeouts */
 
   /* This holds the information visible to the NuttX network */
 
@@ -2913,7 +2912,7 @@ static void mpfs_txtimeout_expiry(wdparm_t arg)
 
   /* Schedule to perform the TX timeout processing on the worker thread. */
 
-  work_queue(ETHWORK, &priv->irqwork, mpfs_txtimeout_work, priv, 0);
+  work_queue(LPWORK, &priv->timeoutwork, mpfs_txtimeout_work, priv, 0);
 }
 
 /****************************************************************************
