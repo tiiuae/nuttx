@@ -33,6 +33,7 @@
 #include <nuttx/init.h>
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/mm/kmap.h>
 
 #include "sched/sched.h"
 #include "semaphore/semaphore.h"
@@ -128,6 +129,10 @@ int nxsem_wait(FAR sem_t *sem)
 
       sem->semcount--;
 
+#ifdef CONFIG_MM_KMAP
+      sem = kmm_map_user(rtcb, sem, sizeof(*sem));
+#endif
+
       /* Save the waited on semaphore in the TCB */
 
       rtcb->waitobj = sem;
@@ -211,6 +216,10 @@ int nxsem_wait(FAR sem_t *sem)
        */
 
       ret = rtcb->errcode != OK ? -rtcb->errcode : OK;
+
+#ifdef CONFIG_MM_KMAP
+      kmm_unmap(sem);
+#endif
 
 #ifdef CONFIG_PRIORITY_INHERITANCE
       if (prioinherit != 0)
