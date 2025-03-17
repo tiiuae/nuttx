@@ -52,6 +52,8 @@
 #include "mpfs_memorymap.h"
 
 #include "hardware/mpfs_fpga_canfd.h"
+#include "hardware/mpfs_sysreg.h"
+#include "hardware/mpfs_fpga_sysreg.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -2470,6 +2472,19 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
               SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3,
               0);
   modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, SYSREG_SUBBLK_CLOCK_CR_FIC3);
+
+  /* Release reset for CAN IP */
+
+  if (priv->base == CONFIG_MPFS_CANFD_BASE0)
+    {
+      modifyreg32(MPFS_FPGA_SYSREG_CAN,
+                  MPFS_FPGA_SYSREG_SOFT_RESET_CR(0), 0);
+    }
+  else
+    {
+      modifyreg32(MPFS_FPGA_SYSREG_CAN,
+                  MPFS_FPGA_SYSREG_SOFT_RESET_CR(1), 0);
+    }
 
   /* Reset CAN controller */
 
