@@ -50,6 +50,8 @@
 #include "mpfs_i2c.h"
 #include "riscv_internal.h"
 #include "hardware/mpfs_i2c.h"
+#include "hardware/mpfs_sysreg.h"
+#include "hardware/mpfs_fpga_sysreg.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -369,13 +371,18 @@ static int mpfs_i2c_init(struct mpfs_i2c_priv_s *priv)
 
       if (priv->fpga)
         {
-          /* FIC3 is used by many, don't reset it here, or many
-           * FPGA based modules will stop working right here. Just
-           * bring out of reset instead.
-           */
+          /* Toggle reset */
+
+          modifyreg32(MPFS_FPGA_SYSREG_I2C,
+                      0, MPFS_FPGA_SYSREG_SOFT_RESET_CR(priv->id));
+
+          modifyreg32(MPFS_FPGA_SYSREG_I2C,
+                      MPFS_FPGA_SYSREG_SOFT_RESET_CR(priv->id), 0);
+
+          /* Release FPGA, FIC3 from reset and enable clock */
 
           modifyreg32(MPFS_SYSREG_SOFT_RESET_CR,
-                      SYSREG_SOFT_RESET_CR_FIC3 | SYSREG_SOFT_RESET_CR_FPGA,
+                      SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3,
                       0);
 
           modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0,
