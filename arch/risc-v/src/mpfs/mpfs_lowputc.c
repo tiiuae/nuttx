@@ -34,6 +34,7 @@
 #include "hardware/mpfs_memorymap.h"
 #include "hardware/mpfs_uart.h"
 #include "mpfs.h"
+#include "mpfs_rcc.h"
 #include "mpfs_clockconfig.h"
 #include "mpfs_config.h"
 
@@ -306,6 +307,36 @@ void mpfs_lowsetup(void)
 
   modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET,
               0, MPFS_CONSOLE_CLOCKBIT);
+
+#ifdef CONFIG_MPFS_FPGA_UART
+  switch (MPFS_CONSOLE_BASE)
+    {
+    case MPFS_FPGA_UART0_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 0, 0);
+      break;
+    case MPFS_FPGA_UART1_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 1, 0);
+      break;
+    case MPFS_FPGA_UART2_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 2, 0);
+      break;
+    case MPFS_FPGA_UART3_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 3, 0);
+      break;
+    case MPFS_FPGA_UART4_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 4, 0);
+      break;
+    case MPFS_FPGA_UART5_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 5, 0);
+      break;
+    case MPFS_FPGA_UART6_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 6, 0);
+      break;
+    case MPFS_FPGA_UART7_BASE:
+      mpfs_set_reset(MPFS_RCC_UART, 7, 0);
+      break;
+    }
+#endif
 
   switch (MPFS_CONSOLE_BITS)
     {
