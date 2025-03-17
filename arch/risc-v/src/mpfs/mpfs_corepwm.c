@@ -45,6 +45,9 @@
 #include <arch/board/board.h>
 
 #include "hardware/mpfs_corepwm.h"
+#include "hardware/mpfs_sysreg.h"
+#include "hardware/mpfs_fpga_sysreg.h"
+
 #include "riscv_internal.h"
 
 /****************************************************************************
@@ -794,6 +797,11 @@ struct pwm_lowerhalf_s *mpfs_corepwm_init(int pwmid)
       pwmerr("ERROR: No such timer configured\n");
       return NULL;
   }
+
+  /* Release CorePWM from reset */
+
+  modifyreg32(MPFS_FPGA_SYSREG_PWM,
+              MPFS_FPGA_SYSREG_SOFT_RESET_CR(pwmid), 0);
 
   return (struct pwm_lowerhalf_s *)lower;
 }
