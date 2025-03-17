@@ -46,6 +46,7 @@
 #include "mpfs_corespi.h"
 #include "hardware/mpfs_corespi.h"
 #include "hardware/mpfs_sysreg.h"
+#include "hardware/mpfs_fpga_sysreg.h"
 #include "riscv_internal.h"
 
 /****************************************************************************
@@ -1723,6 +1724,11 @@ static void mpfs_spi_init(struct spi_dev_s *dev)
 #ifdef CONFIG_MPFS_CORESPI_DMA
   modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, SYSREG_SUBBLK_CLOCK_CR_FIC0);
 #endif
+
+  /* Release SPI reset */
+
+  modifyreg32(MPFS_FPGA_SYSREG_SPI,
+              MPFS_FPGA_SYSREG_SOFT_RESET_CR(priv->id), 0);
 
   /* Make sure the RX interrupt is disabled (we don't use it) */
 
