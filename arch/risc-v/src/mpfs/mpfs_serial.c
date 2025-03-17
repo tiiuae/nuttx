@@ -52,9 +52,17 @@
 #include "mpfs_clockconfig.h"
 #include "riscv_internal.h"
 
+#include "hardware/mpfs_sysreg.h"
+#include "hardware/mpfs_fpga_sysreg.h"
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+#define MPFS_SYSREG_SOFT_RESET_CR   (MPFS_SYSREG_BASE + \
+                                     MPFS_SYSREG_SOFT_RESET_CR_OFFSET)
+#define MPFS_SYSREG_SUBBLK_CLOCK_CR (MPFS_SYSREG_BASE + \
+                                     MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET)
 
 /* If we are not using the serial driver for the console, then we still must
  * provide some minimal implementation of up_putc.
@@ -728,8 +736,10 @@ static inline void up_enablebreaks(struct up_dev_s *priv, bool enable)
 
 static void up_enable_uart(struct up_dev_s *priv, bool enable)
 {
-  uint32_t clock_bit = 0;
-  uint32_t reset_bit = 0;
+  uintptr_t reset_reg;
+  uintptr_t clock_reg;
+  uint32_t  reset_bit;
+  uint32_t  clock_bit = 0;
 
   switch (priv->uartbase)
     {
@@ -754,55 +764,84 @@ static void up_enable_uart(struct up_dev_s *priv, bool enable)
       reset_bit = SYSREG_SOFT_RESET_CR_MMUART4;
       break;
     case MPFS_FPGA_UART0_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(0);
+      break;
     case MPFS_FPGA_UART1_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(1);
+      break;
     case MPFS_FPGA_UART2_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(2);
+      break;
     case MPFS_FPGA_UART3_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(3);
+      break;
     case MPFS_FPGA_UART4_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(4);
+      break;
     case MPFS_FPGA_UART5_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(5);
+      break;
     case MPFS_FPGA_UART6_BASE:
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(6);
+      break;
     case MPFS_FPGA_UART7_BASE:
-      clock_bit = SYSREG_SUBBLK_CLOCK_CR_FIC3;
-      reset_bit = SYSREG_SOFT_RESET_CR_FIC3 | SYSREG_SOFT_RESET_CR_FPGA;
+      reset_bit = MPFS_FPGA_SYSREG_SOFT_RESET_CR(7);
       break;
 
     default:
       return;
     }
 
-  /* reset on for non-fpga */
+  /* SYSREG for MSS or FPGA. Notice that we don't touch the fabric clock
+   * or reset here (for FPGA devices). That is handled at a higher level.
+   */
 
   if (!priv->fpga)
     {
-      modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
-                  0, reset_bit);
-    }
-
-  if (enable)
-    {
-      /* reset off */
-
-      modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
-                  reset_bit, 0);
-
-      /* clock on */
-
-      modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET,
-                  0, clock_bit);
+      reset_reg = MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET;
+      clock_reg = MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET;
     }
   else
     {
-      /* clock off for non-fpga */
+      reset_reg = MPFS_FPGA_SYSREG_UART;
+      clock_reg = 0; /* No register to control clocks, for now */
 
-      if (!priv->fpga)
-        {
-          /* Turning off FPGA clk would disable it for all other FPGA
-           * peripherals as well. Don't touch it without refcnt mechanism.
-           */
+      /* Release FPGA, FIC3 from reset and enable clock */
 
-          modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET,
-                      clock_bit, 0);
-        }
+      modifyreg32(MPFS_SYSREG_SOFT_RESET_CR,
+                  SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3,
+                  0);
+
+      modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0,
+                  SYSREG_SUBBLK_CLOCK_CR_FIC3);
     }
+
+   /* reset on */
+
+   modifyreg32(reset_reg, 0, reset_bit);
+
+   if (enable)
+     {
+       /* reset off */
+
+       modifyreg32(reset_reg, reset_bit, 0);
+
+       /* clock on */
+
+       if (clock_reg != 0)
+         {
+           modifyreg32(clock_reg, 0, clock_bit);
+         }
+     }
+   else
+     {
+       /* clock off */
+
+       if (clock_reg != 0)
+         {
+           modifyreg32(clock_reg, clock_bit, 0);
+         }
+     }
 }
 
 /****************************************************************************
