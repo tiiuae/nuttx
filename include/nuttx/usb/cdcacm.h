@@ -87,6 +87,8 @@
  *   The product ID code/string. Default 0xa4a7 and "CDC/ACM Serial"
  *   0xa4a7 was selected for compatibility with the Linux CDC ACM
  *   default PID.
+ * CONFIG_CDCACM_RXBUFSIZE and CONFIG_CDCACM_TXBUFSIZE
+ *   Size of the serial receive/transmit buffers. Default 256.
  */
 
 /* Information needed in usbdev_devinfo_s */
@@ -202,6 +204,16 @@
 
 #ifndef CONFIG_CDCACM_NRDREQS
 #  define CONFIG_CDCACM_NRDREQS 4
+#endif
+
+/* TX/RX buffer sizes */
+
+#ifndef CONFIG_CDCACM_RXBUFSIZE
+#  define CONFIG_CDCACM_RXBUFSIZE 256
+#endif
+
+#ifndef CONFIG_CDCACM_TXBUFSIZE
+#  define CONFIG_CDCACM_TXBUFSIZE 256
 #endif
 
 /* Vendor and product IDs and strings.  The default is the Linux Netchip
