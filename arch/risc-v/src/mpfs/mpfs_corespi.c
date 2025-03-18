@@ -104,11 +104,12 @@
 
 /* SPI DNA related registers and constants */
 
-#define MPFS_DMA_BASE      0x4a000000
-#define MPFS_DMA_RAM_BASE  0x60020000
-#define MPFS_DMA_BUF_SIZE  0xd0
+#define MPFS_DMA_BASE         0x4a000000
+#define MPFS_DMA_TX_RAM_BASE  0x60040000
+#define MPFS_DMA_RX_RAM_BASE  0x60050000
+#define MPFS_DMA_BUF_SIZE     0xd0
 #ifdef CONFIG_MPFS_CORESPI_DMA
-#define MPFS_DMA_THRESHOLD CONFIG_MPFS_CORESPI_DMATHRESHOLD
+#define MPFS_DMA_THRESHOLD    CONFIG_MPFS_CORESPI_DMATHRESHOLD
 #endif
 
 #define MPFS_DMA_RX_CTR    (MPFS_DMA_BASE + 0x00 + priv->id * 0x40)
@@ -1154,8 +1155,8 @@ static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
 
   /* Copy TX data into area DMA can handle */
 
-  memcpy((uint8_t *)MPFS_DMA_RAM_BASE + MPFS_DMA_BUF_SIZE +
-         priv->id * (MPFS_DMA_BUF_SIZE * 2), (uint8_t *)txbuffer, nwords);
+  memcpy((uint8_t *)MPFS_DMA_TX_RAM_BASE + priv->id * MPFS_DMA_BUF_SIZE,
+         (uint8_t *)txbuffer, nwords);
 
   putreg32(1, MPFS_DMA_RX_CTR); /* RX DMA start */
   putreg32(1, MPFS_DMA_TX_CTR); /* TX DMA start */
@@ -1168,8 +1169,8 @@ static uint32_t mpfs_spi_dma_exchange(struct mpfs_spi_priv_s *priv,
     {
       /* Copy data from area DMA has received the data */
 
-      memcpy((uint8_t *)rxbuffer, (uint8_t *)MPFS_DMA_RAM_BASE +
-             priv->id * 2 * MPFS_DMA_BUF_SIZE, nwords);
+      memcpy((uint8_t *)rxbuffer, (uint8_t *)MPFS_DMA_RX_RAM_BASE +
+             priv->id * MPFS_DMA_BUF_SIZE, nwords);
     }
 
   return 0;
@@ -1700,9 +1701,8 @@ static void mpfs_spi_init(struct spi_dev_s *dev)
     {
       /* Setup the RX and TX buffers */
 
-      putreg32(MPFS_DMA_BUF_SIZE + priv->id * (MPFS_DMA_BUF_SIZE * 2),
-               MPFS_DMA_TX_ADR);
-      putreg32(priv->id * (MPFS_DMA_BUF_SIZE * 2), MPFS_DMA_RX_ADR);
+      putreg32(priv->id * MPFS_DMA_BUF_SIZE, MPFS_DMA_TX_ADR);
+      putreg32(priv->id * MPFS_DMA_BUF_SIZE, MPFS_DMA_RX_ADR);
 
       /* Mask TX IRQ */
 
