@@ -47,11 +47,13 @@
 
 #include <arch/board/board.h>
 
+#include "mpfs_rcc.h"
 #include "mpfs_fpga_canfd.h"
 #include "riscv_internal.h"
 #include "mpfs_memorymap.h"
 
 #include "hardware/mpfs_fpga_canfd.h"
+#include "hardware/mpfs_sysreg.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -2470,6 +2472,17 @@ static int mpfs_reset(struct mpfs_driver_s *priv)
               SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3,
               0);
   modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, SYSREG_SUBBLK_CLOCK_CR_FIC3);
+
+  /* Release reset for CAN IP */
+
+  if (priv->base == CONFIG_MPFS_CANFD_BASE0)
+    {
+      mpfs_set_reset(MPFS_RCC_CAN, 0, 0);
+    }
+  else
+    {
+      mpfs_set_reset(MPFS_RCC_CAN, 1, 0);
+    }
 
   /* Reset CAN controller */
 
