@@ -34,6 +34,8 @@
 #include "mpfs_rcc.h"
 #include "mpfs_memorymap.h"
 
+#include "hardware/mpfs_fpga_sysreg.h"
+
 #include "riscv_internal.h"
 
 /****************************************************************************
@@ -47,6 +49,15 @@
 /****************************************************************************
  * Private Data
  ****************************************************************************/
+
+static uintptr_t g_reset_reg[] =
+{
+  [MPFS_RCC_CAN]  = MPFS_FPGA_SYSREG_CAN,
+  [MPFS_RCC_I2C]  = MPFS_FPGA_SYSREG_I2C,
+  [MPFS_RCC_SPI]  = MPFS_FPGA_SYSREG_SPI,
+  [MPFS_RCC_PWM]  = MPFS_FPGA_SYSREG_PWM,
+  [MPFS_RCC_UART] = MPFS_FPGA_SYSREG_UART,
+};
 
 /****************************************************************************
  * Private Functions
@@ -74,7 +85,30 @@
 
 int mpfs_set_reset(int rcc_id, int instance, bool state)
 {
-  return -ENODEV;
+  uintptr_t reg;
+  UNUSED(instance); /* Unused, for now */
+
+  if (rcc_id >= MPFS_RCC_LAST)
+    {
+      return -ENODEV;
+    }
+
+  reg = g_reset_reg[rcc_id];
+  if (reg == 0)
+    {
+      return -ENODEV;
+    }
+
+  if (state)
+    {
+      modifyreg32(reg, 0, MPFS_FPGA_SYSREG_SOFT_RESET_CR(instance));
+    }
+  else
+    {
+      modifyreg32(reg, MPFS_FPGA_SYSREG_SOFT_RESET_CR(instance), 0);
+    }
+
+  return OK;
 }
 
 /****************************************************************************
