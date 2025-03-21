@@ -29,6 +29,7 @@
 #include <errno.h>
 
 #include <nuttx/semaphore.h>
+#include <nuttx/atomic.h>
 
 /****************************************************************************
  * Public Functions

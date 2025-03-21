@@ -33,7 +33,6 @@
 #include <semaphore.h>
 
 #include <nuttx/clock.h>
-#include <nuttx/atomic.h>
 
 /****************************************************************************
  * Pre-processor Definitions
