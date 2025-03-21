@@ -32,6 +32,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/sem_fast.h>
 
 #include "sched/sched.h"
 #include "semaphore/semaphore.h"
@@ -253,23 +254,18 @@ static int nxsem_post_slow(FAR sem_t *sem)
 
 int nxsem_post(FAR sem_t *sem)
 {
+  int ret;
+
   DEBUGASSERT(sem != NULL);
 
   /* If this is a mutex, we can try to unlock the mutex in fast mode,
    * else try to get it in slow mode.
    */
 
-  if ((sem->flags & SEM_TYPE_MUTEX)
-#if defined(CONFIG_PRIORITY_PROTECT) || defined(CONFIG_PRIORITY_INHERITANCE)
-      && (sem->flags & SEM_PRIO_MASK) == SEM_PRIO_NONE
-#endif
-      )
+  ret = nxsem_post_fast(sem);
+  if (ret == OK)
     {
-      int32_t old = 0;
-      if (atomic_try_cmpxchg_release(NXSEM_COUNT(sem), &old, 1))
-        {
-          return OK;
-        }
+      return OK;
     }
 
   return nxsem_post_slow(sem);

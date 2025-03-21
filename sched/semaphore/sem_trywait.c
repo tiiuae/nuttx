@@ -34,6 +34,7 @@
 #include <nuttx/init.h>
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/sem_fast.h>
 
 #include "sched/sched.h"
 #include "semaphore/semaphore.h"
@@ -134,6 +135,8 @@ static int nxsem_trywait_slow(FAR sem_t *sem)
 
 int nxsem_trywait(FAR sem_t *sem)
 {
+  int ret;
+
   /* This API should not be called from the idleloop */
 
   DEBUGASSERT(sem != NULL);
@@ -144,19 +147,10 @@ int nxsem_trywait(FAR sem_t *sem)
    * else try to get it in slow mode.
    */
 
-  if ((sem->flags & SEM_TYPE_MUTEX)
-#if defined(CONFIG_PRIORITY_PROTECT) || defined(CONFIG_PRIORITY_INHERITANCE)
-      && (sem->flags & SEM_PRIO_MASK) == SEM_PRIO_NONE
-#endif
-      )
+  ret = nxsem_trywait_fast(sem);
+  if (ret != -EPERM)
     {
-      int32_t old = 1;
-      if (atomic_try_cmpxchg_acquire(NXSEM_COUNT(sem), &old, 0))
-        {
-          return OK;
-        }
-
-      return -EAGAIN;
+      return ret;
     }
 
   return nxsem_trywait_slow(sem);

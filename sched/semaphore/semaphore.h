@@ -31,7 +31,6 @@
 #include <nuttx/compiler.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/sched.h>
-#include <nuttx/atomic.h>
 
 #include <stdint.h>
 #include <stdbool.h>
