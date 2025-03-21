@@ -33,6 +33,7 @@
 #include <semaphore.h>
 
 #include <nuttx/clock.h>
+#include <nuttx/atomic.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -106,6 +107,8 @@
 #  define NXSEM_TRYWAIT_FAST(sem, ret) (ret) = -EPERM
 #  define NXSEM_POST_FAST(sem, ret) (ret) = -EPERM
 #endif
+
+#define NXSEM_COUNT(s) ((FAR atomic_t *)&(s)->semcount)
 
 /****************************************************************************
  * Public Type Definitions

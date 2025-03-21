@@ -83,7 +83,12 @@ int sem_wait(FAR sem_t *sem)
 
   /* Let nxsem_wait() do the real work */
 
-  ret = nxsem_wait(sem);
+  NXSEM_TRYWAIT_FAST(sem, ret);
+  if (ret != OK)
+    {
+      ret = nxsem_wait(sem);
+    }
+
   if (ret < 0)
     {
       errcode = -ret;

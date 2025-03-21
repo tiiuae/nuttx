@@ -67,7 +67,12 @@ int sem_trywait(FAR sem_t *sem)
 
   /* Let nxsem_trywait do the real work */
 
-  ret = nxsem_trywait(sem);
+  NXSEM_TRYWAIT_FAST(sem, ret);
+  if (ret == -EPERM)
+    {
+      ret = nxsem_trywait(sem);
+    }
+
   if (ret < 0)
     {
       set_errno(-ret);
