@@ -59,6 +59,10 @@
      {(c), (f), SEM_WAITLIST_INITIALIZER}
 #endif /* CONFIG_PRIORITY_INHERITANCE */
 
+/* Macro to retrieve sem count */
+
+#define NXSEM_COUNT(s) ((FAR atomic_t *)&(s)->semcount)
+
 /****************************************************************************
  * Public Type Definitions
  ****************************************************************************/

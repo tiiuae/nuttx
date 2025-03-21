@@ -28,7 +28,7 @@
 
 #include <errno.h>
 
-#include <nuttx/semaphore.h>
+#include <nuttx/sem_fast.h>
 
 /****************************************************************************
  * Public Functions
@@ -67,7 +67,12 @@ int sem_trywait(FAR sem_t *sem)
 
   /* Let nxsem_trywait do the real work */
 
-  ret = nxsem_trywait(sem);
+  ret = nxsem_trywait_fast(sem);
+  if (ret == -EPERM)
+    {
+      ret = nxsem_trywait(sem);
+    }
+
   if (ret < 0)
     {
       set_errno(-ret);
