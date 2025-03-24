@@ -137,3 +137,7 @@ endif
 ifeq ($(CONFIG_MPFS_CRYPTO),y)
 include mpfs/crypto.defs
 endif
+
+ifeq ($(CONFIG_MPFS_RCC),y)
+CHIP_CSRCS += mpfs_rcc.c
+endif

@@ -50,7 +50,11 @@
 #include "mpfs.h"
 #include "mpfs_config.h"
 #include "mpfs_clockconfig.h"
+#include "mpfs_rcc.h"
 #include "riscv_internal.h"
+
+#include "hardware/mpfs_sysreg.h"
+#include "hardware/mpfs_fpga_sysreg.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -754,53 +758,69 @@ static void up_enable_uart(struct up_dev_s *priv, bool enable)
       reset_bit = SYSREG_SOFT_RESET_CR_MMUART4;
       break;
     case MPFS_FPGA_UART0_BASE:
+      reset_bit = 0;
+      break;
     case MPFS_FPGA_UART1_BASE:
+      reset_bit = 1;
+      break;
     case MPFS_FPGA_UART2_BASE:
+      reset_bit = 2;
+      break;
     case MPFS_FPGA_UART3_BASE:
+      reset_bit = 3;
+      break;
     case MPFS_FPGA_UART4_BASE:
+      reset_bit = 4;
+      break;
     case MPFS_FPGA_UART5_BASE:
+      reset_bit = 5;
+      break;
     case MPFS_FPGA_UART6_BASE:
+      reset_bit = 6;
+      break;
     case MPFS_FPGA_UART7_BASE:
-      clock_bit = SYSREG_SUBBLK_CLOCK_CR_FIC3;
-      reset_bit = SYSREG_SOFT_RESET_CR_FIC3 | SYSREG_SOFT_RESET_CR_FPGA;
+      reset_bit = 7;
       break;
 
     default:
       return;
     }
 
-  /* reset on for non-fpga */
-
-  if (!priv->fpga)
+  if (priv->fpga)
     {
-      modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
-                  0, reset_bit);
-    }
+      /* Release FPGA, FIC3 from reset and enable clock */
 
-  if (enable)
-    {
-      /* reset off */
+      modifyreg32(MPFS_SYSREG_SOFT_RESET_CR,
+                  SYSREG_SOFT_RESET_CR_FPGA | SYSREG_SOFT_RESET_CR_FIC3,
+                  0);
 
-      modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SOFT_RESET_CR_OFFSET,
-                  reset_bit, 0);
+      modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0,
+                  SYSREG_SUBBLK_CLOCK_CR_FIC3);
 
-      /* clock on */
-
-      modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET,
-                  0, clock_bit);
+      mpfs_set_reset(MPFS_RCC_UART, reset_bit, 1);
+      mpfs_set_reset(MPFS_RCC_UART, reset_bit, 0);
     }
   else
     {
-      /* clock off for non-fpga */
+      /* reset on */
 
-      if (!priv->fpga)
+      modifyreg32(MPFS_SYSREG_SOFT_RESET_CR, 0, reset_bit);
+
+      if (enable)
         {
-          /* Turning off FPGA clk would disable it for all other FPGA
-           * peripherals as well. Don't touch it without refcnt mechanism.
-           */
+          /* reset off */
 
-          modifyreg32(MPFS_SYSREG_BASE + MPFS_SYSREG_SUBBLK_CLOCK_CR_OFFSET,
-                      clock_bit, 0);
+          modifyreg32(MPFS_SYSREG_SOFT_RESET_CR, reset_bit, 0);
+
+          /* clock on */
+
+          modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, 0, clock_bit);
+        }
+      else
+        {
+          /* clock off */
+
+          modifyreg32(MPFS_SYSREG_SUBBLK_CLOCK_CR, clock_bit, 0);
         }
     }
 }
