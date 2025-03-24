@@ -113,7 +113,7 @@ static void nxmutex_add_backtrace(FAR mutex_t *mutex)
 
 int nxmutex_init(FAR mutex_t *mutex)
 {
-  int ret = nxsem_init(&mutex->sem, 0, 1);
+  int ret = sem_init(&mutex->sem, 0, 1);
 
   if (ret < 0)
     {
@@ -122,9 +122,9 @@ int nxmutex_init(FAR mutex_t *mutex)
 
   mutex->holder = NXMUTEX_NO_HOLDER;
 #ifdef CONFIG_PRIORITY_INHERITANCE
-  nxsem_set_protocol(&mutex->sem, SEM_TYPE_MUTEX | SEM_PRIO_INHERIT);
+  sem_setprotocol(&mutex->sem, SEM_TYPE_MUTEX | SEM_PRIO_INHERIT);
 #else
-  nxsem_set_protocol(&mutex->sem, SEM_TYPE_MUTEX);
+  sem_setprotocol(&mutex->sem, SEM_TYPE_MUTEX);
 #endif
   return ret;
 }
@@ -150,7 +150,7 @@ int nxmutex_init(FAR mutex_t *mutex)
 
 int nxmutex_destroy(FAR mutex_t *mutex)
 {
-  int ret = nxsem_destroy(&mutex->sem);
+  int ret = sem_destroy(&mutex->sem);
 
   if (ret < 0)
     {
@@ -254,7 +254,7 @@ int nxmutex_lock(FAR mutex_t *mutex)
     {
       /* Take the semaphore (perhaps waiting) */
 
-      ret = nxsem_wait(&mutex->sem);
+      ret = sem_wait(&mutex->sem);
       if (ret >= 0)
         {
           mutex->holder = _SCHED_GETTID();
@@ -295,7 +295,7 @@ int nxmutex_trylock(FAR mutex_t *mutex)
 {
   int ret;
 
-  ret = nxsem_trywait(&mutex->sem);
+  ret = sem_trywait(&mutex->sem);
   if (ret < 0)
     {
       return ret;
@@ -343,11 +343,11 @@ int nxmutex_clocklock(FAR mutex_t *mutex, clockid_t clockid,
     {
       if (abstime)
         {
-          ret = nxsem_clockwait(&mutex->sem, clockid, abstime);
+          ret = sem_clockwait(&mutex->sem, clockid, abstime);
         }
       else
         {
-          ret = nxsem_wait(&mutex->sem);
+          ret = sem_wait(&mutex->sem);
         }
     }
   while (ret == -EINTR || ret == -ECANCELED);
@@ -433,7 +433,7 @@ int nxmutex_unlock(FAR mutex_t *mutex)
 
   mutex->holder = NXMUTEX_NO_HOLDER;
 
-  ret = nxsem_post(&mutex->sem);
+  ret = sem_post(&mutex->sem);
   if (ret < 0)
     {
       mutex->holder = _SCHED_GETTID();
@@ -538,7 +538,7 @@ int nxmutex_restorelock(FAR mutex_t *mutex, unsigned int locked)
 
 int nxmutex_set_protocol(FAR mutex_t *mutex, int protocol)
 {
-  return nxsem_set_protocol(&mutex->sem, protocol);
+  return sem_setprotocol(&mutex->sem, protocol);
 }
 
 /****************************************************************************
