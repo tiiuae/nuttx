@@ -78,13 +78,10 @@ nxsem_allocholder(FAR sem_t *sem, FAR struct tcb_s *htcb)
   pholder = g_freeholders;
   if (pholder != NULL)
     {
-      /* Remove the holder from the free list and
-       * put it into the semaphore's holder list
-       */
+      /* Remove the holder from the free list */
 
       g_freeholders  = pholder->flink;
-      pholder->flink = sem->hhead;
-      sem->hhead     = pholder;
+      pholder->flink  = NULL;
     }
 #else
   if (sem->holder.htcb == NULL)
@@ -98,18 +95,10 @@ nxsem_allocholder(FAR sem_t *sem, FAR struct tcb_s *htcb)
       PANIC();
     }
 
-#ifdef CONFIG_MM_KMAP
-  sem = kmm_map_user(this_task(), sem, sizeof(*sem));
-#endif
-
-  pholder->sem    = sem;
+  pholder->tlink  = NULL;
+  pholder->sem    = NULL;
   pholder->htcb   = htcb;
   pholder->counts = 0;
-
-  /* Put it into the task's list */
-
-  pholder->tlink  = htcb->holdsem;
-  htcb->holdsem   = pholder;
 
   return pholder;
 }
@@ -171,6 +160,23 @@ nxsem_findorallocateholder(FAR sem_t *sem, FAR struct tcb_s *htcb)
   if (pholder == NULL)
     {
       pholder = nxsem_allocholder(sem, htcb);
+
+#ifdef CONFIG_MM_KMAP
+      sem = kmm_map_user(this_task(), sem, sizeof(*sem));
+#endif
+      pholder->sem = sem;
+
+#if CONFIG_SEM_PREALLOCHOLDERS > 0
+      /* Add the holder to the semaphores holder list */
+
+      pholder->flink = sem->hhead;
+      sem->hhead     = pholder;
+#endif
+
+      /* Add the holder to the tasks tcb for priority restoration */
+
+      pholder->tlink  = htcb->holdsem;
+      htcb->holdsem   = pholder;
     }
 
   return pholder;
@@ -601,7 +607,7 @@ void nxsem_destroyholder(FAR sem_t *sem)
 /****************************************************************************
  * Name: nxsem_add_holder_tcb
  *
- * Description:
+ * Description: Adds the semaphore into semaphore's and task's holder lists
  *   Called from nxsem_wait() when the calling thread obtains the semaphore;
  *   Called from sem_post() when the waiting thread obtains the semaphore.
  *
