@@ -76,6 +76,25 @@ int nxsem_reset(FAR sem_t *sem, int16_t count)
 
   flags = enter_critical_section();
 
+  if (NXSEM_IS_MUTEX(sem))
+    {
+      /* Revisit: calling nxsem_reset doesn't make too much sense, but is
+       * done from nxmutex.
+       */
+
+      if (count == 1)
+        {
+          while (atomic_read(NXMUTEX_HOLDER(sem)) != NXMUTEX_NO_HOLDER)
+            {
+              DEBUGVERIFY(nxsem_post(sem));
+            }
+
+          atomic_store(NXMUTEX_HOLDER(sem), NXMUTEX_RESET);
+        }
+
+      return OK;
+    }
+
   /* A negative count indicates that the negated number of threads are
    * waiting to take a count from the semaphore.  Loop here, handing
    * out counts to any waiting threads.

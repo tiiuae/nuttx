@@ -876,7 +876,38 @@ void nxsem_canceled(FAR struct tcb_s *stcb, FAR sem_t *sem)
 {
   /* Check our assumptions */
 
-  DEBUGASSERT(atomic_read(NXSEM_COUNT(sem)) <= 0);
+  DEBUGASSERT(
+    (NXSEM_IS_MUTEX(sem) || atomic_read(NXSEM_COUNT(sem)) <= 0) &&
+    (!NXSEM_IS_MUTEX(sem) || NXMUTEX_HOLDER_TID(sem) != NXMUTEX_NO_HOLDER));
+
+  /* Mutex lock / holder value is managed in sem_wait */
+
+  if (NXSEM_IS_MUTEX(sem))
+    {
+      /* The TID of the mutex holder is correct, but we need to update
+       * the blocking bit. Count the remaining tcbs in the blocking list
+       * (ignoring the one that is being cancelled).
+       */
+
+      pid_t holder_tid = NXMUTEX_HOLDER_TID(sem);
+      int count = 0;
+      FAR dq_entry_t *tcb;
+
+      for (tcb = dq_peek(SEM_WAITLIST(sem)); tcb; tcb = dq_next(tcb))
+        {
+          if (stcb->pid != ((FAR struct tcb_s *)tcb)->pid)
+            {
+              count++;
+            }
+        }
+
+      uint32_t blocks = count > 0 ? NXMUTEX_BLOCKS_BIT : 0;
+      atomic_store(NXMUTEX_HOLDER(sem), holder_tid | blocks);
+    }
+  else
+    {
+      atomic_fetch_add(NXSEM_COUNT(sem), 1);
+    }
 
   /* Adjust the priority of every holder as necessary */
 
@@ -970,11 +1001,33 @@ void nxsem_release_all(FAR struct tcb_s *htcb)
 
       nxsem_freeholder(sem, pholder);
 
-      /* Increment the count on the semaphore, to releases the count
-       * that was taken by sem_wait() or sem_post().
-       */
+      if (!NXSEM_IS_MUTEX(sem))
+        {
+          /* Increment the count on the semaphore, to releases the count
+           * that was taken by sem_wait() or sem_post().
+           */
 
-      atomic_fetch_add(NXSEM_COUNT(sem), 1);
+          atomic_fetch_add(NXSEM_COUNT(sem), 1);
+        }
+      else
+        {
+          /* Restore the mutex holder to the highest holding priority PID,
+           * and set the blocking bit according to how many items are still
+           * in the wait queue
+           */
+
+          FAR struct tcb_s *wtcb =
+            (FAR struct tcb_s *)dq_peek(SEM_WAITLIST(sem));
+
+          if (wtcb)
+            {
+              nxsem_set_mholder(wtcb, sem);
+            }
+          else
+            {
+              atomic_store(NXMUTEX_HOLDER(sem), NXMUTEX_NO_HOLDER);
+            }
+        }
     }
 }
 

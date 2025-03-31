@@ -74,15 +74,26 @@ int nxsem_destroy(FAR sem_t *sem)
    * leave the count unchanged but still return OK.
    */
 
-  old = atomic_read(NXSEM_COUNT(sem));
-  do
+  if (NXSEM_IS_MUTEX(sem))
     {
-      if (old < 0)
+      old = atomic_read(NXMUTEX_HOLDER(sem));
+      if ((old & NXMUTEX_BLOCKS_BIT) == 0)
         {
-          break;
+          atomic_store(NXMUTEX_HOLDER(sem), NXMUTEX_NO_HOLDER);
         }
     }
-  while (!atomic_try_cmpxchg_release(NXSEM_COUNT(sem), &old, 1));
+  else
+    {
+      old = atomic_read(NXSEM_COUNT(sem));
+      do
+        {
+          if (old < 0)
+            {
+              break;
+            }
+        }
+      while (!atomic_try_cmpxchg_release(NXSEM_COUNT(sem), &old, 1));
+    }
 
   /* Release holders of the semaphore */
 

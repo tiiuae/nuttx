@@ -35,8 +35,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define NXMUTEX_RESET          ((pid_t)-2)
-
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -113,7 +111,7 @@ static void nxmutex_add_backtrace(FAR mutex_t *mutex)
 
 int nxmutex_init(FAR mutex_t *mutex)
 {
-  int ret = nxsem_init(&mutex->sem, 0, 1);
+  int ret = nxsem_init(&mutex->sem, 0, NXMUTEX_NO_HOLDER);
 
   if (ret < 0)
     {
