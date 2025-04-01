@@ -117,6 +117,18 @@ nxsem_findholder(FAR sem_t *sem, FAR struct tcb_s *htcb)
 {
   FAR struct semholder_s *pholder;
 
+  /* For a mutex we know that:
+   * - there is only one holder
+   * - holder is added only when the task is blocked on the mutex
+   * - since the task is blocked, the holder (if added) is at the head of
+   *   htcb->holdsem
+   */
+
+  if (NXSEM_IS_MUTEX(sem) && htcb->holdsem && htcb->holdsem->htcb == htcb)
+    {
+      return htcb->holdsem;
+    }
+
 #if CONFIG_SEM_PREALLOCHOLDERS > 0
   /* Try to find the holder in the list of holders associated with this
    * semaphore
@@ -166,11 +178,18 @@ nxsem_findorallocateholder(FAR sem_t *sem, FAR struct tcb_s *htcb)
 #endif
       pholder->sem = sem;
 
-#if CONFIG_SEM_PREALLOCHOLDERS > 0
-      /* Add the holder to the semaphores holder list */
+      /* Mutexes don't use the semaphore's holder list, they have only one
+       * holder
+       */
 
-      pholder->flink = sem->hhead;
-      sem->hhead     = pholder;
+#if CONFIG_SEM_PREALLOCHOLDERS > 0
+      if (!NXSEM_IS_MUTEX(sem))
+        {
+          /* Add the holder to the semaphores holder list */
+
+          pholder->flink = sem->hhead;
+          sem->hhead     = pholder;
+        }
 #endif
 
       /* Add the holder to the tasks tcb for priority restoration */
@@ -509,6 +528,30 @@ static int nxsem_restoreholderprio_self(FAR struct semholder_s *pholder,
 #endif
 
 /****************************************************************************
+ * Name: nxsem_release_mutex_holder
+ *
+ * Description:
+ *   Remove mutex's holder from task's holder list
+ *
+ ****************************************************************************/
+
+static void nxsem_release_mutex_holder(FAR struct tcb_s *rtcb,
+                                       FAR sem_t *sem)
+{
+  FAR struct tcb_s *htcb = nxsched_get_tcb(NXMUTEX_HOLDER_TID(sem));
+  FAR struct semholder_s *pholder;
+
+  for (pholder = rtcb->holdsem; pholder; pholder = pholder->tlink)
+    {
+      if (pholder->htcb == htcb)
+        {
+          nxsem_freeholder(sem, pholder);
+          return;
+        }
+    }
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -667,39 +710,58 @@ void nxsem_add_holder_tcb(FAR struct tcb_s *htcb, FAR sem_t *sem)
 
 void nxsem_add_holder(FAR sem_t *sem)
 {
+  DEBUGASSERT(!NXSEM_IS_MUTEX(sem));
   nxsem_add_holder_tcb(this_task(), sem);
 }
 
 /****************************************************************************
- * Name: void nxsem_boost_priority(sem_t *sem)
+ * Name: nxsem_boost_priority
  *
  * Description:
- *
+ *   Boosts the priority of semaphore holders if needed, when a thread
+ *   blocks on the semaphore
  *
  * Input Parameters:
- *   None
+ *   htcb - Task to boost. If NULL, search the sem holders
+ *   sem  - The semaphore on which the tasks blocks on
  *
  * Returned Value:
- *   0 (OK) or -1 (ERROR) if unsuccessful
+ *   None
  *
  * Assumptions:
+ *   The task's tcb, semaphore and semaphore's holder list are locked
  *
  ****************************************************************************/
 
-void nxsem_boost_priority(FAR sem_t *sem)
+void nxsem_boost_priority(FAR struct tcb_s *htcb, FAR sem_t *sem)
 {
   FAR struct tcb_s *rtcb = this_task();
 
-  /* Boost the priority of every thread holding counts on this semaphore
-   * that are lower in priority than the new thread that is waiting for a
-   * count.
-   */
+  if (htcb)
+    {
+      if (rtcb->sched_priority > htcb->sched_priority)
+        {
+          /* Boost the priority of htcb if it is lower in priority than
+           * this task. This is given directly in case of a mutex, which only
+           * has one holder.
+           */
+
+          nxsched_set_priority(htcb, rtcb->sched_priority);
+        }
+    }
+  else
+    {
+      /* Boost the priority of every thread holding counts on this semaphore
+       * that are lower in priority than the new thread that is waiting for a
+       * count.
+       */
 
 #if CONFIG_SEM_PREALLOCHOLDERS > 0
-  nxsem_foreachholder(sem, nxsem_boostholderprio, rtcb);
+      nxsem_foreachholder(sem, nxsem_boostholderprio, rtcb);
 #else
-  nxsem_boostholderprio(&sem->holder, sem, rtcb);
+      nxsem_boostholderprio(&sem->holder, sem, rtcb);
 #endif
+    }
 }
 
 /****************************************************************************
@@ -737,6 +799,16 @@ void nxsem_release_holder(FAR sem_t *sem)
       DEBUGASSERT(!up_interrupt_context());
 
       /* Find the container for this holder */
+
+      /* For mutex there is only one holder structure, and it is in
+       * this task's list
+       */
+
+      if (NXSEM_IS_MUTEX(sem))
+        {
+          nxsem_release_mutex_holder(rtcb, sem);
+          return;
+        }
 
 #if CONFIG_SEM_PREALLOCHOLDERS > 0
       for (pholder = sem->hhead; pholder != NULL; pholder = pholder->flink)
@@ -815,7 +887,15 @@ void nxsem_restore_baseprio(FAR struct tcb_s *stcb, FAR sem_t *sem)
    * next highest pending priority.
    */
 
-  if (stcb != NULL)
+  if (stcb != NULL && NXSEM_IS_MUTEX(sem))
+    {
+      FAR struct tcb_s *htcb = nxsched_get_tcb(NXMUTEX_HOLDER_TID(sem));
+      if (htcb->holdsem)
+        {
+          nxsem_restore_priority(htcb);
+        }
+    }
+  else if (stcb != NULL)
     {
 #if CONFIG_SEM_PREALLOCHOLDERS > 0
       /* The currently executed thread should be the lower priority
@@ -866,7 +946,8 @@ void nxsem_restore_baseprio(FAR struct tcb_s *stcb, FAR sem_t *sem)
  *   Called from nxsem_wait_irq() after a thread that was waiting for a
  *   semaphore count was awakened because of a signal and the semaphore wait
  *   has been canceled.  This function restores the correct thread priority
- *   of each holder of the semaphore.
+ *   of each holder of the semaphore and restores the semaphore value to
+ *   the state before previous wait.
  *
  * Input Parameters:
  *   sem - A reference to the semaphore no longer being waited for
@@ -880,13 +961,24 @@ void nxsem_restore_baseprio(FAR struct tcb_s *stcb, FAR sem_t *sem)
 
 void nxsem_canceled(FAR struct tcb_s *stcb, FAR sem_t *sem)
 {
-  /* Check our assumptions */
+  if (NXSEM_IS_MUTEX(sem))
+    {
+      nxsem_restore_priority(stcb);
 
-  DEBUGASSERT(atomic_read(NXSEM_COUNT(sem)) <= 0);
+      atomic_store(NXMUTEX_HOLDER(sem), NXMUTEX_NO_HOLDER);
+    }
+  else
+    {
+      /* Check our assumptions */
 
-  /* Adjust the priority of every holder as necessary */
+      DEBUGASSERT(atomic_read(NXSEM_COUNT(sem)) <= 0);
 
-  nxsem_foreachholder(sem, nxsem_restoreholderprio, stcb);
+      /* Adjust the priority of every holder as necessary */
+
+      nxsem_foreachholder(sem, nxsem_restoreholderprio, stcb);
+
+      atomic_fetch_add(NXSEM_COUNT(sem), 1);
+    }
 }
 
 /****************************************************************************
@@ -980,7 +1072,14 @@ void nxsem_release_all(FAR struct tcb_s *htcb)
        * that was taken by sem_wait() or sem_post().
        */
 
-      atomic_fetch_add(NXSEM_COUNT(sem), 1);
+      if (!NXSEM_IS_MUTEX(sem))
+        {
+          atomic_fetch_add(NXSEM_COUNT(sem), 1);
+        }
+      else
+        {
+          atomic_store(NXMUTEX_HOLDER(sem), NXMUTEX_NO_HOLDER);
+        }
     }
 }
 

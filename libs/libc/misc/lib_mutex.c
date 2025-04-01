@@ -30,12 +30,11 @@
 #include <nuttx/clock.h>
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/atomic.h>
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-#define NXMUTEX_RESET          ((pid_t)-2)
 
 /****************************************************************************
  * Private Functions
@@ -113,7 +112,7 @@ static void nxmutex_add_backtrace(FAR mutex_t *mutex)
 
 int nxmutex_init(FAR mutex_t *mutex)
 {
-  int ret = nxsem_init(&mutex->sem, 0, 1);
+  int ret = nxsem_init(&mutex->sem, 0, NXMUTEX_NO_HOLDER);
 
   if (ret < 0)
     {
@@ -217,12 +216,8 @@ int nxmutex_get_holder(FAR mutex_t *mutex)
 
 bool nxmutex_is_locked(FAR mutex_t *mutex)
 {
-  int cnt;
-  int ret;
-
-  ret = nxsem_get_value(&mutex->sem, &cnt);
-
-  return ret >= 0 && cnt < 1;
+  return NXMUTEX_HOLDER_TID(&mutex->sem) !=
+    (NXMUTEX_NO_HOLDER & (~NXMUTEX_BLOCKS_BIT));
 }
 
 /****************************************************************************

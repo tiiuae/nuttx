@@ -74,6 +74,9 @@ int nxsem_wait_slow(FAR sem_t *sem)
   FAR struct tcb_s *rtcb;
   irqstate_t flags;
   int ret;
+  bool unlocked;
+  pid_t mholder_prev = NXMUTEX_NO_HOLDER;
+  FAR struct tcb_s *htcb_prev = NULL;
 
   /* The following operations must be performed with interrupts
    * disabled because nxsem_post() may be called from an interrupt
@@ -86,19 +89,44 @@ int nxsem_wait_slow(FAR sem_t *sem)
 
   /* Check if the lock is available */
 
-  if (atomic_fetch_sub(NXSEM_COUNT(sem), 1) > 0)
+  if (NXSEM_IS_MUTEX(sem))
+    {
+      unlocked = atomic_try_cmpxchg(NXMUTEX_HOLDER(sem), &mholder_prev,
+                                    gettid());
+    }
+  else
+    {
+      unlocked = atomic_fetch_sub(NXSEM_COUNT(sem), 1) > 0;
+    }
+
+  if (unlocked)
     {
       /* It is, let the task take the semaphore. */
 
       ret = nxsem_protect_wait(sem);
       if (ret < 0)
         {
-          atomic_fetch_add(NXSEM_COUNT(sem), 1);
+          if (NXSEM_IS_MUTEX(sem))
+            {
+              atomic_store(NXMUTEX_HOLDER(sem), mholder_prev);
+            }
+          else
+            {
+              atomic_fetch_add(NXSEM_COUNT(sem), 1);
+            }
+
           leave_critical_section(flags);
           return ret;
         }
 
-      nxsem_add_holder(sem);
+      /* For mutexes, we only add the holder to the tasks list at the
+       * time when a task blocks on the mutex, for priority restoration
+       */
+
+      if (!NXSEM_IS_MUTEX(sem))
+        {
+          nxsem_add_holder(sem);
+        }
     }
 
   /* The semaphore is NOT available, We will have to block the
@@ -111,6 +139,23 @@ int nxsem_wait_slow(FAR sem_t *sem)
       uint8_t prioinherit = sem->flags & SEM_PRIO_MASK;
 #endif
       rtcb = this_task();
+
+      if (NXSEM_IS_MUTEX(sem))
+        {
+          htcb_prev = nxsched_get_tcb(mholder_prev & (~NXMUTEX_BLOCKS_BIT));
+
+          /* If we just locked a mutex, we need to add a holder to the
+           * blocked task's list for priority restoration in case we end
+           * up boosting it
+           */
+
+          nxsem_add_holder_tcb(htcb_prev, sem);
+
+          /* Set the bit to the holder to mark that we are blocking */
+
+          atomic_store(NXMUTEX_HOLDER(sem), ((uint32_t)htcb_prev->pid) |
+                       NXMUTEX_BLOCKS_BIT);
+        }
 
       /* First, verify that the task is not already waiting on a
        * semaphore
@@ -143,7 +188,7 @@ int nxsem_wait_slow(FAR sem_t *sem)
            * semaphore.
            */
 
-          nxsem_boost_priority(sem);
+          nxsem_boost_priority(htcb_prev, sem);
         }
 #endif
 

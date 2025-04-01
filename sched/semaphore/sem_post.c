@@ -73,10 +73,10 @@ int nxsem_post_slow(FAR sem_t *sem)
 {
   FAR struct tcb_s *stcb = NULL;
   irqstate_t flags;
-  int32_t sem_count;
 #if defined(CONFIG_PRIORITY_INHERITANCE) || defined(CONFIG_PRIORITY_PROTECT)
   uint8_t proto;
 #endif
+  bool sem_blocks = false;
 
   /* The following operations must be performed with interrupts
    * disabled because sem_post() may be called from an interrupt
@@ -85,19 +85,31 @@ int nxsem_post_slow(FAR sem_t *sem)
 
   flags = enter_critical_section();
 
-  /* Check the maximum allowable value */
-
-  sem_count = atomic_read(NXSEM_COUNT(sem));
-  do
+  if (NXSEM_IS_MUTEX(sem))
     {
-      if (sem_count >= SEM_VALUE_MAX)
-        {
-          leave_critical_section(flags);
-          return -EOVERFLOW;
-        }
+      int32_t hpid = gettid();
+      sem_blocks = !atomic_try_cmpxchg(NXMUTEX_HOLDER(sem), &hpid,
+                                       NXMUTEX_NO_HOLDER);
     }
-  while (!atomic_try_cmpxchg_release(NXSEM_COUNT(sem), &sem_count,
-                                     sem_count + 1));
+  else
+    {
+      int32_t sem_count;
+
+      /* Check the maximum allowable value */
+
+      sem_count = atomic_read(NXSEM_COUNT(sem));
+      do
+        {
+          if (sem_count >= SEM_VALUE_MAX)
+            {
+              leave_critical_section(flags);
+              return -EOVERFLOW;
+            }
+        }
+      while (!atomic_try_cmpxchg_release(NXSEM_COUNT(sem), &sem_count,
+                                         sem_count + 1));
+      sem_blocks = sem_count < 0;
+    }
 
   /* Perform the semaphore unlock operation, releasing this task as a
    * holder then also incrementing the count on the semaphore.
@@ -116,7 +128,10 @@ int nxsem_post_slow(FAR sem_t *sem)
    * initialized if the semaphore is to used for signaling purposes.
    */
 
-  nxsem_release_holder(sem);
+  if (!NXSEM_IS_MUTEX(sem) || sem_blocks)
+    {
+      nxsem_release_holder(sem);
+    }
 
 #if defined(CONFIG_PRIORITY_INHERITANCE) || defined(CONFIG_PRIORITY_PROTECT)
   /* Don't let any unblocked tasks run until we complete any priority
@@ -138,7 +153,7 @@ int nxsem_post_slow(FAR sem_t *sem)
    * there must be some task waiting for the semaphore.
    */
 
-  if (sem_count < 0)
+  if (sem_blocks)
     {
       /* Check if there are any tasks in the waiting for semaphore
        * task list that are waiting for this semaphore.  This is a
@@ -156,7 +171,22 @@ int nxsem_post_slow(FAR sem_t *sem)
            * it is awakened.
            */
 
-          nxsem_add_holder_tcb(stcb, sem);
+          if (NXSEM_IS_MUTEX(sem))
+            {
+              /* If the mutex doesn't block any tasks any more,
+               * clear the blocking bit
+               */
+
+              uint32_t blocks = dq_peek(SEM_WAITLIST(sem)) ?
+                NXMUTEX_BLOCKS_BIT : 0;
+
+              atomic_store(NXMUTEX_HOLDER(sem),
+                           (uint32_t)stcb->pid | blocks);
+            }
+          else
+            {
+              nxsem_add_holder_tcb(stcb, sem);
+            }
 
           /* Stop the watchdog timer */
 
