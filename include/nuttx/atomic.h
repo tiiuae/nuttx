@@ -104,6 +104,8 @@ typedef volatile int64_t atomic64_t;
 #define atomic64_read(obj)                    ATOMIC_FUNC(load, 8)(obj, __ATOMIC_RELAXED)
 #define atomic64_read_acquire(obj)            ATOMIC_FUNC(load, 8)(obj, __ATOMIC_ACQUIRE)
 
+#define atomic_load atomic_read
+
 #define atomic_fetch_add_acquire(obj, val)    ATOMIC_FUNC(fetch_add, 4)(obj, val, __ATOMIC_ACQUIRE)
 #define atomic_fetch_add_release(obj, val)    ATOMIC_FUNC(fetch_add, 4)(obj, val, __ATOMIC_RELEASE)
 #define atomic_fetch_add_relaxed(obj, val)    ATOMIC_FUNC(fetch_add, 4)(obj, val, __ATOMIC_RELAXED)
