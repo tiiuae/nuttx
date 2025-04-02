@@ -269,6 +269,7 @@ static void nxsig_abnormal_termination(int signo)
 static void nxsig_stop_task(int signo)
 {
   FAR struct tcb_s *rtcb = this_task();
+  int semvalue;
 #if defined(CONFIG_SCHED_WAITPID) && !defined(CONFIG_SCHED_HAVE_PARENT)
   FAR struct task_group_s *group;
 
@@ -319,11 +320,13 @@ static void nxsig_stop_task(int signo)
 
       /* Wakeup any tasks waiting for this task to exit or stop. */
 
-      while (group->tg_exitsem.semcount < 0)
+      nxsem_get_value(&group->tg_exitsem, &semvalue);
+      while (semvalue < 0)
         {
           /* Wake up the thread */
 
           nxsem_post(&group->tg_exitsem);
+          nxsem_get_value(&group->tg_exitsem, &semvalue);
         }
     }
 #endif
