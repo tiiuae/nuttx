@@ -379,29 +379,9 @@ typedef mpfs_can_rxmsgobject_t * pmpfs_can_rxmsgobject_t;
 
 typedef struct _can_filterobject
 {
-  /* Use sw range filter */
-
-  bool use_sw_range_filter;
-
   /* Use sw mask filter */
 
-  bool use_sw_mask_filter;
-
-  /* Range filter upper */
-
-  uint32_t range_upper;
-
-  /* Range filter lower */
-
-  uint32_t range_lower;
-
-  /* Mask filter mask */
-
-  uint32_t mask;
-
-  /* Mask filter code */
-
-  uint32_t code;
+  bool use_mask_filter;
 
   /* CAN Message Filter: acceptance mask and code */
 
@@ -543,14 +523,13 @@ static int mpfs_interrupt(int irq, void *context, void *arg);
 /* RX SW/HW filter related functions */
 
 #ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
-static uint8_t mpfs_can_add_sw_filter(mpfs_can_instance_t *priv,
+static uint8_t mpfs_can_add_filter(mpfs_can_instance_t *priv,
                                    uint8_t filter_type,
                                    uint32_t filter_id1,
                                    uint32_t filter_id2);
 #endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
 
-static uint8_t mpfs_can_reset_filter(mpfs_can_instance_t *priv,
-                                     bool hw_only);
+static uint8_t mpfs_can_reset_filter(mpfs_can_instance_t *priv);
 
 /* CAN controller configuration setter and status getter helper functions */
 
@@ -671,27 +650,6 @@ static bool mpfs_can_retrieve_rx_frame(mpfs_can_instance_t *priv,
   ide = (bool)(pmsg->msg_ctrl & MPFS_CAN_RX_MSG_CTRL_CMD_IDE);
   rtr = (bool)(pmsg->msg_ctrl & MPFS_CAN_RX_MSG_CTRL_CMD_RTR);
   cf->can_id = mpfs_can_msgid_to_canid(pmsg->id, ide, rtr);
-
-  /* Filter check */
-
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
-  uint32_t can_id_masked = cf->can_id & CAN_ERR_MASK;
-
-  if (expect_true(!priv->filter.use_sw_mask_filter
-      && !priv->filter.use_sw_range_filter)
-      || (priv->filter.use_sw_mask_filter
-      && (can_id_masked & priv->filter.mask) == priv->filter.code)
-      || (priv->filter.use_sw_range_filter
-      && can_id_masked >= priv->filter.range_lower
-      && can_id_masked <= priv->filter.range_upper))
-  {
-    goto accepted;
-  }
-
-  return CAN_ERR;
-
-accepted:
-#endif  /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
 
   /* DLC */
 
@@ -1065,13 +1023,13 @@ static void mpfs_err_interrupt(mpfs_can_instance_t *priv, uint32_t isr)
 
   if (MPFS_CAN_INT_STATUS_ARB_LOSS & isr)
     {
-      canerr("Arbitration loss error interrupt\n");
+      canwarn("Arbitration loss error interrupt\n");
       priv->stats.arbitration_loss++;
     }
 
   if (MPFS_CAN_INT_STATUS_OVR_LOAD & isr)
     {
-      canerr("RX overload error interrupt\n");
+      canwarn("RX overload error interrupt\n");
       priv->stats.rx_overload++;
 
       /* Mask the interrupt until it is handled in worker */
@@ -1085,37 +1043,37 @@ static void mpfs_err_interrupt(mpfs_can_instance_t *priv, uint32_t isr)
 
   if (MPFS_CAN_INT_STATUS_BIT_ERR & isr)
     {
-      canerr("Bit error interrupt\n");
+      canwarn("Bit error interrupt\n");
       priv->stats.bit_errors++;
     }
 
   if (MPFS_CAN_INT_STATUS_STUFF_ERR & isr)
     {
-      canerr("Stuffing error interrupt\n");
+      canwarn("Stuffing error interrupt\n");
       priv->stats.stuff_errors++;
     }
 
   if (MPFS_CAN_INT_STATUS_ACK_ERR & isr)
     {
-      canerr("Ack error interrupt\n");
+      canwarn("Ack error interrupt\n");
       priv->stats.ack_errors++;
     }
 
   if (MPFS_CAN_INT_STATUS_FORM_ERR & isr)
     {
-      canerr("Form error interrupt\n");
+      canwarn("Form error interrupt\n");
       priv->stats.form_errors++;
     }
 
   if (MPFS_CAN_INT_STATUS_CRC_ERR & isr)
     {
-      canerr("CRC error interrupt\n");
+      canwarn("CRC error interrupt\n");
       priv->stats.crc_errors++;
     }
 
   if (MPFS_CAN_INT_STATUS_STUCK_AT_0 & isr)
     {
-      canerr("Stuck at 0 error interrupt\n");
+      canwarn("Stuck at 0 error interrupt\n");
       priv->stats.stuck_at_0++;
     }
 
@@ -1142,12 +1100,12 @@ static void mpfs_err_interrupt(mpfs_can_instance_t *priv, uint32_t isr)
   else if (state == 1)
     {
       priv->stats.error_passive++;
-      canerr("Change to ERROR_PASSIVE error state\n");
+      canwarn("Change to ERROR_PASSIVE error state\n");
     }
   else if (state > 1)
     {
       priv->stats.bus_off++;
-      canerr("Change to BUS_OFF error state\n");
+      canwarn("Change to BUS_OFF error state\n");
     }
   else
     {
@@ -1157,8 +1115,8 @@ static void mpfs_err_interrupt(mpfs_can_instance_t *priv, uint32_t isr)
 
   /* Handle bus-off and error passive state */
 
-#ifdef CONFIG_DEBUG_CAN_INFO
-  caninfo("Bus-off and Error passive handling: reset CAN controller..\n");
+#ifdef CONFIG_DEBUG_CAN_WARN
+  canwarn("Bus-off and Error passive handling: reset CAN controller..\n");
 #endif
 
   /* Bring down the CAN interface */
@@ -1181,11 +1139,11 @@ static void mpfs_err_interrupt(mpfs_can_instance_t *priv, uint32_t isr)
 
   mpfs_can_set_mode(priv, CANOP_MODE_NORMAL);
 
-  /* Initialize the rx buffer and only hw filter */
+  /* Initialize the rx buffer again */
 
-  if (CAN_OK != mpfs_can_reset_filter(priv, true))
+  if (CAN_OK != mpfs_can_config_buffer(priv))
     {
-      canerr("CAN hw filter reset and RX buffer initialization failed\n");
+      canerr("CAN RX buffer re-initialization failed\n");
     }
 
   /* Bring up the CAN interface again */
@@ -1273,10 +1231,10 @@ static int mpfs_interrupt(int irq, void *context, void *arg)
 }
 
 /****************************************************************************
- * Name: mpfs_can_add_sw_filter
+ * Name: mpfs_can_add_filter
  *
  * Description:
- *  Add new sw filter to CAN Controller. Currently only support ID filter
+ *  Add new HW filter to CAN Controller. Currently only support ID filter
  *
  * Input Parameters:
  *  priv          - Pointer to the private CAN driver state structure
@@ -1296,30 +1254,52 @@ static int mpfs_interrupt(int irq, void *context, void *arg)
  ****************************************************************************/
 
 #ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
-static uint8_t mpfs_can_add_sw_filter(mpfs_can_instance_t *priv,
+static uint8_t mpfs_can_add_filter(mpfs_can_instance_t *priv,
                                       uint8_t filter_type,
                                       uint32_t filter_id1,
                                       uint32_t filter_id2)
 {
+  uint8_t ret;
+
   if (filter_type == CAN_FILTER_MASK)
     {
-      if (!priv->filter.use_sw_mask_filter)
+      if (priv->filter.use_mask_filter)
         {
           canwarn("Mask filter is already in use. Overwrite now\n");
         }
-      priv->filter.use_sw_mask_filter = true;
-      priv->filter.code = filter_id1;
-      priv->filter.mask = filter_id2;
+
+      if (filter_id2 == CAN_SFF_MASK)
+        {
+          priv->filter.acr = (filter_id1 << MPFS_CAN_MSG_ID_SHIFT
+                              << MPFS_CAN_MSG_IDE_SHIFT);
+          priv->filter.amr = ~(filter_id2 << MPFS_CAN_MSG_ID_SHIFT
+                               << MPFS_CAN_MSG_IDE_SHIFT);
+        }
+        else if (filter_id2 == CAN_EFF_MASK)
+        {
+          priv->filter.acr = (filter_id1 << MPFS_CAN_MSG_ID_SHIFT) | 0x04;
+          priv->filter.amr = ~(filter_id2 << MPFS_CAN_MSG_ID_SHIFT) | 0x04;
+        }
+        else
+        {
+          canerr("Invalid filter mask\n");
+          return CAN_ERR;
+        }
+
+      /* Configure RX buffer */
+
+      if (CAN_OK != (ret = mpfs_can_config_buffer(priv)))
+        {
+          canerr("Failed to configure RX buffer:%d\n", ret);
+          return CAN_ERR;
+        }
+
+      priv->filter.use_mask_filter = true;
     }
   else if (filter_type == CAN_FILTER_RANGE)
     {
-      if (priv->filter.use_sw_range_filter)
-        {
-          canwarn("Range filter is already in use. Overwrite now\n");
-        }
-      priv->filter.use_sw_range_filter = true;
-      priv->filter.range_lower = filter_id1;
-      priv->filter.range_upper = filter_id2;
+      canerr("Range filter type not supported\n");
+      return CAN_ERR;
     }
   else
     {
@@ -1339,7 +1319,6 @@ static uint8_t mpfs_can_add_sw_filter(mpfs_can_instance_t *priv,
  *
  * Input Parameters:
  *  priv  - Pointer to the private CAN driver state structure
- *  hw_only - Reset only hw filter
  *
  * Returned Value:
  *  This function returns CAN_OK on successful bitrate set, otherwise it will
@@ -1350,15 +1329,11 @@ static uint8_t mpfs_can_add_sw_filter(mpfs_can_instance_t *priv,
  *
  ****************************************************************************/
 
-static uint8_t mpfs_can_reset_filter(mpfs_can_instance_t *priv, bool hw_only)
+static uint8_t mpfs_can_reset_filter(mpfs_can_instance_t *priv)
 {
   uint8_t ret;
 
-  if (!hw_only)
-    {
-      priv->filter.use_sw_mask_filter = false;
-      priv->filter.use_sw_range_filter = false;
-    }
+  priv->filter.use_mask_filter = false;
 
   priv->filter.amr = 0xffffffff;  /* Mask bit == 1 => bits are not checked */
   priv->filter.acr = 0x00000000;  /* Code bit == 0 => no code to check */
@@ -2777,8 +2752,8 @@ defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
         struct can_ioctl_filter_s *req =
           (struct can_ioctl_filter_s *)((uintptr_t)arg);
 
-        if (CAN_OK != mpfs_can_add_sw_filter(priv, req->ftype,
-                                             req->fid1, req->fid2))
+        if (CAN_OK != mpfs_can_add_filter(priv, req->ftype,
+                                          req->fid1, req->fid2))
           {
             canerr("CAN filter add failed");
             ret = -1;
@@ -2792,10 +2767,8 @@ defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
     case SIOCDCANSTDFILTER:
     case SIOCDCANEXTFILTER:
 
-      /* Reset all SW/HW filters */
-
       {
-        mpfs_can_reset_filter(priv, false);
+        mpfs_can_reset_filter(priv);
         ret = CAN_OK;
       }
       break;
@@ -2900,9 +2873,9 @@ int mpfs_can_init(int ncan, uint32_t bitrate)
   priv->basic_can_rxb_count = CAN_RX_BUFFER;
   priv->basic_can_txb_count = CAN_TX_BUFFER;
 
-  /* Initialize SW / HW filter */
+  /* Initialize filter */
 
-  if (CAN_OK != mpfs_can_reset_filter(priv, false))
+  if (CAN_OK != mpfs_can_reset_filter(priv))
     {
       canerr("CAN filter reset and RX buffer initialization failed\n");
       return -EAGAIN;
