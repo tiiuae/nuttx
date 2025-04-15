@@ -59,6 +59,9 @@
 #define IMX9_CAN_IFLAG3_OFFSET   0x0074 /* Interrupt Flags 3 Register */
 #define IMX9_CAN_ET_OFFSET       0x0078 /* External Timer Register */
 #define IMX9_CAN_FLTC_IE_OFFSET  0x007c /* Fault Confinement Interrupt Enable Register */
+#define IMX9_CAN_ERFCR_OFFSET    0x0c0c /* Enhanced RX FIFO Control */
+#define IMX9_CAN_ERFSR_OFFSET    0x0c14 /* Enhanced RX FIFO Status */
+#define IMX9_CAN_ERFFEL0_OFFSET  0x3000 /* Enhanced RX FIFO Filter Element */
 
 #define IMX9_CAN_MB_OFFSET       0x0080 /* CAN MB start */
 #define IMX9_CAN_MB_SIZE         0x0600
@@ -477,6 +480,29 @@
 #define CAN_MB_ID_ID_STD_MASK      (0x7ff << CAN_MB_ID_ID_STD_SHIFT)
 #define CAN_MB_ID_PRIO_SHIFT       29
 #define CAN_MB_ID_PRIO_MASK        (0x7 << CAN_MB_ID_PRIO_SHIFT)
+
+/* CAN Enhanced RX FIFO Control */
+
+#define CAN_ERFCR_ERFWM_SHIFT      (0)        /* Bits 0-5: Enhanced RX FIFO Watermark */
+#define CAN_ERFCR_ERFWM_MASK       (0x1f << CAN_ERFCR_ERFWM_SHIFT)
+#define CAN_ERFCR_ERFWM(x)         (((x) << CAN_ERFCR_ERFWM_SHIFT) & CAN_ERFCR_ERFWM_MASK)
+#define CAN_ERFCR_NFE_SHIFT        (8)        /* Bits 8-14: Number of Enhanced RX FIFO Filter Elements */
+#define CAN_ERFCR_NFE_MASK         (0x3f << CAN_ERFCR_NFE_SHIFT)
+#define CAN_ERFCR_NFE(x)           (((x) << CAN_ERFCR_NFE_SHIFT) & CAN_ERFCR_NFE_MASK)
+#define CAN_ERFCR_NEXIF_SHIFT      (16)       /* Bits 16-23: Number of Extended ID Filter Elements */
+#define CAN_ERFCR_NEXIF_MASK       (0x7f << CAN_ERFCR_NEXIF_SHIFT)
+#define CAN_ERFCR_NEXIF(x)         (((x) << CAN_ERFCR_NEXIF_SHIFT) & CAN_ERFCR_NEXIF_MASK)
+#define CAN_ERFCR_DMALW_SHIFT      (26)       /* Bits 26-31: DMA Last Word */
+#define CAN_ERFCR_DMALW_MASK       (0x1f << CAN_ERFCR_DMALW_SHIFT)
+#define CAN_ERFCR_DMALW(x)         (((x) << CAN_ERFCR_DMALW_SHIFT) & CAN_ERFCR_DMALW_MASK)
+#define CAN_ERFCR_ERFEN            (1 << 31)  /* Bit 31: Enhanced RX FIFO enable */
+
+/* CAN Enhanced RX FIFO Status */
+#define CAN_ERFSR_ERFEL_SHIFT      (0)        /* Bits 0-6: Enhanced RX FIFO Elements */
+#define CAN_ERFSR_ERFEL_MASK       (0x3f << CAN_ERFSR_ERFEL_SHIFT)
+#define CAN_ERFSR_ERFEL(x)         (((x) << CAN_ERFSR_ERFEL_SHIFT) & CAN_ERFSR_ERFEL_MASK)
+#define CAN_ERFSR_ERFCLR           (1 << 27)  /* Bit 27: Enhanced RX FIFO Clear */
+
 
 /****************************************************************************
  * Public Types

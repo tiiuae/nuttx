@@ -80,6 +80,10 @@
 
 #define TSEG_MIN                    2
 
+#define NEXIF_CONFIG                1 /* Number of extended ID filter elements */
+#define NFE_CONFIG                  1 /* Total Number of Enhanced RC FIFO filter elements
+                                       * => 2 standard ID filter elements */
+
 /* Classical can CTRL1 bit timing */
 
 #define TSEG1_MAX                   16
@@ -182,6 +186,11 @@ struct imx9_driver_s
 
 #ifdef CONFIG_NET_CAN_RAW_TX_DEADLINE
   struct txmbstats txmb[TXMBCOUNT];
+#endif
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+  uint8_t std_id_filter_cnt;          /* STD ID filter element current count */
+  uint8_t ext_id_filter_cnt;          /* EXT ID filter element current count */
 #endif
 };
 
@@ -550,6 +559,17 @@ static int  imx9_txavail(struct net_driver_s *dev);
 #ifdef CONFIG_NETDEV_IOCTL
 static int  imx9_ioctl(struct net_driver_s *dev, int cmd,
                        unsigned long arg);
+#endif
+
+/* CAN ID filtering */
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+static uint32_t imx9_add_filter(struct imx9_driver_s *priv,
+                                 uint8_t filter_type,
+                                 bool ext_id,
+                                 uint32_t filter_id1,
+                                 uint32_t filter_id2);
+static uint8_t imx9_reset_filter(struct imx9_driver_s *priv, bool ext_id);
 #endif
 
 /* Initialization */
@@ -1647,6 +1667,41 @@ static int imx9_ioctl(struct net_driver_s *dev, int cmd,
         }
         break;
 #endif
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+      case SIOCACANSTDFILTER: /* Set STD ID CAN filter */
+        {
+          struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
+          struct can_ioctl_filter_s *req =
+            (struct can_ioctl_filter_s *)((uintptr_t)arg);
+          ret = imx9_add_filter(priv, req->ftype, 0, req->fid1, req->fid2);
+        }
+        break;
+
+      case SIOCACANEXTFILTER: /* Set EXT ID CAN filter */
+        {
+          struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
+          struct can_ioctl_filter_s *req =
+            (struct can_ioctl_filter_s *)((uintptr_t)arg);
+          ret = imx9_add_filter(priv, req->ftype, 1, req->fid1, req->fid2);
+        }
+        break;
+
+      case SIOCDCANSTDFILTER: /* Reset STD ID CAN filter */
+        {
+          struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
+          ret = imx9_reset_filter(priv, 0);
+        }
+        break;
+
+      case SIOCDCANEXTFILTER: /* Reset EXT ID CAN filter */
+        {
+          struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
+          ret = imx9_reset_filter(priv, 1);
+        }
+        break;
+#endif
+
       default:
         ret = -ENOTTY;
         break;
@@ -1655,6 +1710,191 @@ static int imx9_ioctl(struct net_driver_s *dev, int cmd,
   return ret;
 }
 #endif /* CONFIG_NETDEV_IOCTL */
+
+/****************************************************************************
+ * Name: imx9_add_filter
+ *
+ * Description:
+ *   Add new enhanced RX FIFO filter. Currently only support ID filter
+ *
+ * Input Parameters:
+ *   priv          - Pointer to the private CAN driver state structure
+ *   filter_type   - The type of the filter: mask, range or dual filter
+ *   ext_id        - true: extended id, false: standard id
+ *   filter_id1    - filter id 1 (refer to can_ioctl_filter_s in if.h)
+ *   filter_id2    - filter id 2 (refer to can_ioctl_filter_s in if.h)
+ *
+ * Returned Value:
+ *   return OK on success, negated error number on failure
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+static uint32_t imx9_add_filter(struct imx9_driver_s *priv,
+                               uint8_t filter_type,
+                               bool ext_id,
+                               uint32_t filter_id1,
+                               uint32_t filter_id2)
+{
+  uint32_t regval;
+  uint32_t regaddr;
+
+  const uint8_t max_std_id_filter_cnt = 2 * (NFE_CONFIG - NEXIF_CONFIG + 1);
+  const uint8_t max_ext_id_filter_cnt = NEXIF_CONFIG;
+
+  /* Check filter type validity */
+
+  if (filter_type != CAN_FILTER_MASK)
+    {
+      regval = 0x0 << 30;
+    }
+  else if (filter_type != CAN_FILTER_RANGE)
+    {
+      regval = 0x1 << 30;
+    }
+  else if (filter_type != CAN_FILTER_DUAL)
+    {
+      regval = 0x2 << 30;
+    }
+  else
+    {
+      canerr("FLEXCAN: invalid filter type\n");
+      return -EINVAL;
+    }
+
+  /* Enter freeze mode */
+
+  if (!imx9_setfreeze(priv->base, true))
+    {
+      canerr("FLEXCAN: freeze fail\n");
+      return ERROR;
+    }
+
+  /* Set filter elements */
+
+  if (ext_id)
+    {
+      if (priv->ext_id_filter_cnt >= max_ext_id_filter_cnt)
+        {
+          canerr("FLEXCAN: Maximum number of EXT ID filters reached. Reset "
+               "filters to clear all\n");
+          return -EINVAL;
+        }
+      regaddr = priv->base + IMX9_CAN_ERFFEL0_OFFSET
+                + priv->ext_id_filter_cnt * 0x0008;
+      filter_id1 = (filter_id1 & CAN_EFF_MASK);
+      filter_id2 = (filter_id2 & CAN_EFF_MASK);
+      putreg32(regval | (filter_type == CAN_FILTER_MASK
+               ? filter_id1 : filter_id2), regaddr);
+      putreg32(filter_type == CAN_FILTER_MASK
+               ? filter_id2 : filter_id1, regaddr + 0x0004);
+      priv->ext_id_filter_cnt++;
+    }
+  else
+    {
+      if (priv->std_id_filter_cnt >= max_std_id_filter_cnt)
+        {
+          canerr("FLEXCAN: Maximum number of STD ID filters reached. "
+               "Reset filters to clear all\n");
+          return -EINVAL;
+        }
+      regaddr = priv->base + IMX9_CAN_ERFFEL0_OFFSET
+                + max_ext_id_filter_cnt * 0x0008
+                + priv->std_id_filter_cnt * 0x0004;
+      filter_id1 = (filter_id1 & CAN_SFF_MASK);
+      filter_id2 = (filter_id2 & CAN_SFF_MASK);
+      regval = ((filter_type == CAN_FILTER_MASK
+                ? filter_id1 : filter_id2) << 16)
+                | ((filter_type == CAN_FILTER_MASK
+                ? filter_id2 : filter_id1) << 0);
+      putreg32(regval, regaddr);
+      priv->std_id_filter_cnt++;
+    }
+
+  /* Exit freeze mode */
+
+  if (!imx9_setfreeze(priv->base, false))
+    {
+      canerr("FLEXCAN: unfreeze fail\n");
+      return ERROR;
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: imx9_reset_filter
+ *
+ * Description:
+ *   Clear all filter elements in the enhanced RX FIFO
+ *
+ * Input Parameters:
+ *   priv  - Pointer to the private CAN driver state structure
+ *   ext_id - true: extended id, false: standard id
+ *
+ * Returned Value:
+ *   return OK on success, negated error number on failure
+ *
+ ****************************************************************************/
+
+static uint8_t imx9_reset_filter(struct imx9_driver_s *priv, bool ext_id)
+{
+  const uint8_t max_std_id_filter_cnt = 2 * (NFE_CONFIG - NEXIF_CONFIG + 1);
+  const uint8_t max_ext_id_filter_cnt = NEXIF_CONFIG;
+
+  /* Enter freeze mode */
+
+  if (!imx9_setfreeze(priv->base, true))
+    {
+      canerr("FLEXCAN: freeze fail\n");
+      return ERROR;
+    }
+
+  /* Clear the enhanced RX FIFO */
+
+  modifyreg32(priv->base + IMX9_CAN_ERFSR_OFFSET, 0, CAN_ERFSR_ERFCLR);
+
+  /* Clear the filter elements */
+
+  if (ext_id)
+    {
+      for (uint8_t i = 0; i < max_ext_id_filter_cnt; i++)
+        {
+          putreg32(0x0, priv->base + IMX9_CAN_ERFFEL0_OFFSET + i * 0x0008);
+        }
+    }
+  else
+    {
+      for (uint8_t i = 0; i < max_std_id_filter_cnt; i++)
+        {
+          putreg32(0x0, priv->base + IMX9_CAN_ERFFEL0_OFFSET
+                   + max_ext_id_filter_cnt * 0x0008
+                   + i * 0x0004);
+        }
+    }
+
+  /* Exit freeze mode */
+
+  if (!imx9_setfreeze(priv->base, false))
+    {
+      canerr("FLEXCAN: unfreeze fail\n");
+      return ERROR;
+    }
+
+  /* Reset runtime filter count */
+
+  if (ext_id)
+    {
+      priv->ext_id_filter_cnt = 0;
+    }
+  else
+    {
+      priv->std_id_filter_cnt = 0;
+    }
+
+  return OK;
+}
+#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
 
 /****************************************************************************
  * Function: imx9_init_eccram
@@ -1841,6 +2081,15 @@ static int imx9_initialize(struct imx9_driver_s *priv)
                   CAN_FDCBT_FPSEG1(priv->data_timing.pseg1) |      /* Phase buffer segment 1 */
                   CAN_FDCBT_FPSEG2(priv->data_timing.pseg2) |      /* Phase buffer segment 2 */
                   CAN_FDCBT_FRJW(priv->data_timing.pseg2));        /* Resynchorinzation jump width same as PSEG2 */
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+      modifyreg32(priv->base + IMX9_CAN_ERFSR_OFFSET, 0, CAN_ERFSR_ERFCLR); /* Clear the enhanced RX FIFO */
+
+      modifyreg32(priv->base + IMX9_CAN_ERFCR_OFFSET, 0,
+                  CAN_ERFCR_ERFEN |                /* Enable enhanced RX FIFO */
+                  CAN_ERFCR_NEXIF(NEXIF_CONFIG) |  /* Set number of extended ID filter elements */
+                  CAN_ERFCR_NFE(NFE_CONFIG));      /* Set total number of ID filter elements */
+#endif
 
       /* Additional CAN-FD configurations */
 
@@ -2061,6 +2310,13 @@ int imx9_caninitialize(int intf)
       irq_detach(priv->irq);
       return -EAGAIN;
     }
+
+  /* Initialize extended RX FIFO filter element count */
+
+#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+  priv->std_id_filter_cnt = 0;
+  priv->ext_id_filter_cnt = 0;
+#endif
 
   /* Disable */
 
