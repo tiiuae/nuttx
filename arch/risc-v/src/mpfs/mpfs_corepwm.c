@@ -760,8 +760,8 @@ static int pwm_init(struct mpfs_pwmtimer_s *priv)
 {
   /* Toggle peripheral reset */
 
-  mpfs_set_reset(MPFS_RCC_I2C, priv->pwmid, 1);
-  mpfs_set_reset(MPFS_RCC_I2C, priv->pwmid, 0);
+  mpfs_set_reset(MPFS_RCC_PWM, priv->pwmid, 1);
+  mpfs_set_reset(MPFS_RCC_PWM, priv->pwmid, 0);
 
   /* Release FIC reset and enable clocks */
 
