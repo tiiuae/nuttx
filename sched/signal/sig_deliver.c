@@ -78,13 +78,6 @@ void nxsig_deliver(FAR struct tcb_s *stcb)
        */
 
       flags = enter_critical_section();
-      if ((stcb->flags & TCB_FLAG_SIGNAL_ACTION) != 0)
-        {
-          /* Yes.. then we must wait for the signal handler to return */
-
-          leave_critical_section(flags);
-          break;
-        }
 
       /* Remove the signal structure from the head of the sigpendactionq. */
 
@@ -96,10 +89,6 @@ void nxsig_deliver(FAR struct tcb_s *stcb)
           leave_critical_section(flags);
           break;
         }
-
-      /* Indicate that a signal is being delivered */
-
-      stcb->flags |= TCB_FLAG_SIGNAL_ACTION;
 
       sinfo("Deliver signal %d to PID %d\n",
             sigq->info.si_signo, stcb->pid);
@@ -173,10 +162,7 @@ void nxsig_deliver(FAR struct tcb_s *stcb)
                                      NULL);
         }
 
-      /* Indicate that a signal has been delivered */
-
-      flags             = enter_critical_section();
-      stcb->flags       &= ~TCB_FLAG_SIGNAL_ACTION;
+      flags = enter_critical_section();
 
       /* Restore the original sigprocmask.
        *

@@ -150,6 +150,15 @@ void irq_dispatch(int irq, FAR void *context)
   sched_note_irqhandler(irq, vector, false);
 #endif
 
+  /* Schedule signal actions */
+
+  struct tcb_s *tcb = this_task();
+  if ((tcb->flags & (TCB_FLAG_SIGNAL_ACTION | TCB_FLAG_SIGDELIVER)) == TCB_FLAG_SIGDELIVER)
+    {
+      tcb->flags |= TCB_FLAG_SIGNAL_ACTION;
+      up_schedule_sigaction(tcb);
+    }
+
 #ifdef CONFIG_DEBUG_MM
   if ((rtcb->flags & TCB_FLAG_HEAP_CHECK) ||
       (this_task()->flags & TCB_FLAG_HEAP_CHECK))

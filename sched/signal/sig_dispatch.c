@@ -64,34 +64,10 @@ struct sig_arg_s
 #ifdef CONFIG_SMP
 static int sig_handler(FAR void *cookie)
 {
-  FAR struct sig_arg_s *arg = cookie;
-  FAR struct tcb_s *tcb;
-  irqstate_t flags;
+  /* A dummy function to call; just to cause IPI on another CPU to trigger
+   * signal action scheduling
+   */
 
-  flags = enter_critical_section();
-  tcb = nxsched_get_tcb(arg->pid);
-
-  if (!tcb || tcb->task_state == TSTATE_TASK_INVALID ||
-      (tcb->flags & TCB_FLAG_EXIT_PROCESSING) != 0)
-    {
-      /* There is no TCB with this pid or, if there is, it is not a task. */
-
-      leave_critical_section(flags);
-      return -ESRCH;
-    }
-
-  if (arg->need_restore)
-    {
-      tcb->affinity = arg->saved_affinity;
-      tcb->flags &= ~TCB_FLAG_CPU_LOCKED;
-    }
-
-  if ((tcb->flags & TCB_FLAG_SIGDELIVER) != 0)
-    {
-      up_schedule_sigaction(tcb);
-    }
-
-  leave_critical_section(flags);
   return OK;
 }
 #endif
@@ -162,36 +138,56 @@ static int nxsig_queue_action(FAR struct tcb_s *stcb, siginfo_t *info)
 
           if ((stcb->flags & TCB_FLAG_SIGDELIVER) == 0)
             {
-#ifdef CONFIG_SMP
-              int cpu = stcb->cpu;
-              int me  = this_cpu();
-
               stcb->flags |= TCB_FLAG_SIGDELIVER;
-              if (cpu != me && stcb->task_state == TSTATE_TASK_RUNNING)
+              if (stcb->task_state == TSTATE_TASK_RUNNING)
                 {
-                  struct sig_arg_s arg;
+#ifdef CONFIG_SMP
+                  int cpu = stcb->cpu;
+                  int me  = this_cpu();
 
-                  if ((stcb->flags & TCB_FLAG_CPU_LOCKED) != 0)
+                  if (cpu != me)
                     {
-                      arg.need_restore   = false;
+                      /* SMP call to a dummy function triggers an IPI.
+                       *
+                       * NB:
+                       *   There is a lot of unnecessary stuff involved,
+                       *   we'd only need a dummy IPI.
+                       *
+                       * NB2:
+                       *   Firing the IPI only quarantees that the action
+                       *   gets scheduled immediately on the other CPU *IF*
+                       *   the stcb is still running there at the time when
+                       *   IPI is handled.
+                       *
+                       *   There is no quarantee that stcb is still running
+                       *   on that CPU when the IRQ caused here is handled.
+                       *   It doesn't matter - if the stcb changed the CPU,
+                       *   irq_dispatch already scheduled the action when it
+                       *   was activated on the other CPU. If it was
+                       *   scheduled away, the action gets scheduled when
+                       *   the stcb gets to run again.
+                       */
+
+                      nxsched_smp_call_single(cpu, sig_handler, NULL);
                     }
                   else
-                    {
-                      arg.saved_affinity = stcb->affinity;
-                      arg.need_restore   = true;
-
-                      stcb->flags        |= TCB_FLAG_CPU_LOCKED;
-                      CPU_SET(stcb->cpu, &stcb->affinity);
-                    }
-
-                  arg.pid = stcb->pid;
-                  nxsched_smp_call_single(stcb->cpu, sig_handler, &arg);
-                }
-              else
 #endif
-                {
-                  stcb->flags |= TCB_FLAG_SIGDELIVER;
-                  up_schedule_sigaction(stcb);
+                    {
+                      /* If signalling self, trigger a SWINT to schedule it
+                       * straight away. If stcb schedules away before the INT
+                       * is handled, the action will just be scheduled on
+                       * the next switch to stcb.
+                       *
+                       * NB:
+                       *   What we really want here is to cause a dummy
+                       *   interrupt to get the action scheduled in
+                       *   irq_dispatch
+                       */
+
+                      DEBUGASSERT(stcb == this_task());
+
+                      up_switch_context(stcb, stcb);
+                    }
                 }
             }
 

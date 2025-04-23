@@ -131,8 +131,7 @@ retry:
   up_irq_save();
 #endif
 
-  if (!sq_empty(&rtcb->sigpendactionq) &&
-      (rtcb->flags & TCB_FLAG_SIGNAL_ACTION) == 0)
+  if (!sq_empty(&rtcb->sigpendactionq))
     {
 #ifdef CONFIG_SMP
       leave_critical_section(regs[REG_INT_CTX]);
@@ -150,13 +149,14 @@ retry:
    * could be modified by a hostile program.
    */
 
-  rtcb->flags &= ~TCB_FLAG_SIGDELIVER;
+  rtcb->flags &= ~(TCB_FLAG_SIGDELIVER | TCB_FLAG_SIGNAL_ACTION);
 
   /* Then restore the correct state for this thread of
    * execution.
    */
 
   board_autoled_off(LED_SIGNAL);
+
 #ifdef CONFIG_SMP
   /* We need to keep the IRQ lock until task switching */
 
