@@ -162,7 +162,7 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
   int cpu;
   int me;
 
-  cpu = nxsched_select_cpu(btcb->affinity);
+  cpu = nxsched_select_cpu(btcb);
 
   /* Get the task currently running on the CPU (may be the IDLE task) */
 

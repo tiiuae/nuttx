@@ -518,14 +518,16 @@ static inline_function bool nxsched_add_prioritized(FAR struct tcb_s *tcb,
 }
 
 #  ifdef CONFIG_SMP
-static inline_function int nxsched_select_cpu(cpu_set_t affinity)
+static inline_function int nxsched_select_cpu(FAR struct tcb_s *btcb)
 {
+  cpu_set_t affinity;
   uint8_t minprio;
   int cpu;
   int i;
 
-  minprio = SCHED_PRIORITY_MAX;
-  cpu     = 0xff;
+  affinity = btcb->flags & TCB_FLAG_CPU_LOCKED ? btcb->cpu : btcb->affinity;
+  minprio  = SCHED_PRIORITY_MAX;
+  cpu      = 0xff;
 
   for (i = 0; i < CONFIG_SMP_NCPUS; i++)
     {

@@ -212,7 +212,7 @@ bool nxsched_merge_pending(void)
           return false;
         }
 
-      cpu  = nxsched_select_cpu(ALL_CPUS); /* REVISIT:  Maybe ptcb->affinity */
+      cpu  = nxsched_select_cpu(ptcb);
       rtcb = current_task(cpu);
 
       /* Loop while there is a higher priority task in the pending task list
@@ -266,7 +266,7 @@ bool nxsched_merge_pending(void)
               goto errout;
             }
 
-          cpu  = nxsched_select_cpu(ALL_CPUS); /* REVISIT:  Maybe ptcb->affinity */
+          cpu  = nxsched_select_cpu(ptcb);
           rtcb = current_task(cpu);
         }
 
