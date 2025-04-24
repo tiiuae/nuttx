@@ -90,7 +90,7 @@ void up_schedule_sigaction(struct tcb_s *tcb)
    * to task that is currently executing on any CPU.
    */
 
-  if (tcb == this_task() && !up_interrupt_context())
+  if (tcb == g_running_tasks[this_cpu()] && !up_interrupt_context())
     {
       /* In this case just deliver the signal now.
        * REVISIT:  Signal handler will run in a critical section!
