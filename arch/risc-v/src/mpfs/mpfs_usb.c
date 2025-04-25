@@ -3444,6 +3444,10 @@ static int mpfs_usb_interrupt(int irq, void *context, void *arg)
   uint16_t pending_tx_ep;
   int i;
 
+#ifdef CONFIG_SMP
+  irqstate_t flags = enter_critical_section();
+#endif
+
   /* Get the device interrupts */
 
   isr = getreg8(MPFS_USB_IRQ);
@@ -3469,6 +3473,9 @@ static int mpfs_usb_interrupt(int irq, void *context, void *arg)
       priv->usbdev.dualspeed = 1;
 #endif
 
+#ifdef CONFIG_SMP
+      leave_critical_section(flags);
+#endif
       return OK;
     }
 
@@ -3553,6 +3560,9 @@ static int mpfs_usb_interrupt(int irq, void *context, void *arg)
       mpfs_resume(priv);
     }
 
+#ifdef CONFIG_SMP
+  leave_critical_section(flags);
+#endif
   return OK;
 }
 
