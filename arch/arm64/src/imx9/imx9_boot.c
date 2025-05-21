@@ -126,7 +126,7 @@ void arm64_el_init(void)
 
 void arm64_chip_boot(void)
 {
-#ifdef CONFIG_IMX9_BOOTLOADER
+#if defined(CONFIG_IMX9_BOOTLOADER) && CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
   imx9_mix_powerup();
 
   /* Before DDR init we need to initialize clocks and trdc */
@@ -164,11 +164,13 @@ void arm64_chip_boot(void)
   imx9_gpioirq_initialize();
 #endif
 
+#if  CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
   /* Perform board-specific device initialization. This would include
    * configuration of board specific resources such as GPIOs, LEDs, etc.
    */
 
   imx9_board_initialize();
+#endif
 
 #ifdef USE_EARLYSERIALINIT
   /* Perform early serial initialization if we are going to use the serial

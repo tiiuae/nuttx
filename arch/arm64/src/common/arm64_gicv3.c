@@ -535,7 +535,9 @@ static void gicv3_cpuif_init(void)
   write_sysreg(1, ICC_IGRPEN1_EL1);
 
 #ifdef CONFIG_ARM64_DECODEFIQ
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
   write_sysreg(1, ICC_IGRPEN0_EL1);
+#endif
 #endif
 
   UP_ISB();
