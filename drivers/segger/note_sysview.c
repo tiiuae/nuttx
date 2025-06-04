@@ -159,12 +159,6 @@ static struct note_sysview_driver_s g_note_sysview_driver =
 };
 
 /****************************************************************************
- * Public Data
- ****************************************************************************/
-
-spinlock_t g_segger_lock = SP_UNLOCKED;
-
-/****************************************************************************
  * Private Functions
  ****************************************************************************/
 
@@ -275,7 +269,7 @@ static void note_sysview_resume(FAR struct note_driver_s *drv,
     }
 }
 #endif
-
+volatile int debug_switch = 0;
 #ifdef CONFIG_SCHED_INSTRUMENTATION_IRQHANDLER
 static void note_sysview_irqhandler(FAR struct note_driver_s *drv, int irq,
                                     FAR void *handler, bool enter)
@@ -287,6 +281,11 @@ static void note_sysview_irqhandler(FAR struct note_driver_s *drv, int irq,
     {
       driver->irq[this_cpu()] = irq;
 
+      if (irq == 110)
+        {
+          debug_switch ^= 1;
+        }
+      
       SEGGER_SYSVIEW_OnTaskStopExec();
       SEGGER_SYSVIEW_RecordEnterISR();
     }

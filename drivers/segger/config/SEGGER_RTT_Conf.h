@@ -34,14 +34,6 @@
 #endif
 
 /****************************************************************************
- * Public Data
- ****************************************************************************/
-
-#ifndef __ASSEMBLY__
-extern spinlock_t g_segger_lock;
-#endif
-
-/****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
@@ -89,11 +81,11 @@ extern spinlock_t g_segger_lock;
 
 /* Lock RTT (nestable)   (i.e. disable interrupts) */
 
-#define SEGGER_RTT_LOCK()               irqstate_t __flags = spin_lock_irqsave_notrace(&g_segger_lock)
+#define SEGGER_RTT_LOCK()               irqstate_t __flags = enter_critical_section();
 
 /* Unlock RTT (nestable) (i.e. enable previous interrupt lock state) */
 
-#define SEGGER_RTT_UNLOCK()             spin_unlock_irqrestore_notrace(&g_segger_lock, __flags)
+#define SEGGER_RTT_UNLOCK()             leave_critical_section(__flags);
 
 /* Disable RTT SEGGER_RTT_WriteSkipNoLock */
 
