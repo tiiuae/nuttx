@@ -116,4 +116,8 @@
 
 #define SEGGER_SYSVIEW_PRINTF_IMPLICIT_FORMAT 1
 
+/* Segger sysview post-mortem (circular buffer) mode */
+
+#define SEGGER_SYSVIEW_POST_MORTEM_MODE CONFIG_SEGGER_SYSVIEW_POST_MORTEM
+
 #endif /* __DRIVERS_SEGGER_CONFIG_SEGGER_RTT_CONF_H */
