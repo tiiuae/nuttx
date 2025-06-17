@@ -217,6 +217,11 @@ void nxxx_clockconfig(void)
 
   nxxx_sysinit();
 
+  /* Disable GDET0/1, otherwise a system reset will occur */
+
+  putreg32(0, NXXX_GDET0_BASE + 8);
+  putreg32(0, NXXX_GDET1_BASE + 8);
+
   /* This sets up the system clock at 150MHz */
 
   nxxx_set_clock_gate(CLOCK_GATE_SCG, true);
