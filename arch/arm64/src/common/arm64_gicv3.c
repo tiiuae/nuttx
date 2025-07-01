@@ -82,6 +82,7 @@
 /* Redistributor base addresses for each core */
 
 static unsigned long g_gic_rdists[CONFIG_SMP_NCPUS];
+static volatile spinlock_t g_gic_lock = SP_UNLOCKED;
 
 /***************************************************************************
  * Private Functions
@@ -174,6 +175,7 @@ void arm64_gic_irq_set_priority(unsigned int intid, unsigned int prio,
   uint32_t      shift;
   uint32_t      val;
   unsigned long base = GET_DIST_BASE(intid);
+  irqstate_t    irq_flags;
 
   /* Disable the interrupt */
 
@@ -191,6 +193,13 @@ void arm64_gic_irq_set_priority(unsigned int intid, unsigned int prio,
       idx     = intid / GIC_NUM_CFG_PER_REG;
       shift   = (intid & (GIC_NUM_CFG_PER_REG - 1)) * 2;
 
+      /* GICD_ICFGR requires full 32-bit RMW operations.
+       * Each interrupt uses 2 bits; thus updates must be synchronized
+       * to avoid losing configuration in concurrent environments.
+       */
+
+      irq_flags = spin_lock_irqsave(&g_gic_lock);
+
       val = getreg32(ICFGR(base, idx));
       val &= ~(GICD_ICFGR_MASK << shift);
       if (flags & IRQ_TYPE_EDGE)
@@ -199,6 +208,7 @@ void arm64_gic_irq_set_priority(unsigned int intid, unsigned int prio,
         }
 
       putreg32(val, ICFGR(base, idx));
+      spin_unlock_irqrestore(&g_gic_lock, irq_flags);
     }
 }
 
@@ -227,11 +237,19 @@ int arm64_gic_irq_trigger(unsigned int intid, uint32_t flags)
   uint32_t      shift;
   uint32_t      val;
   unsigned long base = GET_DIST_BASE(intid);
+  irqstate_t    irq_flags;
 
   if (!GIC_IS_SGI(intid))
     {
       idx   = intid / GIC_NUM_CFG_PER_REG;
       shift = (intid & (GIC_NUM_CFG_PER_REG - 1)) * 2;
+
+      /* GICD_ICFGR requires full 32-bit RMW operations.
+       * Each interrupt uses 2 bits; thus updates must be synchronized
+       * to avoid losing configuration in concurrent environments.
+       */
+
+      irq_flags = spin_lock_irqsave(&g_gic_lock);
 
       val = getreg32(ICFGR(base, idx));
       val &= ~(GICD_ICFGR_MASK << shift);
@@ -241,6 +259,7 @@ int arm64_gic_irq_trigger(unsigned int intid, uint32_t flags)
         }
 
       putreg32(val, ICFGR(base, idx));
+      spin_unlock_irqrestore(&g_gic_lock, irq_flags);
       return OK;
     }
 
