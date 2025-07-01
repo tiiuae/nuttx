@@ -62,9 +62,6 @@
 
 void nxsched_process_delivered(int cpu)
 {
-  FAR dq_queue_t *tasklist;
-  FAR struct tcb_s *next;
-  FAR struct tcb_s *prev;
   struct tcb_s *btcb = NULL;
   struct tcb_s *tcb;
 
@@ -82,61 +79,39 @@ void nxsched_process_delivered(int cpu)
 
   if (g_delivertasks[cpu] == NULL)
     {
-      if (tcb->irqcount <= 0)
-        {
-          cpu_irqlock_clear();
-        }
-
-      return;
-    }
-
-  if (nxsched_islocked_tcb(tcb))
-    {
-      btcb = g_delivertasks[cpu];
-      g_delivertasks[cpu] = NULL;
-      nxsched_add_prioritized(btcb, &g_pendingtasks);
-      btcb->task_state = TSTATE_TASK_PENDING;
-      if (tcb->irqcount <= 0)
-        {
-          cpu_irqlock_clear();
-        }
-
-      return;
+      goto out;
     }
 
   btcb = g_delivertasks[cpu];
+  g_delivertasks[cpu] = NULL;
 
-  for (next = tcb; btcb->sched_priority <= next->sched_priority;
-      next = next->flink);
-
-  DEBUGASSERT(next);
-
-  prev = next->blink;
-  if (prev == NULL)
+  if (nxsched_islocked_tcb(tcb) ||
+      btcb->sched_priority < tcb->sched_priority)
     {
-      /* Special case:  Insert at the head of the list */
-
-      tasklist = &g_assignedtasks[cpu];
-      dq_addfirst_nonempty((FAR dq_entry_t *)btcb, tasklist);
-      btcb->cpu = cpu;
-      btcb->task_state = TSTATE_TASK_RUNNING;
-      up_update_task(btcb);
-
-      DEBUGASSERT(btcb->flink != NULL);
-      DEBUGASSERT(next == btcb->flink);
-      next->task_state = TSTATE_TASK_ASSIGNED;
+      nxsched_add_prioritized(btcb, list_readytorun());
+      btcb->task_state = TSTATE_TASK_READYTORUN;
     }
   else
     {
-      /* Insert in the middle of the list */
+      FAR dq_queue_t *tasklist = &g_assignedtasks[cpu];
 
-      dq_insert_mid(prev, btcb, next);
+      if (!is_idle_task(tcb))
+        {
+          tcb->task_state = TSTATE_TASK_READYTORUN;
+          dq_rem((FAR struct dq_entry_s *)tcb, tasklist);
+          nxsched_add_prioritized(tcb, &g_readytorun);
+        }
+
+      dq_addfirst((FAR dq_entry_t *)btcb, tasklist);
+      up_update_task(btcb);
+
       btcb->cpu = cpu;
-      btcb->task_state = TSTATE_TASK_ASSIGNED;
+      btcb->task_state = TSTATE_TASK_RUNNING;
+
+      tcb = btcb;
     }
 
-  g_delivertasks[cpu] = NULL;
-  tcb = current_task(cpu);
+out:
 
   if (tcb->irqcount <= 0)
     {

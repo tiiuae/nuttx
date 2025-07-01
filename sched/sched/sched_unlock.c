@@ -35,7 +35,8 @@
 
 #include "irq/irq.h"
 #include "sched/sched.h"
-
+#include "sched/queue.h"
+#include <debug.h>
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -78,6 +79,16 @@ void sched_unlock(void)
           nxsched_critmon_preemption(rtcb, false, return_address(0));
           sched_note_preemption(rtcb, false);
 
+#ifdef CONFIG_SMP
+
+          if (!dq_empty(list_readytorun()))
+            {
+              if (nxsched_merge_pending() && this_task() != rtcb)
+                {
+                  up_switch_context(this_task(), rtcb);
+                }
+            }
+#else
           /* Release any ready-to-run tasks that have collected in
            * g_pendingtasks.
            *
@@ -85,13 +96,14 @@ void sched_unlock(void)
            * this task to be switched out!
            */
 
-          if (list_pendingtasks()->head != NULL)
+          if (!dq_empty(list_pendingtasks()))
             {
               if (nxsched_merge_pending())
                 {
                   up_switch_context(this_task(), rtcb);
                 }
             }
+#endif
 
 #if CONFIG_RR_INTERVAL > 0
           /* If (1) the task that was running supported round-robin

@@ -166,7 +166,7 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
 
   /* Get the task currently running on the CPU (may be the IDLE task) */
 
-  rtcb = current_task(cpu);
+  rtcb = current_delivered(cpu);
 
   /* Determine the desired new task state.  First, if the new task priority
    * is higher then the priority of the lowest priority, running task, then
@@ -196,14 +196,21 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
    * situation.
    */
 
-  if (nxsched_islocked_tcb(this_task()))
+  me = this_cpu();
+
+  if (cpu == me && nxsched_islocked_tcb(rtcb))
     {
       /* Add the new ready-to-run task to the g_pendingtasks task list for
        * now.
        */
 
+#ifdef CONFIG_SMP
+      nxsched_add_prioritized(btcb, list_readytorun());
+      btcb->task_state = TSTATE_TASK_READYTORUN;
+#else
       nxsched_add_prioritized(btcb, list_pendingtasks());
       btcb->task_state = TSTATE_TASK_PENDING;
+#endif
       doswitch         = false;
     }
   else if (task_state == TSTATE_TASK_READYTORUN)
@@ -227,7 +234,6 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
        * will need to switch that CPU.
        */
 
-      me = this_cpu();
       if (cpu != me)
         {
           if (g_delivertasks[cpu] == NULL)
@@ -264,13 +270,24 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
 
       headtcb = (FAR struct tcb_s *)tasklist->head;
       DEBUGASSERT(headtcb->task_state == TSTATE_TASK_RUNNING);
-      headtcb->task_state = TSTATE_TASK_ASSIGNED;
+
+      /* Only the idle task and one other are kept in g_assignedtasks.
+       * return the other tasks to unassigned list, so that they can be
+       * picked up by other CPUs
+       */
+
+      if (!is_idle_task(headtcb))
+        {
+          headtcb->task_state = TSTATE_TASK_READYTORUN;
+          dq_rem((FAR struct dq_entry_s *)headtcb, tasklist);
+          nxsched_add_prioritized(headtcb, &g_readytorun);
+        }
 
       /* Add btcb to the head of the g_assignedtasks
        * task list and mark it as running
        */
 
-      dq_addfirst_nonempty((FAR dq_entry_t *)btcb, tasklist);
+      dq_addfirst((FAR dq_entry_t *)btcb, tasklist);
       up_update_task(btcb);
 
       DEBUGASSERT(task_state == TSTATE_TASK_RUNNING);

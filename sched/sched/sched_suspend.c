@@ -35,6 +35,7 @@
 #include <nuttx/arch.h>
 
 #include "sched/sched.h"
+#include "sched/queue.h"
 
 #ifdef CONFIG_SMP
 /****************************************************************************
@@ -172,7 +173,11 @@ void nxsched_suspend(FAR struct tcb_s *tcb)
         {
           switch_needed = nxsched_remove_readytorun(tcb);
 
-          if (list_pendingtasks()->head)
+#ifdef CONFIG_SMP
+          if (!dq_empty(list_readytorun()))
+#else
+          if (!dq_empty(list_pendingtasks()))
+#endif
             {
               switch_needed |= nxsched_merge_pending();
             }
