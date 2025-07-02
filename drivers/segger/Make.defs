@@ -44,6 +44,8 @@ ifeq ($(CONFIG_SEGGER_RTT),y)
   endif
 endif
 
+CSRCS += segger/common_rtt.c
+
 ifeq ($(CONFIG_STREAM_RTT),y)
   CSRCS += segger/stream_rtt.c
 endif
