@@ -174,6 +174,13 @@ void arm64_chip_boot(void)
 
   imx9_clockconfig();
 
+#ifdef CONFIG_IMX9_LPUART
+
+  /* Do UART early initialization & pin muxing */
+
+  imx9_lowsetup();
+#endif
+
 #ifdef CONFIG_IMX9_DDR_TRAINING
   imx9_dram_init();
 #endif
@@ -183,12 +190,6 @@ void arm64_chip_boot(void)
   /* MAP IO and DRAM, enable MMU. */
 
   arm64_mmu_init(true);
-#endif
-
-  /* Do UART early initialization & pin muxing */
-
-#ifdef CONFIG_IMX9_LPUART
-  imx9_lowsetup();
 #endif
 
 #if defined(CONFIG_ARM64_PSCI)
@@ -201,12 +202,6 @@ void arm64_chip_boot(void)
   imx9_gpioirq_initialize();
 #endif
 
-  /* Perform board-specific device initialization. This would include
-   * configuration of board specific resources such as GPIOs, LEDs, etc.
-   */
-
-  imx9_board_initialize();
-
 #ifdef USE_EARLYSERIALINIT
   /* Perform early serial initialization if we are going to use the serial
    * driver.
@@ -214,4 +209,10 @@ void arm64_chip_boot(void)
 
   arm64_earlyserialinit();
 #endif
+
+  /* Perform board-specific device initialization. This would include
+   * configuration of board specific resources such as GPIOs, LEDs, etc.
+   */
+
+  imx9_board_initialize();
 }
