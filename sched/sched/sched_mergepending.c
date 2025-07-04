@@ -43,7 +43,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define ALL_CPUS ((cpu_set_t)-1)
+#define ALL_CPUS ((1 << CONFIG_SMP_NCPUS) - 1)
 
 /****************************************************************************
  * Public Functions
@@ -206,7 +206,8 @@ bool nxsched_merge_pending(void)
   /* Find the CPU that is executing the lowest priority task */
 
   cpu = nxsched_select_cpu(ALL_CPUS);
-  minprio = current_task(cpu)->sched_priority;
+  rtcb = current_task(cpu);
+  minprio = rtcb->sched_priority;
 
   /* Loop while there is a higher priority task in the pending task list
    * than in the lowest executing task. If the task on the selected cpu
@@ -220,13 +221,24 @@ bool nxsched_merge_pending(void)
 
   while (ptcb && ptcb->sched_priority > minprio)
     {
-      cpu  = nxsched_select_cpu(ptcb->affinity);
-      rtcb = current_task(cpu);
+      /* If the ptcb is not allowed to run on all CPU's re-select the
+       * CPU. This is unlikely, so not worth doing on every cycle.
+       */
+
+      if (ptcb->affinity != ALL_CPUS)
+        {
+          cpu  = nxsched_select_cpu(ptcb->affinity);
+          rtcb = current_task(cpu);
+        }
+
       next = dq_next(ptcb);
 
       /* Check that the rtcb is not locked to avoid unnecessarily removing
        * the task from the pending list and putting it right back
        * in nxsched_add_readytorun.
+       *
+       * Note: the rtcb will be the same in nxsched_add_readytorun, because
+       * the CPU is selected using the same affinity mask there.
        */
 
       if (!nxsched_islocked_tcb(rtcb))
@@ -239,6 +251,12 @@ bool nxsched_merge_pending(void)
 
           ret |= nxsched_add_readytorun(ptcb);
         }
+
+      /* Re-check the minimum priority */
+
+      cpu = nxsched_select_cpu(ALL_CPUS);
+      rtcb = current_task(cpu);
+      minprio = rtcb->sched_priority;
 
       ptcb = next;
     }
