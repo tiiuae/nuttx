@@ -53,7 +53,7 @@
  *   current task will execute.
  *
  ****************************************************************************/
-
+#include <debug.h>
 void sched_unlock(void)
 {
   /* sched_unlock should have no effect if called from the interrupt level. */
@@ -73,7 +73,10 @@ void sched_unlock(void)
       if (rtcb != NULL && --rtcb->lockcount == 0)
         {
           irqstate_t flags = enter_critical_section_wo_note();
-
+#ifdef CONFIG_SMP
+          int cpu = rtcb->cpu;
+          FAR struct tcb_s *ptcb;
+#endif
           /* Note that we no longer have pre-emption disabled. */
 
           nxsched_critmon_preemption(rtcb, false, return_address(0));
@@ -87,16 +90,30 @@ void sched_unlock(void)
            */
 
 #ifdef CONFIG_SMP
-          if (!dq_empty(list_readytorun()))
+          for (ptcb = (FAR struct tcb_s *)dq_peek(list_readytorun());
+               ptcb && ptcb->sched_priority > rtcb->sched_priority;
+               ptcb = ptcb->flink)
+            {
+              if (((1 << cpu) & ptcb->affinity) != 0)
+                {
+                  dq_rem((FAR struct dq_entry_s *)ptcb, list_readytorun());
+                  ptcb->task_state = TSTATE_TASK_INVALID;
+                  if (nxsched_switch_running(ptcb, cpu))
+                    {
+                      up_switch_context(ptcb, rtcb);
+                      break;
+                    }
+                }
+            }
 #else
           if (!dq_empty(list_pendingtasks()))
-#endif
             {
               if (nxsched_merge_pending())
                 {
                   up_switch_context(this_task(), rtcb);
                 }
             }
+#endif
 
 #if CONFIG_RR_INTERVAL > 0
           /* If (1) the task that was running supported round-robin
