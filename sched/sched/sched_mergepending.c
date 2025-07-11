@@ -216,7 +216,7 @@ bool nxsched_merge_pending(void)
       return false;
     }
 
-  rtcb = current_delivered(cpu);
+  rtcb = current_task(cpu);
   minprio = rtcb->sched_priority;
 
   /* Loop while there is a higher priority task in the ready-to-run list
@@ -247,18 +247,14 @@ bool nxsched_merge_pending(void)
               continue;
             }
 
-          rtcb = current_delivered(cpu);
+          rtcb = current_task(cpu);
         }
 
       if (ptcb->sched_priority > rtcb->sched_priority)
         {
-          /* Remove the task from the readytorun task list. */
+          /* Trigger re-schedule */
 
-          dq_rem((dq_entry_t *)ptcb, list_readytorun());
-
-          /* Add the task again to the correct list. */
-
-          ret |= nxsched_add_readytorun_cpu(ptcb, cpu);
+          ret |= nxsched_add_running_cpu(ptcb, cpu);
         }
 
       /* Re-check the minimum priority. */
@@ -271,7 +267,7 @@ bool nxsched_merge_pending(void)
           break;
         }
 
-      rtcb = current_delivered(cpu);
+      rtcb = current_task(cpu);
       minprio = rtcb->sched_priority;
 
       ptcb = next;

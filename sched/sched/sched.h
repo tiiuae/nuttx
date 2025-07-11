@@ -313,8 +313,8 @@ int nxthread_create(FAR const char *name, uint8_t ttype, int priority,
 
 bool nxsched_add_readytorun(FAR struct tcb_s *rtrtcb);
 #ifdef CONFIG_SMP
-bool nxsched_add_readytorun_cpu(FAR struct tcb_s *btcb,
-                                int cpu);
+bool nxsched_add_running_cpu(FAR struct tcb_s *btcb,
+                             int cpu);
 #endif
 bool nxsched_remove_readytorun(FAR struct tcb_s *rtrtcb);
 void nxsched_remove_self(FAR struct tcb_s *rtrtcb);
@@ -396,7 +396,7 @@ static inline_function FAR struct tcb_s *this_task(void)
 #endif
 
 #ifdef CONFIG_SMP
-bool nxsched_switch_running(FAR struct tcb_s *btcb, int cpu);
+bool nxsched_switch_running(int cpu);
 void nxsched_process_delivered(int cpu);
 #else
 #  define nxsched_select_cpu(a)     (0)
@@ -528,18 +528,6 @@ static inline_function bool nxsched_add_prioritized(FAR struct tcb_s *tcb,
 
 #  ifdef CONFIG_SMP
 
-/* Return the current task running on a CPU, or, if task delivery is in
- * process, the task which will be running after it is completed
- */
-
-static inline_function FAR struct tcb_s *current_delivered(int cpu)
-{
-  FAR struct tcb_s *rtcb = current_task(cpu);
-  FAR struct tcb_s *dtcb = g_delivertasks[cpu];
-
-  return dtcb && dtcb->sched_priority > rtcb->sched_priority ? dtcb : rtcb;
-}
-
 static inline_function int nxsched_select_cpu(cpu_set_t affinity)
 {
   uint8_t minprio;
@@ -555,7 +543,7 @@ static inline_function int nxsched_select_cpu(cpu_set_t affinity)
 
       if ((affinity & (1 << i)) != 0)
         {
-          FAR struct tcb_s *rtcb = current_delivered(i);
+          FAR struct tcb_s *rtcb = current_task(i);
 
           /* If this CPU is executing its IDLE task, then use it.  The
            * IDLE task is always the last task in the assigned task list.

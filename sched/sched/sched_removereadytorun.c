@@ -196,17 +196,9 @@ void nxsched_remove_running(FAR struct tcb_s *tcb)
 
 void nxsched_remove_self(FAR struct tcb_s *tcb)
 {
-  FAR struct tcb_s *ptcb;
-  int cpu = tcb->cpu;
-
   nxsched_remove_running(tcb);
-
-  ptcb = nxsched_get_task(list_readytorun(), 1 << cpu, 0);
-  if (ptcb)
-    {
-      ptcb->task_state = TSTATE_TASK_INVALID;
-      nxsched_switch_running(ptcb, cpu);
-    }
+  nxsched_switch_running(tcb->cpu);
+  DEBUGASSERT(current_task(tcb->cpu) != tcb);
 }
 
 bool nxsched_remove_readytorun(FAR struct tcb_s *tcb)
@@ -219,24 +211,12 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *tcb)
   else
     {
       FAR dq_queue_t *tasklist;
-      int i;
-
-      /* if tcb == g_delivertasks[i] we set NULL to g_delivertasks[i] */
-
-      for (i = 0; i < CONFIG_SMP_NCPUS; i++)
-        {
-          if (tcb == g_delivertasks[i])
-            {
-              g_delivertasks[i] = NULL;
-              tcb->task_state = TSTATE_TASK_INVALID;
-              return false;
-            }
-        }
 
       tasklist = TLIST_HEAD(tcb, tcb->cpu);
 
       DEBUGASSERT(tcb->task_state != TSTATE_TASK_RUNNING);
-
+      DEBUGASSERT(tasklist == list_readytorun());
+      
       /* The task is not running.  Just remove its TCB from the task
        * list.  In the SMP case this may be either the g_readytorun() or the
        * g_assignedtasks[cpu] list.

@@ -75,7 +75,6 @@ void sched_unlock(void)
           irqstate_t flags = enter_critical_section_wo_note();
 #ifdef CONFIG_SMP
           int cpu = rtcb->cpu;
-          FAR struct tcb_s *ptcb;
 #endif
 
           /* Note that we no longer have pre-emption disabled. */
@@ -91,15 +90,9 @@ void sched_unlock(void)
            */
 
 #ifdef CONFIG_SMP
-          ptcb = nxsched_get_task(list_readytorun(), 1 << cpu,
-                                  rtcb->sched_priority);
-          if (ptcb)
+          if (nxsched_switch_running(cpu))
             {
-              ptcb->task_state = TSTATE_TASK_INVALID;
-              if (nxsched_switch_running(ptcb, cpu))
-                {
-                  up_switch_context(ptcb, rtcb);
-                }
+              up_switch_context(this_task(), rtcb);
             }
 #else
           if (!dq_empty(list_pendingtasks()))

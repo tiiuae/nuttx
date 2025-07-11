@@ -62,8 +62,6 @@
 
 void nxsched_process_delivered(int cpu)
 {
-  struct tcb_s *btcb = NULL;
-
   DEBUGASSERT(g_cpu_nestcount[cpu] == 0);
   DEBUGASSERT(up_interrupt_context());
 
@@ -74,12 +72,7 @@ void nxsched_process_delivered(int cpu)
       g_cpu_irqset |= (1 << cpu);
     }
 
-  if (g_delivertasks[cpu] != NULL)
-    {
-      btcb = g_delivertasks[cpu];
-      g_delivertasks[cpu] = NULL;
-      nxsched_switch_running(btcb, cpu);
-    }
+  nxsched_switch_running(cpu);
 
   if (current_task(cpu)->irqcount <= 0)
     {
