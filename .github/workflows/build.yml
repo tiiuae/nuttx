@@ -210,7 +210,6 @@ jobs:
 
   # Run the selected macOS Builds
   macOS:
-    if: ${{ false }}  # disable for now
     permissions:
       contents: none
     runs-on: macos-13
