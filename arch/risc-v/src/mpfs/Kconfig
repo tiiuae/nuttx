@@ -411,6 +411,48 @@ config MPFS_COREI2C_IRQNUM
 	range 0 63
 	depends on MPFS_COREI2C
 
+config MPFS_COREI2C0_EXTENSION
+	bool "CoreI2C instance 0 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 0
+
+config MPFS_COREI2C1_EXTENSION
+	bool "CoreI2C instance 1 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 1
+
+config MPFS_COREI2C2_EXTENSION
+	bool "CoreI2C instance 2 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 2
+
+config MPFS_COREI2C3_EXTENSION
+	bool "CoreI2C instance 3 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 3
+
+config MPFS_COREI2C4_EXTENSION
+	bool "CoreI2C instance 4 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 4
+
+config MPFS_COREI2C5_EXTENSION
+	bool "CoreI2C instance 5 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 5
+
+config MPFS_COREI2C7_EXTENSION
+	bool "CoreI2C instance 7 uses extension IP"
+	default n
+	depends on MPFS_COREI2C
+	depends on MPFS_COREI2C_INSTANCES > 7
+
 config MPFS_EMMCSD
 	bool "EMMCSD"
 	select ARCH_HAVE_SDIO

@@ -51,6 +51,7 @@
 #include "mpfs_rcc.h"
 #include "riscv_internal.h"
 #include "hardware/mpfs_i2c.h"
+#include "hardware/mpfs_i2c_ext.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -73,10 +74,25 @@
 #define MPFS_I2C_DATA             (priv->hw_base + MPFS_I2C_DATA_OFFSET)
 #define MPFS_I2C_ADDR             (priv->hw_base + MPFS_I2C_SLAVE0ADR_OFFSET)
 
+/* MPFS CoreI2C extension IP registers */
+
+#define MPFS_COREI2C_EXT_CTR      (priv->hw_base + MPFS_COREI2C_EXT_CTR_OFFSET)
+#define MPFS_COREI2C_EXT_STA      (priv->hw_base + MPFS_COREI2C_EXT_STA_OFFSET)
+#define MPFS_COREI2C_EXT_DAT      (priv->hw_base + MPFS_COREI2C_EXT_DAT_OFFSET)
+#define MPFS_COREI2C_EXT_ADR      (priv->hw_base + MPFS_COREI2C_EXT_ADR_OFFSET)
+#define MPFS_COREI2C_EXT_BTT      (priv->hw_base + MPFS_COREI2C_EXT_BTT_OFFSET)
+#define MPFS_COREI2C_EXT_CNF      (priv->hw_base + MPFS_COREI2C_EXT_CNF_OFFSET)
+#define MPFS_COREI2C_EXT_TMR      (priv->hw_base + MPFS_COREI2C_EXT_TMR_OFFSET)
+#define MPFS_COREI2C_EXT_IRQ      (priv->hw_base + MPFS_COREI2C_EXT_IRQ_OFFSET)
+
 /* Gives TTOA in microseconds, ~4.8% bias, +1 rounds up */
 
 #define I2C_TTOA_US(n, f)           ((((n) << 20) / (f)) + 1)
 #define I2C_TTOA_MARGIN             1000u
+
+/* MPFS CoreI2C extension IP fifo size */
+
+#define MPFS_COREI2C_EXT_FIFO_SZ    63
 
 /****************************************************************************
  * Private Types
@@ -131,6 +147,7 @@ static const uint32_t mpfs_i2c_freqs_fpga[MPFS_I2C_NUMBER_OF_DIVIDERS] =
 };
 
 static int mpfs_i2c_irq(int cpuint, void *context, void *arg);
+static int mpfs_i2c_ext_irq(int cpuint, void *context, void *arg);
 
 static int mpfs_i2c_transfer(struct i2c_master_s *dev,
                              struct i2c_msg_s *msgs,
@@ -179,6 +196,7 @@ struct mpfs_i2c_priv_s
 
   bool                   initialized; /* Bus initialization status */
   bool                   fpga;        /* FPGA i2c */
+  bool                   ext;         /* Uses extension IP */
   bool                   inflight;    /* Transfer ongoing */
 };
 
@@ -239,40 +257,80 @@ static struct mpfs_i2c_priv_s
 {
   {
     .lock           = NXMUTEX_INITIALIZER,
+#  ifdef CONFIG_MPFS_COREI2C0_EXTENSION
+    .ext            = true,
+#  else
+    .ext            = false,
+#  endif
   },
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 1)
   {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C1_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
   },
 #  endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 2)
   {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C2_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
   },
 #  endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 3)
   {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C3_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
   },
 #endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 4)
   {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C4_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
   },
 #  endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 5)
   {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C5_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
   },
 #  endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 6)
   {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C6_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
   },
 #  endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 7)
     {
     .lock           = NXMUTEX_INITIALIZER,
+#    ifdef CONFIG_MPFS_COREI2C7_EXTENSION
+    .ext            = true,
+#    else
+    .ext            = false,
+#    endif
     },
 #  endif
 #  if (CONFIG_MPFS_COREI2C_INSTANCES > 8)
@@ -362,7 +420,8 @@ static int mpfs_i2c_init(struct mpfs_i2c_priv_s *priv)
 
       /* Attach interrupt */
 
-      ret = irq_attach(priv->plic_irq, mpfs_i2c_irq, priv);
+      ret = irq_attach(priv->plic_irq,
+                       priv->ext ? mpfs_i2c_ext_irq : mpfs_i2c_irq, priv);
       if (ret != OK)
         {
           return ret;
@@ -481,6 +540,182 @@ static int mpfs_i2c_sem_waitdone(struct mpfs_i2c_priv_s *priv)
 {
   uint32_t timeout = mpfs_i2c_timeout(priv->msgc, priv->msgv);
   return nxsem_tickwait_uninterruptible(&priv->sem_isr, USEC2TICK(timeout));
+}
+
+static void mpfs_i2c_ext_transfer(struct mpfs_i2c_priv_s *priv)
+{
+  uint32_t flags = 0;
+  struct i2c_msg_s *msg = &priv->msgv[priv->msgid];
+  int txsize;
+  int rxsize;
+  int tx_fifo_bytes;
+  int i;
+
+  /* Configure bytes left to transfer, up to 63 bytes */
+
+  txsize = (priv->tx_size - priv->tx_idx);
+
+  /* If this is a combined tx+rx, but TX is larger than 63 bytes,
+   * keep RX bytes 0 until all the TX can be sent
+   */
+
+  if (txsize <= MPFS_COREI2C_EXT_FIFO_SZ)
+    {
+      rxsize = priv->rx_size - priv->rx_idx;
+      tx_fifo_bytes = txsize;
+
+      if (msg->flags & I2C_M_NOSTOP)
+        {
+          flags |= MPFS_COREI2C_EXT_CNF_M_NOSTOP;
+        }
+
+      if (rxsize > MPFS_COREI2C_EXT_FIFO_SZ)
+        {
+          flags |= MPFS_COREI2C_EXT_CNF_M_CONT;
+        }
+    }
+  else
+    {
+      rxsize = 0;
+      tx_fifo_bytes = MPFS_COREI2C_EXT_FIFO_SZ;
+      flags |= MPFS_COREI2C_EXT_CNF_M_CONT;
+    }
+
+  putreg32(MPFS_COREI2C_EXT_BTT_TX(tx_fifo_bytes) |
+           MPFS_COREI2C_EXT_BTT_RX(rxsize < MPFS_COREI2C_EXT_FIFO_SZ ?
+                                   rxsize : MPFS_COREI2C_EXT_FIFO_SZ),
+           MPFS_COREI2C_EXT_BTT);
+
+  /* Set flags, M_READ, IRQ_ENABLE, M_CONT and M_NOSTOP */
+
+  if (msg->flags & I2C_M_READ)
+    {
+      flags |= MPFS_COREI2C_EXT_CNF_M_READ;
+    }
+
+  flags |= MPFS_COREI2C_EXT_CNF_IRQ_ENABLE;
+
+  putreg32(flags, MPFS_COREI2C_EXT_CNF);
+
+  /* Configure slave address */
+
+  putreg32(msg->addr, MPFS_COREI2C_EXT_ADR);
+
+  /* Fill in TX fifo */
+
+  for (i = 0; i < tx_fifo_bytes; i++)
+    {
+      putreg8(priv->tx_buffer[priv->tx_idx + i], MPFS_COREI2C_EXT_DAT);
+    }
+
+  /* Set timeout */
+
+  putreg32(0x8000, MPFS_COREI2C_EXT_TMR);
+
+  /* Start transfer */
+
+  putreg32(MPFS_COREI2C_EXT_CTR_ENABLE | MPFS_COREI2C_EXT_CTR_START,
+           MPFS_COREI2C_EXT_CTR);
+}
+
+/****************************************************************************
+ * Name: mpfs_i2c_ext_irq
+ *
+ * Description:
+ *   This is the I2C extension interrupt handler. It will be invoked when an
+ *   interrupt is received on the device.
+ *
+ * Parameters:
+ *   cpuint        - CPU interrupt index
+ *   context       - Context data from the ISR
+ *   arg           - Opaque pointer to the internal driver state structure.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success. A negated errno value is returned on
+ *   failure.
+ *
+ ****************************************************************************/
+
+static int mpfs_i2c_ext_irq(int cpuint, void *context, void *arg)
+{
+  struct mpfs_i2c_priv_s *priv = (struct mpfs_i2c_priv_s *)arg;
+  struct i2c_msg_s *msg = &priv->msgv[priv->msgid];
+  volatile uint32_t status = getreg32(MPFS_COREI2C_EXT_IRQ);
+  uint32_t counts = getreg32(MPFS_COREI2C_EXT_STA);
+  int txbytes = MPFS_COREI2C_EXT_STA_TXCOUNT(counts);
+  int rxbytes = MPFS_COREI2C_EXT_STA_RXCOUNT(counts);
+
+  if (txbytes > 0 || rxbytes > 0)
+    {
+      priv->tx_idx += txbytes;
+
+      if (priv->tx_idx >= priv->tx_size)
+        {
+          /* All TX sent (or nothing to send), handle RX */
+
+          int i;
+
+          /* Read out the RX data (if any) from the fifo */
+
+          for (i = priv->rx_idx; i < priv->rx_idx + rxbytes; i++)
+            {
+              priv->rx_buffer[i] = getreg8(MPFS_COREI2C_EXT_DAT);
+            }
+
+          priv->rx_idx = i;
+
+          if (priv->rx_idx >= priv->rx_size)
+            {
+              if (msg->flags & I2C_M_NOSTOP)
+                {
+                  /* Jump to the next message */
+
+                  if (priv->msgid < (priv->msgc - 1))
+                    {
+                      priv->msgid++;
+                    }
+                }
+
+              /* All RX received (or no RX to receive) */
+
+              priv->status = MPFS_I2C_SUCCESS;
+            }
+          else
+            {
+              /* Continue receive */
+
+              mpfs_i2c_ext_transfer(priv);
+            }
+        }
+      else
+        {
+          /* More TX to send */
+
+          mpfs_i2c_ext_transfer(priv);
+        }
+    }
+
+  /* Filter out extra stop interrupts, they are randomly sent by CoreI2c */
+
+  else if (MPFS_COREI2C_EXT_IRQ_STATUS(status) != MPFS_I2C_ST_STOP_SENT)
+    {
+      /* Some errors occured, transfer failed */
+
+      priv->status = MPFS_I2C_FAILED;
+      putreg32(MPFS_COREI2C_EXT_CTR_ENABLE | MPFS_COREI2C_EXT_CTR_STOP,
+               MPFS_COREI2C_EXT_CTR);
+    }
+
+  /* Clear interrupt */
+
+  putreg32(status, MPFS_COREI2C_EXT_IRQ);
+
+  if (priv->status != MPFS_I2C_IN_PROGRESS)
+    {
+      nxsem_post(&priv->sem_isr);
+    }
+
+  return 0;
 }
 
 /****************************************************************************
@@ -769,7 +1004,14 @@ static int mpfs_i2c_irq(int cpuint, void *context, void *arg)
 
 static void mpfs_i2c_sendstart(struct mpfs_i2c_priv_s *priv)
 {
-  modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STA_MASK);
+  if (priv->ext)
+    {
+      mpfs_i2c_ext_transfer(priv);
+    }
+  else
+    {
+      modifyreg32(MPFS_I2C_CTRL, 0, MPFS_I2C_CTRL_STA_MASK);
+    }
 }
 
 /****************************************************************************
@@ -852,6 +1094,14 @@ static int mpfs_i2c_transfer(struct i2c_master_s *dev,
           ret = -EAGAIN;
           goto errout_with_mutex;
         }
+    }
+
+  if (priv->ext)
+    {
+      /* Enable I2C extension */
+
+      putreg32(MPFS_COREI2C_EXT_CTR_ENABLE | MPFS_COREI2C_EXT_CTR_STOP,
+               MPFS_COREI2C_EXT_CTR);
     }
 
   priv->msgv = msgs;
@@ -968,6 +1218,14 @@ static int mpfs_i2c_transfer(struct i2c_master_s *dev,
   /* Disable interrupts and get out */
 
   up_disable_irq(priv->plic_irq);
+
+  if (priv->ext)
+    {
+      /* Disable I2C extension */
+
+      putreg32(MPFS_COREI2C_EXT_CTR_ENABLE | MPFS_COREI2C_EXT_CTR_STOP,
+               MPFS_COREI2C_EXT_CTR);
+    }
 
 errout_with_mutex:
   nxmutex_unlock(&priv->lock);
