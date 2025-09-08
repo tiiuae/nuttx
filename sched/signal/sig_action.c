@@ -377,7 +377,9 @@ int nxsig_action(int signo, FAR const struct sigaction *act,
         {
           /* Yes.. Remove it from signal action queue */
 
+          irqstate_t flags = spin_lock_irqsave(&group->tg_lock);
           sq_rem((FAR sq_entry_t *)sigact, &group->tg_sigactionq);
+          spin_unlock_irqrestore(&group->tg_lock, flags);
 
           /* And deallocate it */
 
@@ -397,6 +399,7 @@ int nxsig_action(int signo, FAR const struct sigaction *act,
         {
           /* No.. Then we need to allocate one for the new action. */
 
+          irqstate_t flags;
           sigact = nxsig_alloc_action();
 
           /* An error has occurred if we could not allocate the sigaction */
@@ -412,7 +415,9 @@ int nxsig_action(int signo, FAR const struct sigaction *act,
 
           /* Add the new sigaction to signal action queue */
 
+          flags = spin_lock_irqsave(&group->tg_lock);
           sq_addlast((FAR sq_entry_t *)sigact, &group->tg_sigactionq);
+          spin_unlock_irqrestore(&group->tg_lock, flags);
         }
 
       /* Set the new sigaction */

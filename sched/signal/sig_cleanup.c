@@ -82,20 +82,27 @@ void nxsig_release(FAR struct task_group_s *group)
 {
   FAR sigactq_t  *sigact;
   FAR sigpendq_t *sigpend;
+  irqstate_t flags;
 
   /* Deallocate all entries in the list of signal actions */
 
+  flags = spin_lock_irqsave(&group->tg_lock);
   while ((sigact = (FAR sigactq_t *)sq_remfirst(&group->tg_sigactionq))
          != NULL)
     {
       nxsig_release_action(sigact);
     }
 
+  spin_unlock_irqrestore(&group->tg_lock, flags);
+
   /* Deallocate all entries in the list of pending signals */
 
+  flags = enter_critical_section();
   while ((sigpend = (FAR sigpendq_t *)sq_remfirst(&group->tg_sigpendingq))
          != NULL)
     {
       nxsig_release_pendingsignal(sigpend);
     }
+
+  leave_critical_section(flags);
 }
