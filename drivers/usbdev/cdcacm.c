@@ -290,6 +290,10 @@ static const struct uart_ops_s g_uartops =
   cdcuart_sendbuf        /* sendbuf */
 };
 
+/* Mutex to protect device initialization / uninitialization*****************/
+
+static mutex_t g_init_lock = NXMUTEX_INITIALIZER;
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -3045,9 +3049,16 @@ int cdcacm_initialize(int minor, FAR void **handle)
   devinfo.epno[CDCACM_EP_BULKIN_IDX]  = CONFIG_CDCACM_EPBULKIN;
   devinfo.epno[CDCACM_EP_BULKOUT_IDX] = CONFIG_CDCACM_EPBULKOUT;
 
+  ret = nxmutex_lock(&g_init_lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   /* Get an instance of the serial driver class object */
 
   ret = cdcacm_classobject(minor, &devinfo, &drvr);
+
   if (ret == OK)
     {
       /* Register the USB serial class driver */
@@ -3059,6 +3070,8 @@ int cdcacm_initialize(int minor, FAR void **handle)
                    (uint16_t)-ret);
         }
     }
+
+  nxmutex_unlock(&g_init_lock);
 
   /* Return the driver instance (if any) if the caller has requested it
    * by provided a pointer to the location to return it.
@@ -3128,6 +3141,12 @@ int cdcacm_uninitialize_instance(int minor,
 
   snprintf(devname, sizeof(devname), CDCACM_DEVNAME_FORMAT, minor);
 
+  ret = nxmutex_lock(&g_init_lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   /* If classdev is not provided, find it from the file system */
 
   if (!classdev)
@@ -3140,7 +3159,8 @@ int cdcacm_uninitialize_instance(int minor,
         }
       else
         {
-          return -ENODEV;
+          ret = -ENODEV;
+          goto out;
         }
     }
 
@@ -3170,6 +3190,8 @@ int cdcacm_uninitialize_instance(int minor,
                (uint16_t)-ret);
     }
 
+out:
+  nxmutex_unlock(&g_init_lock);
   return ret;
 }
 
