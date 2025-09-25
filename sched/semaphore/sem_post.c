@@ -32,6 +32,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <debug.h>
 
 #include "sched/sched.h"
 #include "semaphore/semaphore.h"
@@ -100,6 +101,13 @@ int nxsem_post_slow(FAR sem_t *sem)
       /* Mutex post from another thread is not allowed, unless
        * called from nxsem_reset
        */
+
+      if (mholder != (NXSEM_MBLOCKING_BIT | NXSEM_MRESET) &&
+          (mholder & (~NXSEM_MBLOCKING_BIT)) != nxsched_gettid())
+        {
+          _alert("STUCK HERE\n");
+          while(1);
+        }
 
       DEBUGASSERT(mholder == (NXSEM_MBLOCKING_BIT | NXSEM_MRESET) ||
                   (mholder & (~NXSEM_MBLOCKING_BIT)) == nxsched_gettid());
