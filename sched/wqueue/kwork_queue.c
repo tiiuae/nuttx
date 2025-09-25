@@ -41,24 +41,30 @@
 #ifdef CONFIG_SCHED_WORKQUEUE
 
 /****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-#define queue_work(wqueue, work) \
-  do \
-    { \
-      dq_addlast((FAR dq_entry_t *)(work), &(wqueue)->q); \
-      if ((wqueue)->wait_count > 0) /* There are threads waiting for sem. */ \
-        { \
-          (wqueue)->wait_count--; \
-          nxsem_post(&(wqueue)->sem); \
-        } \
-    } \
-  while (0)
-
-/****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: queue_work
+ *
+ * Description:
+ *   Add a work item to the end of the queue and return if there are threads
+ *   waiting for the sem
+ *
+ ****************************************************************************/
+
+static inline bool queue_work(FAR struct kwork_wqueue_s *wqueue,
+                              FAR struct work_s *work)
+{
+  dq_addlast((FAR dq_entry_t *)(work), &(wqueue)->q);
+  if ((wqueue)->wait_count > 0) /* There are threads waiting for sem. */
+    {
+      (wqueue)->wait_count--;
+      return true;
+    }
+
+  return false;
+}
 
 /****************************************************************************
  * Name: work_timer_expiry
@@ -67,7 +73,7 @@
 static void work_timer_expiry(wdparm_t arg)
 {
   FAR struct work_s *work = (FAR struct work_s *)arg;
-
+  bool post = false;
   irqstate_t flags = spin_lock_irqsave(&work->wq->lock);
   sched_lock();
 
@@ -75,10 +81,16 @@ static void work_timer_expiry(wdparm_t arg)
 
   if (work->worker != NULL)
     {
-      queue_work(work->wq, work);
+      post = queue_work(work->wq, work);
     }
 
   spin_unlock_irqrestore(&work->wq->lock, flags);
+
+  if (post)
+    {
+      nxsem_post(&work->wq->sem);
+    }
+
   sched_unlock();
 }
 
@@ -142,6 +154,7 @@ int work_queue_period_wq(FAR struct kwork_wqueue_s *wqueue,
 {
   irqstate_t flags;
   int ret = OK;
+  bool post = false;
 
   if (wqueue == NULL || work == NULL || worker == NULL)
     {
@@ -186,7 +199,7 @@ int work_queue_period_wq(FAR struct kwork_wqueue_s *wqueue,
 
   if (!delay)
     {
-      queue_work(wqueue, work);
+      post = queue_work(wqueue, work);
     }
   else if (period == 0)
     {
@@ -201,6 +214,12 @@ int work_queue_period_wq(FAR struct kwork_wqueue_s *wqueue,
 
 out:
   spin_unlock_irqrestore(&wqueue->lock, flags);
+
+  if (post)
+    {
+      nxsem_post(&wqueue->sem);
+    }
+
   sched_unlock();
   return ret;
 }
