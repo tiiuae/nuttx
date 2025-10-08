@@ -657,7 +657,7 @@ static int imx9_transmit(struct imx9_driver_s *priv)
     {
       nwarn("No TX MB available mbi %" PRIi32 "\n", mbi);
       NETDEV_TXERRORS(&priv->dev);
-      return ERROR;
+      return -EBUSY;
     }
 
 #ifdef CONFIG_NET_CAN_RAW_TX_DEADLINE
@@ -674,7 +674,7 @@ static int imx9_transmit(struct imx9_driver_s *priv)
                  + ((tv->tv_usec - ts.tv_nsec / 1000)*CLK_TCK) / 1000000;
       if (timeout < 0)
         {
-          return ERROR;
+          return -ETIMEDOUT;
         }
     }
   else
@@ -1437,7 +1437,7 @@ static volatile struct mb_s *flexcan_get_mb(struct imx9_driver_s *priv,
  *   dev  - Reference to the NuttX driver state structure
  *
  * Returned Value:
- *   OK or ERROR
+ *   return OK on success, negated error number on failure
  *
  * Assumptions:
  *
@@ -1450,7 +1450,7 @@ static int imx9_ifup(struct net_driver_s *dev)
   if (imx9_initialize(priv) != OK)
     {
       canerr("initialize failed");
-      return ERROR;
+      return -EIO;
     }
 
   priv->bifup = true;
@@ -1474,7 +1474,7 @@ static int imx9_ifup(struct net_driver_s *dev)
  *   dev  - Reference to the NuttX driver state structure
  *
  * Returned Value:
- *   None
+ *   return OK on success, negated error number on failure
  *
  * Assumptions:
  *
@@ -1663,7 +1663,12 @@ static int imx9_ioctl(struct net_driver_s *dev, int cmd,
           struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
           struct can_ioctl_filter_s *req =
             (struct can_ioctl_filter_s *)((uintptr_t)arg);
-          ret = imx9_add_filter(priv, req->ftype, 0, req->fid1, req->fid2);
+          if (!req)
+            {
+              return -EINVAL;
+            }
+
+            ret = imx9_add_filter(priv, req->ftype, 0, req->fid1, req->fid2);
         }
         break;
 
@@ -1672,7 +1677,12 @@ static int imx9_ioctl(struct net_driver_s *dev, int cmd,
           struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
           struct can_ioctl_filter_s *req =
             (struct can_ioctl_filter_s *)((uintptr_t)arg);
-          ret = imx9_add_filter(priv, req->ftype, 1, req->fid1, req->fid2);
+          if (!req)
+            {
+              return -EINVAL;
+            }
+
+            ret = imx9_add_filter(priv, req->ftype, 1, req->fid1, req->fid2);
         }
         break;
 
@@ -1728,60 +1738,70 @@ static uint32_t imx9_add_filter(struct imx9_driver_s *priv,
   if (!imx9_setfreeze(priv->base, true))
     {
       canerr("FLEXCAN: freeze fail\n");
-      return ERROR;
+      return -EIO;
     }
 
-  if (filter_type == CAN_FILTER_MASK)
+  switch (filter_type)
     {
-      if (ext_id)
+      case CAN_FILTER_MASK:
         {
-          for (mbi = 0; mbi < RXMBCOUNT; mbi++)
+          if (ext_id)
             {
-              /* Set individual mask register */
+              for (mbi = 0; mbi < RXMBCOUNT; mbi++)
+                {
+                  /* Set individual mask register */
 
-              putreg32(filter_id2 & CAN_MB_ID_ID_MASK,
-                       priv->base + IMX9_CAN_RXIMR_OFFSET(mbi));
+                  putreg32(filter_id2 & CAN_MB_ID_ID_MASK,
+                           priv->base + IMX9_CAN_RXIMR_OFFSET(mbi));
 
-              /* Set the acceptance EXT ID filter in MB */
+                  /* Set the acceptance EXT ID filter in MB */
 
-              mb = flexcan_get_mb(priv, mbi);
-              mb->id = filter_id1 & CAN_MB_ID_ID_MASK;
+                  mb = flexcan_get_mb(priv, mbi);
+                  mb->id = filter_id1 & CAN_MB_ID_ID_MASK;
+                }
+            }
+          else
+            {
+              for (mbi = 0; mbi < RXMBCOUNT; mbi++)
+                {
+                  /* Set individual mask register */
+
+                  putreg32(((filter_id2 & CAN_SFF_MASK)
+                           << CAN_MB_ID_ID_STD_SHIFT)
+                           & CAN_MB_ID_ID_STD_MASK,
+                           priv->base + IMX9_CAN_RXIMR_OFFSET(mbi));
+
+                  /* Set the acceptance STD ID filter in MB */
+
+                  mb = flexcan_get_mb(priv, mbi);
+                  mb->id = ((filter_id1 & CAN_SFF_MASK)
+                           << CAN_MB_ID_ID_STD_SHIFT)
+                           & CAN_MB_ID_ID_STD_MASK;
+                }
             }
         }
-      else
+        break;
+
+      case CAN_FILTER_RANGE:
         {
-          for (mbi = 0; mbi < RXMBCOUNT; mbi++)
-            {
-              /* Set individual mask register */
-
-              putreg32(((filter_id2 & CAN_SFF_MASK)
-                       << CAN_MB_ID_ID_STD_SHIFT)
-                       & CAN_MB_ID_ID_STD_MASK,
-                       priv->base + IMX9_CAN_RXIMR_OFFSET(mbi));
-
-              /* Set the acceptance STD ID filter in MB */
-
-              mb = flexcan_get_mb(priv, mbi);
-              mb->id = ((filter_id1 & CAN_SFF_MASK)
-                       << CAN_MB_ID_ID_STD_SHIFT)
-                       & CAN_MB_ID_ID_STD_MASK;
-            }
+          canerr("Range filter type not supported\n");
+          return -EINVAL;
         }
-    }
-  else if (filter_type == CAN_FILTER_RANGE)
-    {
-      canerr("Range filter type not supported\n");
-      return -EINVAL;
-    }
-  else if (filter_type == CAN_FILTER_DUAL)
-    {
-      canerr("Dual filter type not supported\n");
-      return -EINVAL;
-    }
-  else
-    {
-      canerr("FLEXCAN: invalid filter type\n");
-      return -EINVAL;
+        break;
+
+      case CAN_FILTER_DUAL:
+        {
+          canerr("Dual filter type not supported\n");
+          return -EINVAL;
+        }
+        break;
+
+      default:
+        {
+          canerr("FLEXCAN: invalid filter type\n");
+          return -EINVAL;
+        }
+        break;
     }
 
   /* Exit freeze mode */
@@ -1789,7 +1809,7 @@ static uint32_t imx9_add_filter(struct imx9_driver_s *priv,
   if (!imx9_setfreeze(priv->base, false))
     {
       canerr("FLEXCAN: unfreeze fail\n");
-      return ERROR;
+      return -EIO;
     }
 
   return OK;
@@ -1819,7 +1839,7 @@ static uint8_t imx9_reset_filter(struct imx9_driver_s *priv)
   if (!imx9_setfreeze(priv->base, true))
     {
       canerr("FLEXCAN: freeze fail\n");
-      return ERROR;
+      return -EIO;
     }
 
   for (mbi = 0; mbi < RXMBCOUNT; mbi++)
@@ -1839,7 +1859,7 @@ static uint8_t imx9_reset_filter(struct imx9_driver_s *priv)
   if (!imx9_setfreeze(priv->base, false))
     {
       canerr("FLEXCAN: unfreeze fail\n");
-      return ERROR;
+      return -EIO;
     }
 
   return OK;
@@ -1945,7 +1965,7 @@ static int imx9_init_eccram(struct imx9_driver_s *priv)
  *   priv - Reference to the private FLEXCAN driver state structure
  *
  * Returned Value:
- *   OK or ERROR
+ *   return OK on success, negated error number on failure
  *
  * Assumptions:
  *
@@ -1962,7 +1982,7 @@ static int imx9_initialize(struct imx9_driver_s *priv)
   if (!imx9_setenable(priv->base, true))
     {
       canerr("FLEXCAN: enable fail\n");
-      return ERROR;
+      return -EIO;
     }
 
   /* Enter freeze mode */
@@ -1970,7 +1990,7 @@ static int imx9_initialize(struct imx9_driver_s *priv)
   if (!imx9_setfreeze(priv->base, true))
     {
       canerr("FLEXCAN: freeze fail\n");
-      return ERROR;
+      return -EIO;
     }
 
   /* Initialize memory buffers */
@@ -2080,7 +2100,7 @@ static int imx9_initialize(struct imx9_driver_s *priv)
   if (!imx9_setfreeze(priv->base, false))
     {
       canerr("FLEXCAN: unfreeze fail\n");
-      return ERROR;
+      return -EIO;
     }
 
   return OK;
