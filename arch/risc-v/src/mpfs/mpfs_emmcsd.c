@@ -1784,9 +1784,9 @@ static void mpfs_set_hs_8bit(struct sdio_dev_s *dev)
   uint32_t r1;
   uint32_t rr;
 
-  /* mpfs to DDR mode */
+  /* mpfs to SDR mode */
 
-  modifyreg32(MPFS_EMMCSD_HRS06, 0x7, MPFS_EMMCSD_MODE_DDR);
+  modifyreg32(MPFS_EMMCSD_HRS06, 0x7, MPFS_EMMCSD_MODE_SDR);
 
   /* eMMC to HS mode */
 
@@ -1816,9 +1816,9 @@ static void mpfs_set_hs_8bit(struct sdio_dev_s *dev)
 
   modifyreg32(MPFS_EMMCSD_SRS10, 0, MPFS_EMMCSD_SRS10_EDTW);
 
-  /* eMMC to 8-bit DDR mode */
+  /* eMMC to 8-bit SDR mode */
 
-  if ((ret = mpfs_sendcmd(dev, MMCSD_CMD6, 0x03b70600u)) == OK)
+  if ((ret = mpfs_sendcmd(dev, MMCSD_CMD6, 0x03b70200u)) == OK)
     {
       if ((ret == mpfs_waitresponse(dev, MMCSD_CMD6)) == OK)
         {
