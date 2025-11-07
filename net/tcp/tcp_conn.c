@@ -990,9 +990,21 @@ FAR struct tcp_conn_s *tcp_alloc_accept(FAR struct net_driver_s *dev,
                                         FAR struct tcp_hdr_s *tcp,
                                         FAR struct tcp_conn_s *listener)
 {
+  FAR struct iob_s *iob_backup = NULL;
   FAR struct tcp_conn_s *conn;
   uint8_t domain;
   int ret;
+
+  /* Clone the IOB before tcp_alloc() */
+
+  if (dev->d_iob != NULL)
+    {
+      iob_backup = netdev_iob_clone(dev, false);
+      if (iob_backup == NULL)
+        {
+          return NULL; /* Out of memory */
+        }
+    }
 
   /* Get the appropriate IP domain */
 
@@ -1008,6 +1020,22 @@ FAR struct tcp_conn_s *tcp_alloc_accept(FAR struct net_driver_s *dev,
   /* Allocate the connection structure */
 
   conn = tcp_alloc(domain);
+
+  /* Restore IOB if it was lost */
+
+  if (conn && dev->d_iob == NULL && iob_backup != NULL)
+    {
+      netdev_iob_replace(dev, iob_backup);
+      iob_backup = NULL; /* Don't free it */
+    }
+
+  /* Cleanup */
+
+  if (iob_backup != NULL)
+    {
+      iob_free_chain(iob_backup);
+    }
+
   if (conn)
     {
       /* Set up the local address (laddr) and the remote address (raddr)
