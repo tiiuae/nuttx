@@ -431,11 +431,6 @@ struct mpfs_can_instance_s
   uint32_t rx_err_count;                /* Rx error count */
   mpfs_can_device_stats_t stats;        /* Device statistics */
 
-  /* buffer count */
-
-  uint8_t  basic_can_rxb_count; /* number of rx buffers */
-  uint8_t  basic_can_txb_count; /* number of tx buffers */
-
   /* MSS CAN composite message objects */
 
   mpfs_can_msgobject_t *tx_msg; /* Pointer to the transmit message object */
@@ -624,17 +619,9 @@ static netpkt_t *mpfs_receive(struct netdev_lowerhalf_s *dev)
   uint32_t data_high;
   uint32_t data_low;
 
-  /* Check if we have RX buffers configured */
-
-  if (priv->basic_can_rxb_count == 0)
-    {
-      return NULL;
-    }
-
   /* Find next RX buffer that has a message available */
 
-  for (buffer_number = CAN_RX_BUFFER - priv->basic_can_rxb_count;
-       buffer_number < CAN_RX_BUFFER; buffer_number++)
+  for (buffer_number = 0; buffer_number < CAN_RX_BUFFER; buffer_number++)
     {
       addr = priv->reg_base + MPFS_CAN_RX_MSG_OFFSET
             + MPFS_CAN_RX_MSG_TOTAL_SIZE * buffer_number;
@@ -710,7 +697,7 @@ static int mpfs_transmit(struct netdev_lowerhalf_s *dev,
                          netpkt_t *pkt)
 {
   mpfs_can_instance_t *priv = (mpfs_can_instance_t *)dev;
-  struct can_frame cf;
+  struct can_frame *cf;
   uint8_t buffer_number;
   uintptr_t addr;
   uint32_t msg_ctrl;
@@ -733,100 +720,83 @@ static int mpfs_transmit(struct netdev_lowerhalf_s *dev,
 
   /* Get direct pointer to CAN frame data */
 
-  struct can_frame *frame =
-    (struct can_frame *)netpkt_getdata(dev, pkt);
+  cf = (struct can_frame *)netpkt_getdata(dev, pkt);
 
-  if (frame == NULL)
+  if (cf == NULL)
     {
       nerr("Failed to get packet data pointer\n");
       netpkt_free(dev, pkt, NETPKT_TX);
       return -EINVAL;
     }
 
-  /* Copy frame locally to avoid any pointer issues */
+  /* Check TX buffer availability */
 
-  cf = *frame;
+  uint32_t tx_status = mpfs_can_get_tx_buffer_status(priv);
+  uint32_t available_buffers = (~tx_status);
 
-  /* Check if we have TX buffers available */
+  /* Check if any buffer is available */
 
-  if (priv->basic_can_txb_count == 0)
+  if (available_buffers == 0)
     {
-      nerr("No TX buffers configured\n");
-      netpkt_free(dev, pkt, NETPKT_TX);
-      return -EINVAL;
-    }
+      nwarn("No TX buffer available (status: 0x%X)\n", tx_status);
 
-  /* Find next available TX buffer */
+      /* Run abort for all TX buffer */
 
-  for (buffer_number = CAN_TX_BUFFER - priv->basic_can_txb_count;
-       buffer_number < CAN_TX_BUFFER; buffer_number++)
-    {
-      /* Check if this transmit buffer is available (not busy) */
-
-      if ((mpfs_can_get_tx_buffer_status(priv) & (1 << buffer_number)) == 0)
+      if (mpfs_can_send_message_abort(priv) != CAN_OK)
         {
-          /* Calculate hardware buffer address */
-
-          addr = priv->reg_base + MPFS_CAN_TX_MSG_OFFSET
-                + MPFS_CAN_TX_MSG_TOTAL_SIZE * buffer_number;
-
-          /* Prepare control word */
-
-          msg_ctrl = ((cf.can_id & CAN_EFF_FLAG) ?
-                     MPFS_CAN_TX_MSG_CTRL_CMD_IDE : 0)
-                     | ((cf.can_dlc << MPFS_CAN_TX_MSG_CTRL_CMD_DLC_SHIFT)
-                     & MPFS_CAN_TX_MSG_CTRL_CMD_DLC)
-                     | ((cf.can_id & CAN_RTR_FLAG) ?
-                     MPFS_CAN_TX_MSG_CTRL_CMD_RTR : 0);
-
-          /* Prepare ID */
-
-          msg_id = mpfs_can_canid_to_msgid(cf.can_id);
-
-          /* Prepare data (only if not RTR) */
-
-          if (!(msg_ctrl & MPFS_CAN_TX_MSG_CTRL_CMD_RTR))
-            {
-              if (cf.can_dlc > 0)
-                {
-                  data_high = __builtin_bswap32(*(uint32_t *)&cf.data[0]);
-                }
-
-              if (cf.can_dlc > 4)
-                {
-                  data_low = __builtin_bswap32(*(uint32_t *)&cf.data[4]);
-                }
-            }
-
-          /* Write directly to hardware buffer */
-
-          putreg32(msg_id << MPFS_CAN_MSG_ID_SHIFT,
-                  addr + MPFS_CAN_TX_MSG_ID_SHIFT);
-          putreg32(data_low, addr + MPFS_CAN_TX_MSG_DATA_LOW_SHIFT);
-          putreg32(data_high, addr + MPFS_CAN_TX_MSG_DATA_HIGH_SHIFT);
-
-          /* Trigger transmission with control word */
-
-          putreg32(msg_ctrl
-                  | MPFS_CAN_TX_MSG_CTRL_CMD_WPN_B
-                  | MPFS_CAN_TX_MSG_CTRL_CMD_WPN_A
-                  | MPFS_CAN_TX_MSG_CTRL_CMD_TX_INT_EBL
-                  | MPFS_CAN_TX_MSG_CTRL_CMD_TX_REQ,
-                  addr + MPFS_CAN_TX_MSG_CTRL_CMD_SHIFT);
-
-          ninfo("Sending CAN message (ID: 0x%X, DLC: %d) via buffer %d\n",
-                  cf.can_id & CAN_EFF_MASK, cf.can_dlc, buffer_number);
-
-          netpkt_free(dev, pkt, NETPKT_TX);
-          return OK;
+          nwarn("Not all pending TX messages aborted\n");
         }
     }
 
-  /* No available TX buffer found */
+  /* Find first available buffer using bit operations or overwrite buffer 0 */
 
-  nerr("No TX buffer available\n");
+  buffer_number = available_buffers ?
+                  (uint8_t)__builtin_ctz(available_buffers) : 0;
+
+  /* Calculate hardware buffer address */
+
+  addr = priv->reg_base + MPFS_CAN_TX_MSG_OFFSET
+        + MPFS_CAN_TX_MSG_TOTAL_SIZE * buffer_number;
+
+  /* Prepare control word */
+
+  msg_ctrl = ((cf->can_id & CAN_EFF_FLAG) ?
+              MPFS_CAN_TX_MSG_CTRL_CMD_IDE : 0)
+              | ((cf->can_dlc << MPFS_CAN_TX_MSG_CTRL_CMD_DLC_SHIFT)
+              & MPFS_CAN_TX_MSG_CTRL_CMD_DLC)
+              | ((cf->can_id & CAN_RTR_FLAG) ?
+              MPFS_CAN_TX_MSG_CTRL_CMD_RTR : 0);
+
+  /* Prepare ID */
+
+  msg_id = mpfs_can_canid_to_msgid(cf->can_id);
+
+  /* Prepare data */
+
+  data_high = __builtin_bswap32(*(uint32_t *)&cf->data[0]);
+  data_low = __builtin_bswap32(*(uint32_t *)&cf->data[4]);
+
+  /* Write directly to hardware buffer */
+
+  putreg32(msg_id << MPFS_CAN_MSG_ID_SHIFT,
+          addr + MPFS_CAN_TX_MSG_ID_SHIFT);
+  putreg32(data_low, addr + MPFS_CAN_TX_MSG_DATA_LOW_SHIFT);
+  putreg32(data_high, addr + MPFS_CAN_TX_MSG_DATA_HIGH_SHIFT);
+
+  /* Trigger transmission with control word */
+
+  putreg32(msg_ctrl
+          | MPFS_CAN_TX_MSG_CTRL_CMD_WPN_B
+          | MPFS_CAN_TX_MSG_CTRL_CMD_WPN_A
+          | MPFS_CAN_TX_MSG_CTRL_CMD_TX_INT_EBL
+          | MPFS_CAN_TX_MSG_CTRL_CMD_TX_REQ,
+          addr + MPFS_CAN_TX_MSG_CTRL_CMD_SHIFT);
+
+  ninfo("Sending CAN message (ID: 0x%X, DLC: %d) via buffer %d\n",
+          cf->can_id & CAN_EFF_MASK, cf->can_dlc, buffer_number);
+
   netpkt_free(dev, pkt, NETPKT_TX);
-  return -EBUSY;
+  return OK;
 }
 
 /****************************************************************************
@@ -1049,9 +1019,9 @@ static int mpfs_interrupt(int irq, void *context, void *arg)
 
   mpfs_can_clear_int_status(priv, priv->isr);
 
-  /* ninfo("Interrupt received\n"); */
+  ninfo("Interrupt received\n");
+
 #ifdef CONFIG_DEBUG_NET_INFO
-  return CAN_OK;
   mpfs_can_print_status(priv);
 #endif
 
@@ -1800,13 +1770,6 @@ static uint8_t mpfs_can_config_buffer(mpfs_can_instance_t *priv)
   uint8_t buffer_number;
   mpfs_can_rxmsgobject_t canrxobj;
 
-  /* Is a buffer configured for Basic CAN? */
-
-  if (priv->basic_can_rxb_count == 0)
-    {
-      return CAN_INVALID_BUFFER;
-    }
-
   canrxobj.rx_msg_ctrl = CAN_RX_BUFFER_CTRL_DEFAULT;
   canrxobj.id = 0;
   canrxobj.data_high = 0;
@@ -1816,10 +1779,9 @@ static uint8_t mpfs_can_config_buffer(mpfs_can_instance_t *priv)
   canrxobj.amr_data = priv->filter.amr_data;
   canrxobj.acr_data = priv->filter.acr_data;
 
-  /* Find next BASIC CAN buffer that has a message available */
+  /* Configure all RX buffers */
 
-  for (buffer_number = CAN_RX_BUFFER - priv->basic_can_rxb_count;
-       buffer_number < CAN_RX_BUFFER; buffer_number++)
+  for (buffer_number = 0; buffer_number < CAN_RX_BUFFER; buffer_number++)
     {
       /* Configure buffer */
 
@@ -1876,11 +1838,6 @@ static uint8_t mpfs_can_config_buffer_n (mpfs_can_instance_t *priv,
                                          mpfs_can_rxmsgobject_t *pmsg)
 {
   uintptr_t addr;
-
-  if (priv->basic_can_rxb_count == 0)
-    {
-      return CAN_INVALID_BUFFER;
-    }
 
   /* Configure buffer */
 
@@ -1992,8 +1949,9 @@ static inline bool mpfs_can_get_rx_gte96(mpfs_can_instance_t *priv)
  *  priv  - Pointer to the private CAN driver state structure
  *  buffer_number  - The buffer index to abort the message
  *
- * Returned Value: This function returns status of transmit buffers
- *   (32 buffers)
+ * Returned Value:
+ *  This function returns CAN_OK on successful abortion, otherwise it will
+ *  returns CAN_ERR
  *
  * Assumptions:
  *  None
@@ -2006,19 +1964,14 @@ static uint8_t mpfs_can_send_message_abort(mpfs_can_instance_t *priv)
   uintptr_t addr;
   uint32_t reg;
 
-  if (priv->basic_can_txb_count == 0)
-    {
-      return CAN_INVALID_BUFFER;
-    }
+  /* Check all TX buffers and abort busy ones */
 
-  /* Find next BASIC CAN buffer that is available */
-
-  for (buffer_number = CAN_TX_BUFFER - priv->basic_can_txb_count;
-       buffer_number < CAN_TX_BUFFER; buffer_number++)
+  for (buffer_number = 0; buffer_number < CAN_TX_BUFFER; buffer_number++)
     {
       /* Check which transmit buffer is busy and abort it. */
 
-      if ((mpfs_can_get_tx_buffer_status(priv) & (1 << buffer_number)) == 1)
+      if ((mpfs_can_get_tx_buffer_status(priv) &
+          ((uint32_t)1 << buffer_number)) != 0)
         {
           addr = priv->reg_base + MPFS_CAN_TX_MSG_OFFSET
             + MPFS_CAN_TX_MSG_TOTAL_SIZE * buffer_number;
@@ -2035,7 +1988,7 @@ static uint8_t mpfs_can_send_message_abort(mpfs_can_instance_t *priv)
           reg = getreg32(addr + MPFS_CAN_TX_MSG_CTRL_CMD_SHIFT);
           if ((reg & MPFS_CAN_TX_MSG_CTRL_CMD_TX_ABORT) != 0)
             {
-              /* Message not aborted. */
+              /* Message not aborted */
 
               return CAN_ERR;
             }
@@ -2465,11 +2418,6 @@ int mpfs_can_init(int ncan, uint32_t bitrate)
     {
       return -EAGAIN;
     }
-
-  /* Initialize the number of buffers */
-
-  priv->basic_can_rxb_count = CAN_RX_BUFFER;
-  priv->basic_can_txb_count = CAN_TX_BUFFER;
 
   /* Initialize filter */
 
