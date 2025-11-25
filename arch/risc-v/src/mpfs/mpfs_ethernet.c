@@ -481,7 +481,7 @@ static int mpfs_interrupt_0(int irq, void *context, void *arg)
     {
       /* If a TX transfer just completed, then cancel the TX timeout */
 
-      nwarn("TX complete: cancel timeout\n");
+      //nwarn("TX complete: cancel timeout\n");
       wd_cancel(&priv->txtimeout);
     }
 
