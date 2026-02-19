@@ -133,6 +133,10 @@ config IMX9_EDMA
 	default n
 	select ARCH_DMA
 
+config IMX9_ADC
+	bool "ADC"
+	default n
+
 menu "USDHC"
 
 config IMX9_USDHC
