@@ -209,79 +209,114 @@ static inline void flexio_putreg(struct imx9_pwmtimer_s *priv, int offset,
  *
  ****************************************************************************/
 
-static void flexio_mux(void)
+static void flexio_apply_mux(flexio_pwm_id_t id, int channel)
 {
-#ifdef CONFIG_IMX9_FLEXIO1_PWM
-
-#  ifdef FLEXIO1_PWM0_MUX
-  imx9_iomux_configure(FLEXIO1_PWM0_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM1_MUX
-  imx9_iomux_configure(FLEXIO1_PWM1_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM2_MUX
-  imx9_iomux_configure(FLEXIO1_PWM2_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM3_MUX
-  imx9_iomux_configure(FLEXIO1_PWM3_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM4_MUX
-  imx9_iomux_configure(FLEXIO1_PWM4_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM5_MUX
-  imx9_iomux_configure(FLEXIO1_PWM5_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM6_MUX
-  imx9_iomux_configure(FLEXIO1_PWM6_MUX);
-#  endif
-
-#  ifdef FLEXIO1_PWM7_MUX
-  imx9_iomux_configure(FLEXIO1_PWM7_MUX);
-#  endif
-
+  if (id == PWM_FLEXIO1)
+    {
+      switch (channel)
+        {
+#ifdef FLEXIO1_PWM0_MUX
+          case 0:
+            imx9_iomux_configure(FLEXIO1_PWM0_MUX);
+            break;
 #endif
-
-#ifdef CONFIG_IMX9_FLEXIO2_PWM
-
-#  ifdef FLEXIO2_PWM0_MUX
-  imx9_iomux_configure(FLEXIO2_PWM0_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM1_MUX
-  imx9_iomux_configure(FLEXIO2_PWM1_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM2_MUX
-  imx9_iomux_configure(FLEXIO2_PWM2_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM3_MUX
-  imx9_iomux_configure(FLEXIO2_PWM3_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM4_MUX
-  imx9_iomux_configure(FLEXIO2_PWM4_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM5_MUX
-  imx9_iomux_configure(FLEXIO2_PWM5_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM6_MUX
-  imx9_iomux_configure(FLEXIO2_PWM6_MUX);
-#  endif
-
-#  ifdef FLEXIO2_PWM7_MUX
-  imx9_iomux_configure(FLEXIO2_PWM7_MUX);
-#  endif
-
+#ifdef FLEXIO1_PWM1_MUX
+          case 1:
+            imx9_iomux_configure(FLEXIO1_PWM1_MUX);
+            break;
 #endif
+#ifdef FLEXIO1_PWM2_MUX
+          case 2:
+            imx9_iomux_configure(FLEXIO1_PWM2_MUX);
+            break;
+#endif
+#ifdef FLEXIO1_PWM3_MUX
+          case 3:
+            imx9_iomux_configure(FLEXIO1_PWM3_MUX);
+            break;
+#endif
+#ifdef FLEXIO1_PWM4_MUX
+          case 4:
+            imx9_iomux_configure(FLEXIO1_PWM4_MUX);
+            break;
+#endif
+#ifdef FLEXIO1_PWM5_MUX
+          case 5:
+            imx9_iomux_configure(FLEXIO1_PWM5_MUX);
+            break;
+#endif
+#ifdef FLEXIO1_PWM6_MUX
+          case 6:
+            imx9_iomux_configure(FLEXIO1_PWM6_MUX);
+            break;
+#endif
+#ifdef FLEXIO1_PWM7_MUX
+          case 7:
+            imx9_iomux_configure(FLEXIO1_PWM7_MUX);
+            break;
+#endif
+          default:
+            break;
+        }
+    }
+  else
+    {
+      switch (channel)
+        {
+#ifdef FLEXIO2_PWM0_MUX
+          case 0:
+            imx9_iomux_configure(FLEXIO2_PWM0_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM1_MUX
+          case 1:
+            imx9_iomux_configure(FLEXIO2_PWM1_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM2_MUX
+          case 2:
+            imx9_iomux_configure(FLEXIO2_PWM2_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM3_MUX
+          case 3:
+            imx9_iomux_configure(FLEXIO2_PWM3_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM4_MUX
+          case 4:
+            imx9_iomux_configure(FLEXIO2_PWM4_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM5_MUX
+          case 5:
+            imx9_iomux_configure(FLEXIO2_PWM5_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM6_MUX
+          case 6:
+            imx9_iomux_configure(FLEXIO2_PWM6_MUX);
+            break;
+#endif
+#ifdef FLEXIO2_PWM7_MUX
+          case 7:
+            imx9_iomux_configure(FLEXIO2_PWM7_MUX);
+            break;
+#endif
+          default:
+            break;
+        }
+    }
+}
+
+static void flexio_mux(struct imx9_pwmtimer_s *priv)
+{
+  int channel;
+
+  for (channel = 0; channel < priv->nchannels; channel++)
+    {
+      flexio_apply_mux(priv->id, channel);
+    }
 }
 
 /****************************************************************************
@@ -718,7 +753,7 @@ struct pwm_lowerhalf_s *imx9_flexio_pwm_init(flexio_pwm_id_t pwmid)
     {
       /* IO mux */
 
-      flexio_mux();
+      flexio_mux(lower);
 
       /* Reset FlexIO */
 
