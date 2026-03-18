@@ -110,6 +110,7 @@
 #define _I3CBASE        (0x4200) /* I3C driver ioctl commands */
 #define _MSIOCBASE      (0x4300) /* Mouse ioctl commands */
 #define _I2SOCBASE      (0x4400) /* I2S driver ioctl commands */
+#define _DSHOTIOCBASE   (0x4800) /* Dshot device ioctl commands */
 #define _WLIOCBASE      (0x8b00) /* Wireless modules ioctl network commands */
 
 /* boardctl() commands share the same number space */
@@ -782,6 +783,13 @@
 
 #define _I2SOCVALID(c) (_IOC_TYPE(c)==_I2SOCBASE)
 #define _I2SOC(nr)     _IOC(_I2SOCBASE,nr)
+
+/* DSHOT ioctl definitions (see nuttx/timers/dshot.h) ***********************/
+
+/* see nuttx/include/timers/dshot.h */
+
+#define _DSHOTIOCVALID(c)   (_IOC_TYPE(c)==_DSHOTIOCBASE)
+#define _DSHOTIOC(nr)       _IOC(_DSHOTIOCBASE,nr)
 
 /****************************************************************************
  * Public Type Definitions
