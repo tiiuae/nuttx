@@ -189,6 +189,7 @@ struct imx9_driver_s
   const enum phy_type_t        phy_type;    /* PHY type */
   const bool                   autoneg;     /* Phy autonegotiation enabled */
   const bool                   force_speed; /* Disable autonegotiation and force speed */
+  const bool                   phy_exists;  /* Device has PHY  */
   bool                         full_duplex; /* Manually set to full duplex mode */
   bool                         s_10mbps;    /* Manually set to 10 MBPS */
   bool                         s_100mbps;   /* Manually set to 100 M0BPS */
@@ -349,6 +350,9 @@ static struct imx9_driver_s g_enet[] =
     .irq          = IMX9_IRQ_ENET,
     .phy_list     = g_enet1_phy_list,
     .n_phys       = nitems(g_enet1_phy_list),
+#  ifndef CONFIG_ETH0_PHY_NONE
+    .phy_exists   =  true,
+#  endif
     .txdesc       = g_enet1_tx_desc_pool,
     .rxdesc       = g_enet1_rx_desc_pool,
     .buffer_pool  = (const uintptr_t)g_enet_1_buffer_pool,
@@ -1316,7 +1320,11 @@ static int imx9_ifup_action(struct net_driver_s *dev, bool resetphy)
   struct imx9_driver_s *priv = (struct imx9_driver_s *)dev;
   uint8_t *mac = dev->d_mac.ether.ether_addr_octet;
   uint32_t ecr;
+  uint32_t rcr;
+  uint32_t tcr;
+  uint32_t racc;
   int ret;
+  const char *phy_name = priv->cur_phy ? priv->cur_phy->name : "Unknown";
 
   ninfo("Bringing up: %u.%u.%u.%u\n",
         ip4_addr1(dev->d_ipaddr), ip4_addr2(dev->d_ipaddr),
@@ -1348,17 +1356,120 @@ static int imx9_ifup_action(struct net_driver_s *dev, bool resetphy)
 
   /* Configure the PHY */
 
-  ret = imx9_determine_phy(priv);
+#ifdef CONFIG_IMX9_ENET_PHYINIT
+  /* Perform any necessary, one-time, board-specific PHY initialization */
+
+  ret = imx9_phy_boardinitialize(priv->intf);
   if (ret < 0)
     {
-      nwarn("Unrecognized PHY\n");
+      nerr("ERROR: Failed to initialize the PHY: %d\n", ret);
+      return ret;
+    }
+#endif
+
+  if (priv->phy_exists)
+    {
+      ret = imx9_determine_phy(priv);
+      if (ret < 0)
+        {
+          nwarn("Unrecognized PHY\n");
+        }
+
+      ret = imx9_initphy(priv, resetphy);
+      if (ret < 0)
+        {
+          nerr("ERROR: Failed to configure the PHY: %d\n", ret);
+          return ret;
+        }
     }
 
-  ret = imx9_initphy(priv, resetphy);
-  if (ret < 0)
+  /* Set up the transmit and receive control registers based on the
+   * configuration and the auto negotiation results.
+   */
+
+  rcr = (ENET_RCR_CRCFWD | ((CONFIG_NET_ETH_PKTSIZE + CONFIG_NET_GUARDSIZE)
+                            << ENET_RCR_MAX_FL_SHIFT) |
+         ENET_RCR_FCE | ENET_RCR_MII_MODE);
+
+  if (priv->phy_type == PHY_RGMII)
     {
-      nerr("ERROR: Failed to configure the PHY: %d\n", ret);
-      return ret;
+      rcr |= ENET_RCR_RGMII_EN;
+    }
+  else
+    {
+      rcr |= ENET_RCR_RMII_MODE;
+    }
+
+  if (priv->promiscuous)
+    {
+      rcr |= ENET_RCR_PROM;
+    }
+
+  tcr = 0;
+
+  imx9_enet_putreg32(priv, tcr, IMX9_ENET_TCR_OFFSET);
+
+  /* Enable Discard Of Frames With MAC Layer Errors.
+   * Enable Discard Of Frames With Wrong Protocol Checksum.
+   * Bit 1: Enable discard of frames with wrong IPv4 header checksum.
+   */
+
+  racc = ENET_RACC_PRODIS | ENET_RACC_LINEDIS | ENET_RACC_IPDIS;
+  imx9_enet_putreg32(priv, racc, IMX9_ENET_RACC_OFFSET);
+
+  /* Setup half or full duplex */
+
+  if (priv->full_duplex)
+    {
+      /* Full duplex */
+
+      ninfo("%s: Full duplex\n", phy_name);
+      tcr |= ENET_TCR_FDEN;
+    }
+  else
+    {
+      /* Half duplex */
+
+      ninfo("%s: Half duplex\n", phy_name);
+      rcr |= ENET_RCR_DRT;
+    }
+
+  if (priv->s_10mbps)
+    {
+      /* 10 Mbps */
+
+      ninfo("%s: 10 Base-T\n", phy_name);
+      rcr |= ENET_RCR_RMII_10T;
+    }
+  else if (priv->s_100mbps)
+    {
+      /* 100 Mbps */
+
+      ninfo("%s: 100 Base-T\n", phy_name);
+    }
+  else if (priv->s_1000mbps)
+    {
+      /* 1000 Mbps */
+
+      ninfo("%s: 1000 Base-T\n", phy_name);
+    }
+  else
+    {
+      /* This might happen if Autonegotiation did not complete(?) */
+
+      nerr("ERROR: No 10-, 100-, or 1000-BaseT\n");
+    }
+
+  imx9_enet_putreg32(priv, rcr, IMX9_ENET_RCR_OFFSET);
+  imx9_enet_putreg32(priv, tcr, IMX9_ENET_TCR_OFFSET);
+
+  if (priv->phy_type == PHY_RGMII)
+    {
+      ret = imx9_config_rgmii_id(priv);
+      if (ret < 0)
+        {
+          nerr("ERROR: configure internal delay failed: %d\n", ret);
+        }
     }
 
   /* Set the RX buffer size */
@@ -2193,17 +2304,6 @@ static int imx9_determine_phy(struct imx9_driver_s *priv)
   int retries;
   int ret;
 
-#ifdef CONFIG_IMX9_ENET_PHYINIT
-  /* Perform any necessary, one-time, board-specific PHY initialization */
-
-  ret = imx9_phy_boardinitialize(priv->intf);
-  if (ret < 0)
-    {
-      nerr("ERROR: Failed to initialize the PHY: %d\n", ret);
-      return ret;
-    }
-#endif
-
   for (i = 0; i < priv->n_phys; i++)
     {
       priv->phyaddr = (uint8_t)priv->phy_list[i].address_lo;
@@ -2842,9 +2942,6 @@ errout:
 
 static inline int imx9_initphy(struct imx9_driver_s *priv, bool renogphy)
 {
-  uint32_t rcr;
-  uint32_t tcr;
-  uint32_t racc;
   uint16_t phydata;
   int retries;
   int ret;
@@ -2958,98 +3055,6 @@ static inline int imx9_initphy(struct imx9_driver_s *priv, bool renogphy)
             {
               return ret;
             }
-        }
-    }
-
-  /* Set up the transmit and receive control registers based on the
-   * configuration and the auto negotiation results.
-   */
-
-  rcr = (ENET_RCR_CRCFWD | ((CONFIG_NET_ETH_PKTSIZE + CONFIG_NET_GUARDSIZE)
-                            << ENET_RCR_MAX_FL_SHIFT) |
-         ENET_RCR_FCE | ENET_RCR_MII_MODE);
-
-  if (priv->phy_type == PHY_RGMII)
-    {
-      rcr |= ENET_RCR_RGMII_EN;
-    }
-  else
-    {
-      rcr |= ENET_RCR_RMII_MODE;
-    }
-
-  if (priv->promiscuous)
-    {
-      rcr |= ENET_RCR_PROM;
-    }
-
-  tcr = 0;
-
-  imx9_enet_putreg32(priv, tcr, IMX9_ENET_TCR_OFFSET);
-
-  /* Enable Discard Of Frames With MAC Layer Errors.
-   * Enable Discard Of Frames With Wrong Protocol Checksum.
-   * Bit 1: Enable discard of frames with wrong IPv4 header checksum.
-   */
-
-  racc = ENET_RACC_PRODIS | ENET_RACC_LINEDIS | ENET_RACC_IPDIS;
-  imx9_enet_putreg32(priv, racc, IMX9_ENET_RACC_OFFSET);
-
-  /* Setup half or full duplex */
-
-  if (priv->full_duplex)
-    {
-      /* Full duplex */
-
-      ninfo("%s: Full duplex\n", phy_name);
-      tcr |= ENET_TCR_FDEN;
-    }
-  else
-    {
-      /* Half duplex */
-
-      ninfo("%s: Half duplex\n", phy_name);
-      rcr |= ENET_RCR_DRT;
-    }
-
-  if (priv->s_10mbps)
-    {
-      /* 10 Mbps */
-
-      ninfo("%s: 10 Base-T\n", phy_name);
-      rcr |= ENET_RCR_RMII_10T;
-    }
-  else if (priv->s_100mbps)
-    {
-      /* 100 Mbps */
-
-      ninfo("%s: 100 Base-T\n", phy_name);
-    }
-  else if (priv->s_1000mbps)
-    {
-      /* 1000 Mbps */
-
-      ninfo("%s: 1000 Base-T\n", phy_name);
-    }
-  else
-    {
-      /* This might happen if Autonegotiation did not complete(?) */
-
-      nerr("ERROR: No 10-, 100-, or 1000-BaseT reported: PHY STATUS=%04x\n",
-           phydata);
-      return -EIO;
-    }
-
-  imx9_enet_putreg32(priv, rcr, IMX9_ENET_RCR_OFFSET);
-  imx9_enet_putreg32(priv, tcr, IMX9_ENET_TCR_OFFSET);
-
-  if (priv->phy_type == PHY_RGMII)
-    {
-      ret = imx9_config_rgmii_id(priv);
-      if (ret < 0)
-        {
-          nerr("ERROR: configure internal delay failed: %d\n", ret);
-          return ret;
         }
     }
 
