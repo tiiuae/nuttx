@@ -520,6 +520,10 @@ config IMX9_LPSPI
 	bool "LPSPI support"
 	default n
 
+config IMX9_SAR_ADC
+	bool "i.MX9 SAR ADC"
+	default n
+
 config IMX9_MU
 	bool "Mailbox support"
 	default y
