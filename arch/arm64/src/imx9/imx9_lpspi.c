@@ -2026,6 +2026,10 @@ struct spi_dev_s *imx9_lpspibus_initialize(int bus)
 
   if (priv->refcount == 0)
     {
+      /* Set clock root to 125MHz */
+
+      imx9_ccm_configure_root_clock(priv->clk_root, SYS_PLL1PFD0DIV2, 4);
+
       imx9_lpspi_bus_initialize(priv);
     }
 
