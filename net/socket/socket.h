@@ -34,6 +34,8 @@
 #include <stdint.h>
 #include <time.h>
 
+#include <sys/socket.h>
+
 #include <nuttx/fs/fs.h>
 #include <nuttx/clock.h>
 #include <nuttx/net/net.h>
@@ -159,6 +161,17 @@ extern "C"
 
 FAR const struct sock_intf_s *
 net_sockif(sa_family_t family, int type, int protocol);
+
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+int msg_alloc_kbuf(FAR const struct msghdr *src,
+                   FAR struct msghdr **msg);
+int msg_copy_from_user(FAR const struct msghdr *src,
+                       FAR struct msghdr *msg);
+ssize_t msg_copy_to_user(FAR struct msghdr *dst,
+                         FAR const struct msghdr *src,
+                         ssize_t recvlen);
+void msg_free_kbuf(FAR struct msghdr *msg);
+#endif /* CONFIG_BUILD_KERNEL && CONFIG_ARCH_ADDRENV */
 
 /****************************************************************************
  * Name: net_timeo
