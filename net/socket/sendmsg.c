@@ -157,7 +157,39 @@ ssize_t sendmsg(int sockfd, FAR struct msghdr *msg, int flags)
 
   if (ret == OK)
     {
-      ret = psock_sendmsg(psock, msg, flags);
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+      FAR struct msghdr *umsg = msg;
+
+      /* In kernel build with address environments the TX callback that
+       * calls devif_send() may fire while a different user process is
+       * active (different SATP/TTBR), causing reads from the wrong
+       * physical memory if the original user-space iov_base is used.
+       *
+       * Fix: copy user payload and control data into kernel-owned IOB
+       * bounce buffers and redirect the msghdr to them before the shared
+       * psock_sendmsg() call below so the callback always reads from
+       * kernel addresses regardless of the active address environment.
+       * See net/socket/msg_copyusr.c for the helpers.
+       */
+
+      msg = msg_alloc_kbuf(msg);
+      if (msg == NULL)
+        {
+          ret = -ENOMEM;
+        }
+
+      if (ret == OK)
+        {
+          msg_copy_from_user(umsg, (FAR struct msg_kbuf_s *)msg);
+#endif
+
+          ret = psock_sendmsg(psock, msg, flags);
+
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+          msg_free_kbuf(msg);
+        }
+#endif
+
       file_put(filep);
     }
 

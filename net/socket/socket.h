@@ -34,6 +34,8 @@
 #include <stdint.h>
 #include <time.h>
 
+#include <sys/socket.h>
+
 #include <nuttx/fs/fs.h>
 #include <nuttx/clock.h>
 #include <nuttx/net/net.h>
@@ -159,6 +161,40 @@ extern "C"
 
 FAR const struct sock_intf_s *
 net_sockif(sa_family_t family, int type, int protocol);
+
+/****************************************************************************
+ * Name: msg_kbuf_s
+ *
+ * Description:
+ *   Kernel-side msghdr bounce-buffer state used by msg_alloc_kbuf(),
+ *   msg_copy_from_user(), msg_copy_to_user() and msg_free_kbuf().
+ *
+ *   Only relevant when CONFIG_BUILD_KERNEL && CONFIG_ARCH_ADDRENV because
+ *   that is the only configuration where the MMU address environment can
+ *   change while a blocking socket call is in flight.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+struct msg_kbuf_s
+{
+  struct msghdr       kmsg;        /* Kernel copy of user msghdr */
+  struct iovec        kiov;        /* Kernel iovec entry */
+  FAR struct iob_s   *iob_meta;    /* IOB containing this structure */
+
+  /* Heap payload when not in iob_meta */
+
+  FAR void           *payload_kmem;
+};
+
+FAR struct msghdr *msg_alloc_kbuf(FAR const struct msghdr *src);
+void msg_copy_from_user(FAR const struct msghdr *src,
+                        FAR struct msg_kbuf_s *kbuf);
+void msg_copy_to_user(FAR struct msghdr *dst,
+                      FAR const struct msghdr *src,
+                      ssize_t recvlen);
+void msg_free_kbuf(FAR struct msghdr *msg);
+#endif /* CONFIG_BUILD_KERNEL && CONFIG_ARCH_ADDRENV */
 
 /****************************************************************************
  * Name: net_timeo

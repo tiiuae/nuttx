@@ -27,6 +27,12 @@ SOCK_CSRCS += listen.c recv.c recvfrom.c send.c sendto.c socket.c
 SOCK_CSRCS += socketpair.c net_close.c recvmsg.c sendmsg.c shutdown.c
 SOCK_CSRCS += net_dup2.c net_sockif.c net_poll.c net_fstat.c
 
+# User-space address environment bounce buffering for msghdr
+
+ifeq ($(CONFIG_BUILD_KERNEL),y)
+SOCK_CSRCS += msg_copyusr.c
+endif
+
 # Socket options
 
 ifeq ($(CONFIG_NET_SOCKOPTS),y)

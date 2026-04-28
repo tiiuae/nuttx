@@ -178,7 +178,40 @@ ssize_t recvmsg(int sockfd, FAR struct msghdr *msg, int flags)
 
   if (ret == OK)
     {
-      ret = psock_recvmsg(psock, msg, flags);
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+      FAR struct msghdr *umsg = msg;
+
+      /* In kernel build with address environments each user process has its
+       * own MMU page table (SATP on RISC-V, TTBR on ARM).  When this task
+       * blocks waiting for data, the scheduler may switch to a different
+       * user process, changing the active address environment.  The network
+       * callback that eventually copies received data fires in that context
+       * and would write to the wrong physical memory if it used the original
+       * user-space iov_base pointer directly.
+       *
+       * Fix: allocate kernel-side IOB bounce buffers and redirect the msghdr
+       * to them before the shared psock_recvmsg() call below.  After the
+       * call (back in the correct address environment) copy results back.
+       * See net/socket/msg_copyusr.c for the helpers.
+       */
+
+      msg = msg_alloc_kbuf(msg);
+      if (msg == NULL)
+        {
+          ret = -ENOMEM;
+        }
+#endif
+
+      if (ret == OK)
+        {
+          ret = psock_recvmsg(psock, msg, flags);
+
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+          msg_copy_to_user(umsg, msg, ret);
+          msg_free_kbuf(msg);
+#endif
+        }
+
       file_put(filep);
     }
 

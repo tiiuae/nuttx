@@ -44,6 +44,12 @@ set(SRCS
     net_poll.c
     net_fstat.c)
 
+# User-space address environment bounce buffering for msghdr
+
+if(CONFIG_BUILD_KERNEL)
+  list(APPEND SRCS msg_copyusr.c)
+endif()
+
 # Socket options
 
 if(CONFIG_NET_SOCKOPTS)
