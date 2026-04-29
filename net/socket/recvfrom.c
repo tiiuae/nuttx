@@ -26,12 +26,9 @@
 
 #include <nuttx/config.h>
 
-#include <assert.h>
 #include <errno.h>
-#include <string.h>
 
 #include <nuttx/cancelpt.h>
-#include <nuttx/kmalloc.h>
 #include <nuttx/net/net.h>
 
 #include "socket/socket.h"
@@ -81,21 +78,17 @@ ssize_t psock_recvfrom(FAR struct socket *psock, FAR void *buf, size_t len,
   struct iovec iov;
   ssize_t ret;
 
-  iov.iov_base = buf;
-  iov.iov_len = len;
-  msg.msg_name = from;
-  msg.msg_namelen = fromlen ? *fromlen : 0;
-  msg.msg_iov = &iov;
-  msg.msg_iovlen = 1;
-  msg.msg_control = NULL;
-  msg.msg_controllen = 0;
-  msg.msg_flags = 0;
+  net_init_iov1_msg(&msg, &iov, buf, len, from,
+                    fromlen != NULL ? *fromlen : 0);
 
   /* And let psock_recvmsg do all of the work */
 
   ret = psock_recvmsg(psock, &msg, flags);
+
   if (ret >= 0 && fromlen != NULL)
-    *fromlen = msg.msg_namelen;
+    {
+      *fromlen = msg.msg_namelen;
+    }
 
   return ret;
 }
@@ -157,39 +150,15 @@ ssize_t recvfrom(int sockfd, FAR void *buf, size_t len, int flags,
   FAR struct socket *psock;
   FAR struct file *filep;
   ssize_t ret;
-#ifdef CONFIG_BUILD_KERNEL
-  struct sockaddr_storage kaddr;
-  FAR struct sockaddr *ufrom;
-  FAR void *kbuf;
-  FAR void *ubuf;
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+  struct iovec iov;
+  struct msghdr msg;
+  FAR struct msghdr *kmsg = NULL;
 #endif
 
   /* recvfrom() is a cancellation point */
 
   enter_cancellation_point();
-
-#ifdef CONFIG_BUILD_KERNEL
-  /* Allocate memory and copy user buffer to kernel */
-
-  kbuf = kmm_malloc(len);
-  if (!kbuf)
-    {
-      /* Out of memory */
-
-      ret = -ENOMEM;
-      goto errout_with_cancelpt;
-    }
-
-  ubuf = buf;
-  buf = kbuf;
-
-  /* Copy the address data to kernel, store the original user pointer */
-
-  if ((ufrom = from) != NULL)
-    {
-      from = (FAR struct sockaddr *)&kaddr;
-    }
-#endif
 
   /* Get the underlying socket structure */
 
@@ -199,23 +168,31 @@ ssize_t recvfrom(int sockfd, FAR void *buf, size_t len, int flags,
 
   if (ret == OK)
     {
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+      net_init_iov1_msg(&msg, &iov, buf, len, from,
+                        fromlen != NULL ? *fromlen : 0);
+
+      ret = msg_alloc_kbuf(&msg, &kmsg);
+
+      if (ret == OK)
+        {
+          ret = psock_recvmsg(psock, kmsg, flags);
+          ret = msg_copy_to_user(&msg, kmsg, ret);
+          if (ret >= 0 && fromlen != NULL)
+            {
+              *fromlen = msg.msg_namelen;
+            }
+        }
+
+      if (kmsg != NULL)
+        {
+          msg_free_kbuf(kmsg);
+        }
+#else
       ret = psock_recvfrom(psock, buf, len, flags, from, fromlen);
+#endif
       file_put(filep);
     }
-
-#ifdef CONFIG_BUILD_KERNEL
-  memcpy(ubuf, buf, len);
-  kmm_free(kbuf);
-
-  /* Copy the address back to user */
-
-  if (ufrom)
-    {
-      memcpy(ufrom, &kaddr, *fromlen);
-    }
-
-errout_with_cancelpt:
-#endif
 
   leave_cancellation_point();
 
