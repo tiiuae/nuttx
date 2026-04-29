@@ -162,6 +162,32 @@ extern "C"
 FAR const struct sock_intf_s *
 net_sockif(sa_family_t family, int type, int protocol);
 
+/****************************************************************************
+ * Name: net_init_iov1_msg
+ *
+ * Description:
+ *   Initialize an msghdr + single iovec view used by sendto/recvfrom style
+ *   wrappers.
+ *
+ ****************************************************************************/
+
+static inline void net_init_iov1_msg(FAR struct msghdr *msg,
+                                     FAR struct iovec *iov,
+                                     FAR void *buf, size_t len,
+                                     FAR struct sockaddr *name,
+                                     socklen_t namelen)
+{
+  iov->iov_base      = buf;
+  iov->iov_len       = len;
+  msg->msg_name      = name;
+  msg->msg_namelen   = namelen;
+  msg->msg_iov       = iov;
+  msg->msg_iovlen    = 1;
+  msg->msg_control   = NULL;
+  msg->msg_controllen = 0;
+  msg->msg_flags     = 0;
+}
+
 #if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
 int msg_alloc_kbuf(FAR const struct msghdr *src,
                    FAR struct msghdr **msg);

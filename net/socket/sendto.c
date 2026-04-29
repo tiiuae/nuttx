@@ -29,13 +29,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdint.h>
-#include <string.h>
-#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <nuttx/cancelpt.h>
-#include <nuttx/kmalloc.h>
 #include <nuttx/net/net.h>
 
 #include "socket/socket.h"
@@ -119,15 +116,8 @@ ssize_t psock_sendto(FAR struct socket *psock, FAR const void *buf,
       return -EINVAL;
     }
 
-  iov.iov_base = (FAR void *)buf;
-  iov.iov_len = len;
-  msg.msg_name = (FAR struct sockaddr *)to;
-  msg.msg_namelen = tolen;
-  msg.msg_iov = &iov;
-  msg.msg_iovlen = 1;
-  msg.msg_control = NULL;
-  msg.msg_controllen = 0;
-  msg.msg_flags = 0;
+  net_init_iov1_msg(&msg, &iov, (FAR void *)buf, len,
+                    (FAR struct sockaddr *)to, tolen);
 
   /* And let psock_sendmsg do all of the work */
 
@@ -203,38 +193,15 @@ ssize_t sendto(int sockfd, FAR const void *buf, size_t len, int flags,
   FAR struct socket *psock;
   FAR struct file *filep;
   ssize_t ret;
-#ifdef CONFIG_BUILD_KERNEL
-  struct sockaddr_storage kaddr;
-  FAR void *kbuf;
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+  struct iovec iov;
+  struct msghdr msg;
+  FAR struct msghdr *kmsg = NULL;
 #endif
 
   /* sendto() is a cancellation point */
 
   enter_cancellation_point();
-
-#ifdef CONFIG_BUILD_KERNEL
-  /* Allocate memory and copy user buffer to kernel */
-
-  kbuf = kmm_malloc(len);
-  if (!kbuf)
-    {
-      /* Out of memory */
-
-      ret = -ENOMEM;
-      goto errout_with_cancelpt;
-    }
-
-  memcpy(kbuf, buf, len);
-  buf = kbuf;
-
-  /* Copy the address data to kernel */
-
-  if (to)
-    {
-      memcpy(&kaddr, to, tolen);
-      to = (FAR const struct sockaddr *)&kaddr;
-    }
-#endif
 
   /* Get the underlying socket structure */
 
@@ -244,15 +211,39 @@ ssize_t sendto(int sockfd, FAR const void *buf, size_t len, int flags,
 
   if (ret == OK)
     {
+#if defined(CONFIG_BUILD_KERNEL) && defined(CONFIG_ARCH_ADDRENV)
+      if (tolen != 0 && to == NULL)
+        {
+          ret = -EINVAL;
+        }
+
+      if (ret == OK)
+        {
+          net_init_iov1_msg(&msg, &iov, (FAR void *)buf, len,
+                            (FAR struct sockaddr *)to, tolen);
+
+          ret = msg_alloc_kbuf(&msg, &kmsg);
+        }
+
+      if (ret == OK)
+        {
+          ret = msg_copy_from_user(&msg, kmsg);
+        }
+
+      if (ret == OK)
+        {
+          ret = psock_sendmsg(psock, kmsg, flags);
+        }
+
+      if (kmsg != NULL)
+        {
+          msg_free_kbuf(kmsg);
+        }
+#else
       ret = psock_sendto(psock, buf, len, flags, to, tolen);
+#endif
       file_put(filep);
     }
-
-#ifdef CONFIG_BUILD_KERNEL
-  kmm_free(kbuf);
-
-errout_with_cancelpt:
-#endif
 
   leave_cancellation_point();
 
