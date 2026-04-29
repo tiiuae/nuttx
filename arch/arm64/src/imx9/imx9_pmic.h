@@ -83,6 +83,19 @@ int imx9_pmic_get_reset_reason(uint8_t *value);
 int imx9_pmic_reset(void);
 
 /****************************************************************************
+ * Name: imx9_pmic_panic_reset
+ *
+ * Description:
+ *  Reset the SoC via PMIC using a panic-safe raw I2C write path.
+ *
+ * Returned Value:
+ *   Zero on success or error code
+ *
+ ****************************************************************************/
+
+int imx9_pmic_panic_reset(void);
+
+/****************************************************************************
  * Name: imx9_pmic_get_reset_ctrl
  *
  * Description:
@@ -113,6 +126,19 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value);
  ****************************************************************************/
 
 int imx9_pmic_set_reset_ctrl(uint8_t val);
+
+/****************************************************************************
+ * Name: imx9_pmic_panic_set_reset_ctrl
+ *
+ * Description:
+ *  Set the reset control register using a panic-safe raw I2C write path.
+ *
+ * Returned Value:
+ *   Zero on success or error code
+ *
+ ****************************************************************************/
+
+int imx9_pmic_panic_set_reset_ctrl(uint8_t val);
 
 #undef EXTERN
 #if defined(__cplusplus)

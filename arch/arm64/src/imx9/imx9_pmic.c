@@ -150,6 +150,26 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
 }
 
 /****************************************************************************
+ * Name: imx9_pmic_reg_write_raw
+ *
+ * Description:
+ *   Write an 8-bit register value to the PMIC using the panic-safe raw I2C
+ *   transfer path.
+ *
+ ****************************************************************************/
+
+static int imx9_pmic_reg_write_raw(uint8_t reg, uint8_t val)
+{
+  uint8_t buffer[2];
+
+  buffer[0] = reg;
+  buffer[1] = val;
+
+  return imx9_i2cbus_panic_write(CONFIG_IMX9_PMIC_I2C, PCA9451A_I2C_ADDR,
+                                 buffer, 2, 400000);
+}
+
+/****************************************************************************
  * Name: imx9_pmic_reset
  *
  * Description:
@@ -160,6 +180,19 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
 int imx9_pmic_reset(void)
 {
   return imx9_pmic_reg_write(REG_SW_RST, COLD_RESET);
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_panic_reset
+ *
+ * Description:
+ *   Reset SoC via PMIC using the panic-safe raw I2C path.
+ *
+ ****************************************************************************/
+
+int imx9_pmic_panic_reset(void)
+{
+  return imx9_pmic_reg_write_raw(REG_SW_RST, COLD_RESET);
 }
 
 /****************************************************************************
@@ -205,4 +238,17 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value)
 int imx9_pmic_set_reset_ctrl(uint8_t val)
 {
   return imx9_pmic_reg_write(REG_RESET_CTRL, val);
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_panic_set_reset_ctrl
+ *
+ * Description:
+ *  Set reset control register using the panic-safe raw I2C path.
+ *
+ ****************************************************************************/
+
+int imx9_pmic_panic_set_reset_ctrl(uint8_t val)
+{
+  return imx9_pmic_reg_write_raw(REG_RESET_CTRL, val);
 }

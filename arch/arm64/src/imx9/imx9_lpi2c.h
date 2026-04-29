@@ -28,6 +28,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <stdint.h>
 #include <nuttx/i2c/i2c_master.h>
 
 /****************************************************************************
@@ -52,6 +53,30 @@
  ****************************************************************************/
 
 struct i2c_master_s *imx9_i2cbus_initialize(int port);
+
+/****************************************************************************
+ * Name: imx9_i2cbus_panic_write
+ *
+ * Description:
+ *   Perform a bounded, polled I2C write without relying on the NuttX I2C
+ *   driver runtime state. This is intended for panic/reset paths where the
+ *   normal IRQ and scheduler backed transfer path is no longer reliable.
+ *
+ * Input Parameters:
+ *   port      - I2C port number
+ *   addr      - 7-bit slave address
+ *   buffer    - Write buffer
+ *   buflen    - Number of bytes to write
+ *   frequency - Bus frequency in Hz
+ *
+ * Returned Value:
+ *   Zero on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int imx9_i2cbus_panic_write(int port, uint8_t addr,
+							const uint8_t *buffer, int buflen,
+							uint32_t frequency);
 
 /****************************************************************************
  * Name: imx9_i2cbus_uninitialize

@@ -128,6 +128,9 @@
 
 #define LPI2C_MSR_LIMITED_ERROR_MASK (LPI2C_MSR_ERROR_MASK & ~(LPI2C_MSR_FEF))
 
+#define IMX9_LPI2C_PANIC_WRITE_MAXLEN 3
+#define IMX9_LPI2C_PANIC_TIMEOUT      1000000
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -278,6 +281,7 @@ static int imx9_lpi2c_isr(int irq, void *context, void *arg);
 
 static void imx9_lpi2c_clock_enable(struct imx9_lpi2c_priv_s *priv);
 static void imx9_lpi2c_clock_disable(struct imx9_lpi2c_priv_s *priv);
+static struct imx9_lpi2c_priv_s *imx9_lpi2c_get_priv(int port);
 static int imx9_lpi2c_init(struct imx9_lpi2c_priv_s *priv);
 static int imx9_lpi2c_deinit(struct imx9_lpi2c_priv_s *priv);
 static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
@@ -1626,6 +1630,196 @@ void imx9_lpi2c_clock_disable(struct imx9_lpi2c_priv_s *priv)
 }
 
 /****************************************************************************
+ * Name: imx9_lpi2c_get_priv
+ *
+ * Description:
+ *   Return the private state structure backing a selected bus.
+ *
+ ****************************************************************************/
+
+static struct imx9_lpi2c_priv_s *imx9_lpi2c_get_priv(int port)
+{
+  switch (port)
+    {
+#ifdef CONFIG_IMX9_LPI2C1
+    case 1:
+      return &imx9_lpi2c1_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C2
+    case 2:
+      return &imx9_lpi2c2_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C3
+    case 3:
+      return &imx9_lpi2c3_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C4
+    case 4:
+      return &imx9_lpi2c4_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C5
+    case 5:
+      return &imx9_lpi2c5_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C6
+    case 6:
+      return &imx9_lpi2c6_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C7
+    case 7:
+      return &imx9_lpi2c7_priv;
+#endif
+#ifdef CONFIG_IMX9_LPI2C8
+    case 8:
+      return &imx9_lpi2c8_priv;
+#endif
+    default:
+      return NULL;
+    }
+}
+
+/****************************************************************************
+ * Name: imx9_lpi2c_wait_status
+ *
+ * Description:
+ *   Wait for the requested status bits while checking for bus errors.
+ *
+ ****************************************************************************/
+
+static int imx9_lpi2c_wait_status(struct imx9_lpi2c_priv_s *priv,
+                                  uint32_t setbits, uint32_t clearbits)
+{
+  int timeout;
+
+  for (timeout = 0; timeout < IMX9_LPI2C_PANIC_TIMEOUT; timeout++)
+    {
+      uint32_t status = imx9_lpi2c_getstatus(priv);
+
+      if ((status & LPI2C_MSR_ERROR_MASK) != 0)
+        {
+          imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET,
+                            status & LPI2C_MSR_ERROR_MASK);
+          return -EIO;
+        }
+
+      if ((status & setbits) == setbits && (status & clearbits) == 0)
+        {
+          return OK;
+        }
+    }
+
+  return -ETIMEDOUT;
+}
+
+/****************************************************************************
+ * Name: imx9_i2cbus_panic_write
+ *
+ * Description:
+ *   Perform a bounded, polled write without mutexes, semaphores or IRQs.
+ *
+ ****************************************************************************/
+
+int imx9_i2cbus_panic_write(int port, uint8_t addr,
+                            const uint8_t *buffer, int buflen,
+                            uint32_t frequency)
+{
+  struct imx9_lpi2c_priv_s *priv;
+  int ret;
+  int i;
+
+  if (buffer == NULL || buflen <= 0 || buflen > IMX9_LPI2C_PANIC_WRITE_MAXLEN)
+    {
+      return -EINVAL;
+    }
+
+  priv = imx9_lpi2c_get_priv(port);
+  if (priv == NULL)
+    {
+      return -ENODEV;
+    }
+
+  imx9_iomux_configure(priv->config->scl_pin);
+  imx9_iomux_configure(priv->config->sda_pin);
+
+  imx9_lpi2c_clock_enable(priv);
+
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MIER_OFFSET, 0);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MDER_OFFSET, 0);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCR_OFFSET, LPI2C_MCR_RST);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCR_OFFSET, 0);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCR_OFFSET,
+                    LPI2C_MCR_DOZEN | LPI2C_MCR_RTF | LPI2C_MCR_RRF);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCR_OFFSET, LPI2C_MCR_DOZEN);
+
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR0_OFFSET,
+                       LPI2C_MCFG0_HREN | LPI2C_MCFG0_HRSEL,
+                       LPI2C_MCFG0_HRPOL);
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR1_OFFSET,
+                       LPI2C_MCFGR1_IGNACK | LPI2C_MCFGR1_AUTOSTOP, 0);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MFCR_OFFSET,
+                    LPI2C_MFCR_TXWATER(0) | LPI2C_MFCR_RXWATER(0));
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCFGR2_OFFSET,
+                    LPI2C_MCFG2_BUSIDLE(priv->config->busy_idle) |
+                    LPI2C_MCFG2_FILTSCL_CYCLES(priv->config->filtscl) |
+                    LPI2C_MCFG2_FILTSDA_CYCLES(priv->config->filtsda));
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCFGR3_OFFSET,
+                    LPI2C_MCFG3_PINLOW_CYCLES(0));
+
+  priv->frequency = 0;
+  imx9_lpi2c_setclock(priv, frequency);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET, 0xffffffff);
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCR_OFFSET, 0, LPI2C_MCR_MEN);
+
+  ret = imx9_lpi2c_wait_status(priv, LPI2C_MSR_TDF, 0);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET,
+                    LPI2C_MTDR_CMD_START |
+                    LPI2C_MTDR_DATA(I2C_WRITEADDR8(addr)));
+
+  for (i = 0; i < buflen; i++)
+    {
+      ret = imx9_lpi2c_wait_status(priv, LPI2C_MSR_TDF, 0);
+      if (ret < 0)
+        {
+          goto errout;
+        }
+
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET,
+                        LPI2C_MTDR_CMD_TXD | LPI2C_MTDR_DATA(buffer[i]));
+    }
+
+  ret = imx9_lpi2c_wait_status(priv, LPI2C_MSR_TDF, 0);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET, LPI2C_MTDR_CMD_STOP);
+
+  ret = imx9_lpi2c_wait_status(priv, LPI2C_MSR_SDF, LPI2C_MSR_MBF);
+  if (ret < 0)
+    {
+      goto errout;
+    }
+
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET,
+                    LPI2C_MSR_SDF | LPI2C_MSR_EPF | LPI2C_MSR_ERROR_MASK);
+  return OK;
+
+errout:
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET, LPI2C_MTDR_CMD_STOP);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MCR_OFFSET,
+                    LPI2C_MCR_DOZEN | LPI2C_MCR_RTF | LPI2C_MCR_RRF |
+                    LPI2C_MCR_MEN);
+  imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET, 0xffffffff);
+  return ret;
+}
+
+/****************************************************************************
  * Name: imx9_lpi2c_init
  *
  * Description:
@@ -2229,54 +2423,14 @@ static int imx9_lpi2c_reset(struct i2c_master_s *dev)
 
 struct i2c_master_s *imx9_i2cbus_initialize(int port)
 {
-  struct imx9_lpi2c_priv_s * priv = NULL;
+  struct imx9_lpi2c_priv_s *priv;
   irqstate_t flags;
 
   /* Get I2C private structure */
 
-  switch (port)
+  priv = imx9_lpi2c_get_priv(port);
+  if (priv == NULL)
     {
-#ifdef CONFIG_IMX9_LPI2C1
-    case 1:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c1_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C2
-    case 2:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c2_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C3
-    case 3:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c3_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C4
-    case 4:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c4_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C5
-    case 5:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c5_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C6
-    case 6:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c6_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C7
-    case 7:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c7_priv;
-      break;
-#endif
-#ifdef CONFIG_IMX9_LPI2C8
-    case 8:
-      priv = (struct imx9_lpi2c_priv_s *)&imx9_lpi2c8_priv;
-      break;
-#endif
-    default:
       return NULL;
     }
 
