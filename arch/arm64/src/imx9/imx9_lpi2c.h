@@ -86,4 +86,25 @@ struct i2c_master_s *imx9_i2cbus_initialize_panic_ctx(int port);
 
 int imx9_i2cbus_uninitialize(struct i2c_master_s *dev);
 
+/****************************************************************************
+ * Name: imx9_i2cbus_recover_panic_ctx
+ *
+ * Description:
+ *   Attempt to recover a stuck I2C bus in panic/assert context.
+ *   This function can be called after a kernel panic when interrupts are
+ *   disabled and other CPU cores are offline. Uses polling-based bus
+ *   recovery without locks or delays.
+ *
+ * Input Parameters:
+ *   Device structure as returned by the imx9_i2cbus_initialize()
+ *
+ * Returned Value:
+ *   OK if bus recovered successfully or was already free
+ *   -EIO if recovery failed
+ *   -EINVAL if invalid port
+ *
+ ****************************************************************************/
+
+int imx9_i2cbus_recover_panic_ctx(struct i2c_master_s *dev);
+
 #endif /* __ARCH_ARM64_SRC_IMX9_IMX9_LPI2C_H */

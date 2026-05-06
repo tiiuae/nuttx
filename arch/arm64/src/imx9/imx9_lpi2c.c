@@ -2182,6 +2182,7 @@ static int imx9_lpi2c_raw_transfer(struct imx9_lpi2c_priv_s *priv,
   int m;
 
   /* Wait for previous transfers to end */
+  _warn("\n");
 
   ret = imx9_lpi2c_raw_wait_status(priv, LPI2C_MSR_TDF, 0);
 
@@ -2271,6 +2272,101 @@ static int imx9_lpi2c_raw_wait_status(struct imx9_lpi2c_priv_s *priv, uint32_t s
   }
 
   return -ETIMEDOUT;
+}
+
+/****************************************************************************
+ * Name: imx9_lpi2c_recover_bus_panic_safe
+ *
+ * Description:
+ *   Panic-safe I2C bus recovery for when the bus is stuck
+ *   This function can be called from panic/assert context where:
+ *   - Interrupts are disabled
+ *   - Mutexes cannot be used
+ *   - Other CPU cores are offline
+ *   Uses polling-based bus recovery without delays or locks
+ *
+ * Input Parameters:
+ *   priv - I2C device private data
+ *
+ * Returned Value:
+ *   OK if bus recovered successfully
+ *   -EIO if bus recovery failed
+ *
+ ****************************************************************************/
+
+static int imx9_lpi2c_recover_bus_panic_safe(struct i2c_master_s *dev)
+{
+  uint32_t status;
+  int count;
+
+  struct imx9_lpi2c_priv_s *priv = (struct imx9_lpi2c_priv_s *)dev;
+
+  if (priv == NULL)
+    {
+      return -EINVAL;
+    }
+
+  /* Check if bus is busy */
+
+  status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+  if ((status & LPI2C_MSR_BBF) == 0)
+    {
+      /* Bus is free, no recovery needed */
+
+      return OK;
+    }
+
+  /* Bus is stuck, attempt recovery */
+
+  /* Set relaxed mode - allows clocking the bus even when busy */
+
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR0_OFFSET,
+                       0, LPI2C_MCFG0_RELAX);
+
+  /* Clock the bus by sending START and STOP conditions (max 10 attempts) */
+
+  for (count = 0; count < 10; count++)
+    {
+      /* Check status and clear any error flags */
+
+      status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+      if ((status & LPI2C_MSR_ERROR_MASK) != 0)
+        {
+          imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET,
+                            status & LPI2C_MSR_ERROR_MASK);
+        }
+
+      /* Send START and STOP to clock the bus */
+
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET,
+                        LPI2C_MTDR_CMD_START | LPI2C_MTDR_DATA(0));
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET,
+                        LPI2C_MTDR_CMD_STOP);
+
+      /* Poll to check if bus is now free (without delays) */
+
+      status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+      if ((status & LPI2C_MSR_BBF) == 0)
+        {
+          /* Bus recovered successfully */
+
+          break;
+        }
+    }
+
+  /* Exit relaxed mode */
+
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR0_OFFSET,
+                       LPI2C_MCFG0_RELAX, 0);
+
+  /* Check final status */
+
+  status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+  return ((status & LPI2C_MSR_BBF) == 0) ? OK : -EIO;
 }
 
 /****************************************************************************
@@ -2535,6 +2631,29 @@ int imx9_i2cbus_uninitialize(struct i2c_master_s *dev)
   imx9_lpi2c_deinit(priv);
 
   return OK;
+}
+
+/****************************************************************************
+ * Name: imx9_i2cbus_recover_panic_ctx
+ *
+ * Description:
+ *   Attempt to recover a stuck I2C bus in panic/assert context.
+ *   Can be called after a kernel panic when interrupts are disabled
+ *   and other CPU cores are offline.
+ *
+ * Input Parameters:
+ *   devt - Pointer to I2C bus device
+ *
+ * Returned Value:
+ *   OK if bus recovered successfully or was already free
+ *   -EIO if recovery failed
+ *   -EINVAL if invalid port
+ *
+ ****************************************************************************/
+
+int imx9_i2cbus_recover_panic_ctx(struct i2c_master_s *dev)
+{
+  return imx9_lpi2c_recover_bus_panic_safe(dev);
 }
 
 #endif /* CONFIG_IMX9_LPI2C */

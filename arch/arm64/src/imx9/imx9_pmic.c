@@ -39,6 +39,8 @@
 #include "arm64_internal.h"
 #include "imx9_trdc.h"
 
+#include <debug.h>
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -108,24 +110,77 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
 }
 
 /****************************************************************************
- * Name: imx9_pmic_reg_write_ctx
+ * Name: imx9_pmic_raw_reset_with_ctrl_private
  *
  * Description:
- *   Write 8-bit register value to pmic
- *   Select write from panic context or normal write
+ *   Write reset control value and perform SoC reset
  *
  ****************************************************************************/
 
-static int imx9_pmic_reg_write_ctx(uint8_t reg, uint8_t val, bool panic_ctx)
+static int imx9_pmic_raw_reset_with_ctrl_private(uint8_t val)
 {
   struct i2c_master_s *i2c;
   struct i2c_msg_s msg;
   uint8_t buffer[2];
   int ret;
 
-  i2c = panic_ctx ?
-        imx9_i2cbus_initialize_panic_ctx(CONFIG_IMX9_PMIC_I2C) :
-        imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+  i2c = imx9_i2cbus_initialize_panic_ctx(CONFIG_IMX9_PMIC_I2C);
+
+  if (i2c == NULL)
+    {
+      _err("Failed to initialize I2C bus\n");
+      return -ENODEV;
+    }
+
+  msg.frequency = 400000;
+  msg.addr      = PCA9451A_I2C_ADDR;
+  msg.flags     = 0;
+  msg.buffer    = buffer;
+  msg.length    = 2;
+
+  /* Try bus recovery first in panic context */
+
+  imx9_i2cbus_recover_panic_ctx(i2c);
+
+  buffer[0] = REG_RESET_CTRL;
+  buffer[1] = val;
+
+  ret = I2C_TRANSFER(i2c, &msg, 1);
+  if (ret < 0)
+    {
+      _err("I2C transfer failed: %d\n", ret);
+    }
+
+  buffer[0] = REG_SW_RST;
+  buffer[1] = COLD_RESET;
+
+  ret = I2C_TRANSFER(i2c, &msg, 1);
+  if (ret < 0)
+    {
+      _err("I2C transfer failed: %d\n", ret);
+    }
+
+  imx9_i2cbus_uninitialize(i2c);
+
+  return ret < 0 ? ret : 0; /* negative errno or 0 */
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_reg_write
+ *
+ * Description:
+ *   Write 8-bit register value to pmic
+ *
+ ****************************************************************************/
+
+static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
+{
+  struct i2c_master_s *i2c;
+  struct i2c_msg_s msg;
+  uint8_t buffer[2];
+  int ret;
+
+  i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
 
   if (i2c == NULL)
     {
@@ -151,19 +206,6 @@ static int imx9_pmic_reg_write_ctx(uint8_t reg, uint8_t val, bool panic_ctx)
   imx9_i2cbus_uninitialize(i2c);
 
   return ret < 0 ? ret : 0; /* negative errno or 0 */
-}
-
-/****************************************************************************
- * Name: imx9_pmic_reg_write
- *
- * Description:
- *   Write 8-bit register value to pmic
- *
- ****************************************************************************/
-
-static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
-{
-  return imx9_pmic_reg_write_ctx(reg, val, false);
 }
 
 /****************************************************************************
@@ -240,13 +282,5 @@ int imx9_pmic_set_reset_ctrl(uint8_t val)
 
 int imx9_pmic_raw_reset_with_ctrl(uint8_t val)
 {
-  int ret = imx9_pmic_reg_write_ctx(REG_RESET_CTRL, val, true);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  ret = imx9_pmic_reg_write_ctx(REG_SW_RST, COLD_RESET, true);
-
-  return ret;
+  return imx9_pmic_raw_reset_with_ctrl_private(val);
 }
