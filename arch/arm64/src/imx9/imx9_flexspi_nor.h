@@ -75,6 +75,22 @@ extern "C"
 
 struct mtd_dev_s *imx9_flexspi_nor_initialize(int intf);
 
+/****************************************************************************
+ * Name: imx9_flexspi_nor_reset_memory
+ *
+ * Description:
+ *   Reset NOR FLASH memory on FlexSPI interface
+ *
+ * Input Parameters:
+ *   Pointer to an mtd device
+ *
+ * Returned Value:
+ *   errno
+ *
+ ****************************************************************************/
+
+int imx9_flexspi_nor_reset_memory(struct mtd_dev_s *dev);
+
 #undef EXTERN
 #if defined(__cplusplus)
 }

@@ -420,6 +420,9 @@ struct imx9_flexspi_nor_dev_s
  * Private Functions Prototypes
  ****************************************************************************/
 
+static int imx9_flexspi_nor_reset_memory_private(
+  struct imx9_flexspi_nor_dev_s *priv);
+
 /* MTD driver methods */
 
 static int imx9_flexspi_nor_erase(struct mtd_dev_s *dev,
@@ -994,16 +997,7 @@ static int imx9_flexspi_nor_ioctl(struct mtd_dev_s *dev,
         {
           /* Reset the memory */
 
-          imx9_flexspi_nor_write_cmd(priv, RESET_ENABLE);
-          up_udelay(1);
-          ret = imx9_flexspi_nor_write_cmd(priv, RESET_MEMORY);
-          if (ret)
-            {
-              ferr("reset memory failed\n");
-            }
-
-          imx9_flexspi_nor_wait_bus_busy(priv);
-          FLEXSPI_SOFTWARE_RESET(priv->flexspi);
+          ret = imx9_flexspi_nor_reset_memory_private(priv);
         }
         break;
 
@@ -1015,9 +1009,43 @@ static int imx9_flexspi_nor_ioctl(struct mtd_dev_s *dev,
   return ret;
 }
 
+static int imx9_flexspi_nor_reset_memory_private(struct imx9_flexspi_nor_dev_s *priv)
+{
+  int ret;
+
+  ret = imx9_flexspi_nor_write_cmd(priv, RESET_ENABLE);
+  if (ret)
+    {
+      ferr("reset memory failed\n");
+      return ret;
+    }
+
+  up_udelay(1);
+
+  ret = imx9_flexspi_nor_write_cmd(priv, RESET_MEMORY);
+  if (ret)
+    {
+      ferr("reset memory failed\n");
+      return ret;
+    }
+
+  imx9_flexspi_nor_wait_bus_busy(priv);
+  FLEXSPI_SOFTWARE_RESET(priv->flexspi);
+
+  return ret;
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+int imx9_flexspi_nor_reset_memory(struct mtd_dev_s *dev)
+{
+  struct imx9_flexspi_nor_dev_s *priv =
+                  (struct imx9_flexspi_nor_dev_s *)dev;
+
+  return imx9_flexspi_nor_reset_memory_private(priv);
+}
 
 /****************************************************************************
  * Name: imx9_flexspi_nor_initialize
