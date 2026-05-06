@@ -54,6 +54,22 @@
 struct i2c_master_s *imx9_i2cbus_initialize(int port);
 
 /****************************************************************************
+ * Name: imx9_i2cbus_initialize_panic_ctx
+ *
+ * Description:
+ *   Similar to imx9_i2cbus_initialize, but initialize for assert/panic context.
+ *
+ * Input Parameters:
+ *   Port number (for hardware that has multiple I2C interfaces)
+ *
+ * Returned Value:
+ *   Valid I2C device structure reference on success; a NULL on failure
+ *
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize_panic_ctx(int port);
+
+/****************************************************************************
  * Name: imx9_i2cbus_uninitialize
  *
  * Description:

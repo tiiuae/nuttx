@@ -114,6 +114,22 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value);
 
 int imx9_pmic_set_reset_ctrl(uint8_t val);
 
+/****************************************************************************
+ * Name: imx9_pmic_raw_reset_with_ctrl
+ *
+ * Description:
+ *  Set reset control register value and reset the SoC
+ *
+ * Input Parameters:
+ *   CTRL Register value
+ *
+ * Returned Value:
+ *   Ok or errno
+ *
+ ****************************************************************************/
+
+int imx9_pmic_raw_reset_with_ctrl(uint8_t val);
+
 #undef EXTERN
 #if defined(__cplusplus)
 }

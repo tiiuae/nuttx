@@ -108,21 +108,25 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
 }
 
 /****************************************************************************
- * Name: imx9_pmic_reg_read
+ * Name: imx9_pmic_reg_write_ctx
  *
  * Description:
  *   Write 8-bit register value to pmic
+ *   Select write from panic context or normal write
  *
  ****************************************************************************/
 
-static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
+static int imx9_pmic_reg_write_ctx(uint8_t reg, uint8_t val, bool panic_ctx)
 {
   struct i2c_master_s *i2c;
   struct i2c_msg_s msg;
   uint8_t buffer[2];
   int ret;
 
-  i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+  i2c = panic_ctx ?
+        imx9_i2cbus_initialize_panic_ctx(CONFIG_IMX9_PMIC_I2C) :
+        imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+
   if (i2c == NULL)
     {
       _err("Failed to initialize I2C bus\n");
@@ -147,6 +151,19 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
   imx9_i2cbus_uninitialize(i2c);
 
   return ret < 0 ? ret : 0; /* negative errno or 0 */
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_reg_write
+ *
+ * Description:
+ *   Write 8-bit register value to pmic
+ *
+ ****************************************************************************/
+
+static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
+{
+  return imx9_pmic_reg_write_ctx(reg, val, false);
 }
 
 /****************************************************************************
@@ -205,4 +222,31 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value)
 int imx9_pmic_set_reset_ctrl(uint8_t val)
 {
   return imx9_pmic_reg_write(REG_RESET_CTRL, val);
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_raw_reset_with_ctrl
+ *
+ * Description:
+ *  Set reset control register value and reset the SoC
+ *
+ * Input Parameters:
+ *   CTRL Register value
+ *
+ * Returned Value:
+ *   Ok or errno
+ *
+ ****************************************************************************/
+
+int imx9_pmic_raw_reset_with_ctrl(uint8_t val)
+{
+  int ret = imx9_pmic_reg_write_ctx(REG_RESET_CTRL, val, true);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = imx9_pmic_reg_write_ctx(REG_SW_RST, COLD_RESET, true);
+
+  return ret;
 }

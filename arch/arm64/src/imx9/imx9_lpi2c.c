@@ -128,6 +128,8 @@
 
 #define LPI2C_MSR_LIMITED_ERROR_MASK (LPI2C_MSR_ERROR_MASK & ~(LPI2C_MSR_FEF))
 
+#define LPI2C_POLL_WAIT_MAX_COUNT  1000000
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -232,6 +234,7 @@ struct imx9_lpi2c_priv_s
   DMACH_HANDLE txdma;                               /* tx DMA handle */
   uint16_t     cmnds[CONFIG_IMX9_LPI2C_DMA_MAXMSG]; /* Commands */
 #endif
+  bool panic_ctx;              /* Normal operation or panic context */
 };
 
 /****************************************************************************
@@ -282,6 +285,13 @@ static int imx9_lpi2c_init(struct imx9_lpi2c_priv_s *priv);
 static int imx9_lpi2c_deinit(struct imx9_lpi2c_priv_s *priv);
 static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
                                struct i2c_msg_s *msgs, int count);
+static int imx9_lpi2c_normal_transfer(struct imx9_lpi2c_priv_s *priv,
+                                      struct i2c_msg_s *msgs, int count);
+static int imx9_lpi2c_raw_transfer(struct imx9_lpi2c_priv_s *priv,
+                                   struct i2c_msg_s *msgs, int count);
+static int imx9_lpi2c_raw_wait_status(struct imx9_lpi2c_priv_s *priv,
+                                      uint32_t set_mask,
+                                      uint32_t clear_mask);
 #ifdef CONFIG_I2C_RESET
 static int imx9_lpi2c_reset(struct i2c_master_s *dev);
 #endif
@@ -409,7 +419,8 @@ static struct imx9_lpi2c_priv_s imx9_lpi2c2_priv =
   .ptr           = NULL,
   .dcnt          = 0,
   .flags         = 0,
-  .status        = 0
+  .status        = 0,
+  .panic_ctx     = false,
 };
 #endif
 
@@ -1630,6 +1641,7 @@ void imx9_lpi2c_clock_disable(struct imx9_lpi2c_priv_s *priv)
  *
  * Description:
  *   Setup the I2C hardware, ready for operation with defaults
+ *   select for context
  *
  ****************************************************************************/
 
@@ -1691,8 +1703,11 @@ static int imx9_lpi2c_init(struct imx9_lpi2c_priv_s *priv)
   /* Attach ISRs */
 
 #ifndef CONFIG_I2C_POLLED
-  irq_attach(priv->config->irq, imx9_lpi2c_isr, priv);
-  up_enable_irq(priv->config->irq);
+  if (!priv->panic_ctx)
+    {
+      irq_attach(priv->config->irq, imx9_lpi2c_isr, priv);
+      up_enable_irq(priv->config->irq);
+    }
 #endif
 
   /* Enable I2C */
@@ -1723,8 +1738,11 @@ static int imx9_lpi2c_deinit(struct imx9_lpi2c_priv_s *priv)
   /* Disable and detach interrupts */
 
 #ifndef CONFIG_I2C_POLLED
-  up_disable_irq(priv->config->irq);
-  irq_detach(priv->config->irq);
+  if (!priv->panic_ctx)
+    {
+      up_disable_irq(priv->config->irq);
+      irq_detach(priv->config->irq);
+    }
 #endif
 
   /* Disable clocking */
@@ -1978,6 +1996,19 @@ static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
                                struct i2c_msg_s *msgs, int count)
 {
   struct imx9_lpi2c_priv_s *priv = (struct imx9_lpi2c_priv_s *)dev;
+  if (priv->panic_ctx)
+    {
+      return imx9_lpi2c_raw_transfer(priv, msgs, count);
+    }
+  else
+    {
+      return imx9_lpi2c_normal_transfer(priv, msgs, count);
+    }
+}
+
+static int imx9_lpi2c_normal_transfer(struct imx9_lpi2c_priv_s *priv,
+                                      struct i2c_msg_s *msgs, int count)
+{
   int ret;
 #ifdef CONFIG_IMX9_LPI2C_DMA
   int m;
@@ -2136,6 +2167,113 @@ static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
 }
 
 /****************************************************************************
+ * Name: imx9_lpi2c_raw_transfer
+ *
+ * Description:
+ *   Polling based I2C transfer for assert/panic context
+ *
+ ****************************************************************************/
+
+static int imx9_lpi2c_raw_transfer(struct imx9_lpi2c_priv_s *priv,
+                                   struct i2c_msg_s *msgs, int count)
+{
+  irqstate_t flags = enter_critical_section();
+  int ret;
+  int m;
+
+  /* Wait for previous transfers to end */
+
+  ret = imx9_lpi2c_raw_wait_status(priv, LPI2C_MSR_TDF, 0);
+
+  if (ret < 0)
+    {
+      goto exit_with_crit_section;
+    }
+
+  for (m = 0; m < count; m++)
+    {
+      priv->flags = msgs[m].flags;
+
+      /* Set I2C clock frequency */
+
+      imx9_lpi2c_setclock(priv, msgs[m].frequency);
+
+      /* Disable ABORT which may be present after errors */
+
+      imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR0_OFFSET,
+                           LPI2C_MCFG0_ABORT, 0);
+
+      /* Send start */
+
+      imx9_lpi2c_sendstart(priv, msgs[m].addr);
+
+      for (int i = 0; i < msgs[m].length; i++)
+        {
+          ret = imx9_lpi2c_raw_wait_status(priv, LPI2C_MSR_TDF, 0);
+
+          if (ret < 0)
+            {
+              goto exit_with_crit_section;
+            }
+
+          imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET, LPI2C_MTDR_CMD_TXD | LPI2C_MTDR_DATA(msgs[m].buffer[i]));
+        }
+
+      ret = imx9_lpi2c_raw_wait_status(priv, LPI2C_MSR_TDF, 0);
+
+      if (ret < 0)
+        {
+          goto exit_with_crit_section;
+        }
+
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET, LPI2C_MTDR_CMD_STOP);
+
+      ret = imx9_lpi2c_raw_wait_status(priv, LPI2C_MSR_SDF, LPI2C_MSR_MBF);
+
+      if (ret < 0)
+        {
+          goto exit_with_crit_section;
+        }
+
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET, LPI2C_MSR_SDF | LPI2C_MSR_EPF | LPI2C_MSR_ERROR_MASK);
+    }
+
+exit_with_crit_section:
+  leave_critical_section(flags);
+
+  return ret;
+}
+
+/****************************************************************************
+ * Name: imx9_lpi2c_raw_wait_status
+ *
+ * Description:
+ *   Raw poll for I2C register status
+ *
+ ****************************************************************************/
+
+static int imx9_lpi2c_raw_wait_status(struct imx9_lpi2c_priv_s *priv, uint32_t set_mask,
+    uint32_t clear_mask)
+{
+  uint32_t status;
+
+  for (int timeout = LPI2C_POLL_WAIT_MAX_COUNT; timeout > 0; timeout--) {
+    status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+    if ((status & LPI2C_MSR_ERROR_MASK) != 0) {
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET, status & LPI2C_MSR_ERROR_MASK);
+      return -EIO;
+    }
+
+    if ((status & set_mask) == set_mask && (status & clear_mask) == 0) {
+      return OK;
+    }
+  }
+
+  return -ETIMEDOUT;
+}
+
+/****************************************************************************
  * Name: imx9_lpi2c_reset
  *
  * Description:
@@ -2216,18 +2354,14 @@ static int imx9_lpi2c_reset(struct i2c_master_s *dev)
 #endif /* CONFIG_I2C_RESET */
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: imx9_i2cbus_initialize
+ * Name: imx9_i2cbus_initialize_ctx
  *
  * Description:
  *   Initialize one I2C bus
- *
+ *   Select for normal init or init from assert/panic context
  ****************************************************************************/
 
-struct i2c_master_s *imx9_i2cbus_initialize(int port)
+static struct i2c_master_s *imx9_i2cbus_initialize_ctx(int port, bool panic_ctx)
 {
   struct imx9_lpi2c_priv_s * priv = NULL;
   irqstate_t flags;
@@ -2286,21 +2420,26 @@ struct i2c_master_s *imx9_i2cbus_initialize(int port)
 
   flags = enter_critical_section();
 
+  priv->panic_ctx = panic_ctx;
+
   if ((volatile int)priv->refs++ == 0)
     {
       imx9_lpi2c_init(priv);
 
 #ifdef CONFIG_IMX9_LPI2C_DMA
-      if (priv->config->dma_txreqsrc != 0)
+      if (ctx != PANIC_CONTEXT)
         {
-          priv->txdma = imx9_dmach_alloc(priv->config->dma_txreqsrc, 0);
-          DEBUGASSERT(priv->txdma != NULL);
-        }
+          if (priv->config->dma_txreqsrc != 0)
+            {
+              priv->txdma = imx9_dmach_alloc(priv->config->dma_txreqsrc, 0);
+              DEBUGASSERT(priv->txdma != NULL);
+            }
 
-      if (priv->config->dma_rxreqsrc != 0)
-        {
-          priv->rxdma = imx9_dmach_alloc(priv->config->dma_rxreqsrc, 0);
-          DEBUGASSERT(priv->rxdma != NULL);
+          if (priv->config->dma_rxreqsrc != 0)
+            {
+              priv->rxdma = imx9_dmach_alloc(priv->config->dma_rxreqsrc, 0);
+              DEBUGASSERT(priv->rxdma != NULL);
+            }
         }
 #endif
     }
@@ -2308,6 +2447,36 @@ struct i2c_master_s *imx9_i2cbus_initialize(int port)
   leave_critical_section(flags);
 
   return (struct i2c_master_s *)priv;
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: imx9_i2cbus_initialize
+ *
+ * Description:
+ *   Initialize one I2C bus
+ *
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize(int port)
+{
+  return imx9_i2cbus_initialize_ctx(port, false);
+}
+
+/****************************************************************************
+ * Name: imx9_i2cbus_initialize_panic_ctx
+ *
+ * Description:
+ *   Initialize one I2C bus for panic context
+ *
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize_panic_ctx(int port)
+{
+  return imx9_i2cbus_initialize_ctx(port, true);
 }
 
 /****************************************************************************
@@ -2345,18 +2514,21 @@ int imx9_i2cbus_uninitialize(struct i2c_master_s *dev)
   /* Disable power and other HW resource (GPIO's) */
 
 #ifdef CONFIG_IMX9_LPI2C_DMA
-  if (priv->rxdma != NULL)
+  if (!prib->panic_ctx)
     {
-      imx9_dmach_stop(priv->rxdma);
-      imx9_dmach_free(priv->rxdma);
-      priv->rxdma = NULL;
-    }
+      if (priv->rxdma != NULL)
+        {
+          imx9_dmach_stop(priv->rxdma);
+          imx9_dmach_free(priv->rxdma);
+          priv->rxdma = NULL;
+        }
 
-  if (priv->txdma != NULL)
-    {
-      imx9_dmach_stop(priv->txdma);
-      imx9_dmach_free(priv->txdma);
-      priv->txdma = NULL;
+      if (priv->txdma != NULL)
+        {
+          imx9_dmach_stop(priv->txdma);
+          imx9_dmach_free(priv->txdma);
+          priv->txdma = NULL;
+        }
     }
 #endif
 
