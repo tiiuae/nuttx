@@ -114,6 +114,22 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value);
 
 int imx9_pmic_set_reset_ctrl(uint8_t val);
 
+/****************************************************************************
+ * Name: imx9_pmic_forced_reset_with_ctrl
+ *
+ * Description:
+ *  Force set reset control register and perform pmic reset.
+ *
+ * Input Parameters:
+ *   Register value
+ *
+ * Returned Value:
+ *   Function does not return
+ *
+ ****************************************************************************/
+
+void imx9_pmic_forced_reset_with_ctrl(uint8_t val) noreturn_function;
+
 #undef EXTERN
 #if defined(__cplusplus)
 }
