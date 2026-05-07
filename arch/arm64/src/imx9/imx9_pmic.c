@@ -51,9 +51,17 @@
 #define REG_RESET_CTRL          0x08
 #define COLD_RESET              0x64
 #define WARM_RESET              0x35
+#define PMIC_RESET_WAIT_US      1000
+#define PMIC_TRY_COUNT             3
 
 /****************************************************************************
- * Public Functions
+ * Private Function Prototypes
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize_forced_polling(int port);
+
+/****************************************************************************
+ * Private Functions
  ****************************************************************************/
 
 /****************************************************************************
@@ -69,18 +77,20 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
   struct i2c_master_s *i2c;
   struct i2c_msg_s msgs[2];
   uint8_t reg_addr = reg;
-  int ret;
+  int trycount;
+  int ret = 0;
 
   if (!value)
     {
-      _err("Invalid value parameter\n");
+      i2cerr("Invalid value parameter\n");
       return -EINVAL;
     }
 
   i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+
   if (i2c == NULL)
     {
-      _err("Failed to initialize I2C bus\n");
+      i2cerr("Failed to initialize I2C bus\n");
       return -ENODEV;
     }
 
@@ -96,10 +106,19 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
   msgs[1].buffer    = value;
   msgs[1].length    = 1;
 
-  ret = I2C_TRANSFER(i2c, msgs, 2);
-  if (ret < 0)
+  trycount = PMIC_TRY_COUNT;
+  while (trycount--)
     {
-      _err("I2C transfer failed: %d\n", ret);
+      ret = I2C_TRANSFER(i2c, msgs, 2);
+      if (ret == 0)
+        {
+          break;
+        }
+
+      i2cerr("I2C transfer failed: %d\n", ret);
+#ifdef CONFIG_I2C_RESET
+      I2C_RESET(i2c);
+#endif
     }
 
   imx9_i2cbus_uninitialize(i2c);
@@ -108,7 +127,7 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
 }
 
 /****************************************************************************
- * Name: imx9_pmic_reg_read
+ * Name: imx9_pmic_reg_write
  *
  * Description:
  *   Write 8-bit register value to pmic
@@ -120,12 +139,13 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
   struct i2c_master_s *i2c;
   struct i2c_msg_s msg;
   uint8_t buffer[2];
-  int ret;
+  int trycount;
+  int ret = 0;
 
   i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
   if (i2c == NULL)
     {
-      _err("Failed to initialize I2C bus\n");
+      i2cerr("Failed to initialize I2C bus\n");
       return -ENODEV;
     }
 
@@ -138,10 +158,19 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
   msg.buffer    = buffer;
   msg.length    = 2;
 
-  ret = I2C_TRANSFER(i2c, &msg, 1);
-  if (ret < 0)
+  trycount = PMIC_TRY_COUNT;
+  while (trycount--)
     {
-      _err("I2C transfer failed: %d\n", ret);
+      ret = I2C_TRANSFER(i2c, &msg, 1);
+      if (ret == 0)
+        {
+          break;
+        }
+
+      i2cerr("I2C transfer failed: %d\n", ret);
+#ifdef CONFIG_I2C_RESET
+      I2C_RESET(i2c);
+#endif
     }
 
   imx9_i2cbus_uninitialize(i2c);
@@ -150,10 +179,17 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
 }
 
 /****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
  * Name: imx9_pmic_reset
  *
  * Description:
  *   Reset SoC via pmic
+ *
+ * Returned Value:
+ *   Zero on success, negated errno on failure.
  *
  ****************************************************************************/
 
@@ -168,6 +204,9 @@ int imx9_pmic_reset(void)
  * Description:
  *   Read reset reason from pmic
  *
+ * Returned Value:
+ *   Zero on success, negated errno on failure.
+ *
  ****************************************************************************/
 
 int imx9_pmic_get_reset_reason(uint8_t *value)
@@ -180,6 +219,9 @@ int imx9_pmic_get_reset_reason(uint8_t *value)
  *
  * Description:
  *  Read reset control register value
+ *
+ * Returned Value:
+ *   Zero on success, negated errno on failure.
  *
  ****************************************************************************/
 
@@ -198,11 +240,72 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value)
  *   Register value
  *
  * Returned Value:
- *   None
+ *   Zero on success, negated errno on failure.
  *
  ****************************************************************************/
 
 int imx9_pmic_set_reset_ctrl(uint8_t val)
 {
   return imx9_pmic_reg_write(REG_RESET_CTRL, val);
+}
+
+/****************************************************************************
+ * Name: imx9_pmic_forced_reset_with_ctrl
+ *
+ * Description:
+ *  Force the polling mode transfer, set reset control register and
+ *  reset SoC via pmic.
+ *  This can be called from kernel panic handler.
+ *
+ * Input Parameters:
+ *   Reset Control register value
+ *
+ * Returned Value:
+ *   Function does not return
+ *
+ ****************************************************************************/
+
+noreturn_function void imx9_pmic_forced_reset_with_ctrl(uint8_t val)
+{
+  int ret = 1;
+  struct i2c_master_s *i2c;
+
+  enter_critical_section();
+
+  /* Forced reset, loop until success */
+
+  while (ret)
+    {
+      /* Busy-wait here to make sure previous i2c transfer has
+       * been ended before the forced pmic reset is performed.
+       */
+
+      up_udelay(PMIC_RESET_WAIT_US);
+
+      i2c = imx9_i2cbus_initialize_forced_polling(
+                                                  CONFIG_IMX9_PMIC_I2C);
+      if (i2c == NULL)
+        {
+          /* Forced initialization failed, try again */
+
+          continue;
+        }
+
+      ret = imx9_pmic_reg_write(REG_RESET_CTRL, val);
+      if (ret < 0)
+        {
+          imx9_i2cbus_uninitialize(i2c);
+          continue;
+        }
+
+      ret = imx9_pmic_reg_write(REG_SW_RST, COLD_RESET);
+      if (ret < 0)
+        {
+          imx9_i2cbus_uninitialize(i2c);
+        }
+    }
+
+  imx9_i2cbus_uninitialize(i2c);
+
+  while (1);
 }
