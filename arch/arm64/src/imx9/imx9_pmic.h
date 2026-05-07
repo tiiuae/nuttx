@@ -114,6 +114,8 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value);
 
 int imx9_pmic_set_reset_ctrl(uint8_t val);
 
+int imx9_pmic_forced_reset_with_ctrl(uint8_t val);
+
 #undef EXTERN
 #if defined(__cplusplus)
 }

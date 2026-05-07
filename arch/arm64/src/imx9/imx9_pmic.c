@@ -51,6 +51,21 @@
 #define REG_RESET_CTRL          0x08
 #define COLD_RESET              0x64
 #define WARM_RESET              0x35
+#define PMIC_RESET_WAIT_US      1000
+
+#define PMIC_RETRY_COUNT 3
+
+/****************************************************************************
+ * Private Function Prototypes
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize_forced_polling(int port);
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+struct i2c_master_s *g_pmic_i2c = NULL;
 
 /****************************************************************************
  * Public Functions
@@ -66,10 +81,11 @@
 
 static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
 {
-  struct i2c_master_s *i2c;
   struct i2c_msg_s msgs[2];
   uint8_t reg_addr = reg;
+  int trycount;
   int ret;
+  irqstate_t flags;
 
   if (!value)
     {
@@ -77,8 +93,13 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
       return -EINVAL;
     }
 
-  i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
-  if (i2c == NULL)
+  flags = enter_critical_section();
+  if (!g_pmic_i2c) {
+    g_pmic_i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+  }
+  leave_critical_section(flags);
+
+  if (g_pmic_i2c == NULL)
     {
       _err("Failed to initialize I2C bus\n");
       return -ENODEV;
@@ -96,19 +117,26 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
   msgs[1].buffer    = value;
   msgs[1].length    = 1;
 
-  ret = I2C_TRANSFER(i2c, msgs, 2);
-  if (ret < 0)
+  trycount = PMIC_RETRY_COUNT;
+  while (trycount--)
     {
+      ret = I2C_TRANSFER(g_pmic_i2c, msgs, 2);
+      if (ret == 0)
+        {
+          break;
+        }
+
       _err("I2C transfer failed: %d\n", ret);
+      imx9_i2cbus_recover(g_pmic_i2c);
     }
 
-  imx9_i2cbus_uninitialize(i2c);
+  imx9_i2cbus_uninitialize(g_pmic_i2c);
 
   return ret < 0 ? ret : 0; /* negative errno or 0 */
 }
 
 /****************************************************************************
- * Name: imx9_pmic_reg_read
+ * Name: imx9_pmic_reg_write
  *
  * Description:
  *   Write 8-bit register value to pmic
@@ -117,13 +145,18 @@ static int imx9_pmic_reg_read(uint8_t reg, uint8_t *value)
 
 static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
 {
-  struct i2c_master_s *i2c;
   struct i2c_msg_s msg;
   uint8_t buffer[2];
+  int trycount;
   int ret;
 
-  i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
-  if (i2c == NULL)
+  irqstate_t flags = enter_critical_section();
+  if (!g_pmic_i2c) {
+    g_pmic_i2c = imx9_i2cbus_initialize(CONFIG_IMX9_PMIC_I2C);
+  }
+  leave_critical_section(flags);
+
+  if (g_pmic_i2c == NULL)
     {
       _err("Failed to initialize I2C bus\n");
       return -ENODEV;
@@ -138,13 +171,20 @@ static int imx9_pmic_reg_write(uint8_t reg, uint8_t val)
   msg.buffer    = buffer;
   msg.length    = 2;
 
-  ret = I2C_TRANSFER(i2c, &msg, 1);
-  if (ret < 0)
+  trycount = PMIC_RETRY_COUNT;
+  while (trycount--)
     {
+      ret = I2C_TRANSFER(g_pmic_i2c, &msg, 1);
+      if (ret == 0)
+        {
+          break;
+        }
+
       _err("I2C transfer failed: %d\n", ret);
+      imx9_i2cbus_recover(g_pmic_i2c);
     }
 
-  imx9_i2cbus_uninitialize(i2c);
+  imx9_i2cbus_uninitialize(g_pmic_i2c);
 
   return ret < 0 ? ret : 0; /* negative errno or 0 */
 }
@@ -205,4 +245,25 @@ int imx9_pmic_get_reset_ctrl(uint8_t *value)
 int imx9_pmic_set_reset_ctrl(uint8_t val)
 {
   return imx9_pmic_reg_write(REG_RESET_CTRL, val);
+}
+
+
+int imx9_pmic_forced_reset_with_ctrl(uint8_t val)
+{
+  int ret;
+  irqstate_t flags = enter_critical_section();
+  /* Busy-wait here because this path can run from panic context with the
+   * scheduler locked and interrupts disabled.
+   */
+
+  for (unsigned int delay = 0; delay < PMIC_RESET_WAIT_US; delay++)
+    {
+      up_udelay(1);
+    }
+
+  g_pmic_i2c = imx9_i2cbus_initialize_forced_polling(CONFIG_IMX9_PMIC_I2C);
+  ret = imx9_pmic_reg_write(REG_RESET_CTRL, val);
+  ret = imx9_pmic_reg_write(REG_SW_RST, COLD_RESET);
+  leave_critical_section(flags);
+  return ret;
 }
