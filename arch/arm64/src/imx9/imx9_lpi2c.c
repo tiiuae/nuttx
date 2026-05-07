@@ -37,6 +37,7 @@
 #include <debug.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/init.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
 #include <nuttx/mutex.h>
@@ -232,6 +233,7 @@ struct imx9_lpi2c_priv_s
   DMACH_HANDLE txdma;                               /* tx DMA handle */
   uint16_t     cmnds[CONFIG_IMX9_LPI2C_DMA_MAXMSG]; /* Commands */
 #endif
+  bool polling_mode;           /* interrupt or polling based transfer */
 };
 
 /****************************************************************************
@@ -409,7 +411,12 @@ static struct imx9_lpi2c_priv_s imx9_lpi2c2_priv =
   .ptr           = NULL,
   .dcnt          = 0,
   .flags         = 0,
-  .status        = 0
+  .status        = 0,
+#ifdef CONFIG_I2C_POLLED
+  .polling_mode  = true,
+#else
+  .polling_mode  = false,
+#endif
 };
 #endif
 
@@ -769,28 +776,6 @@ static uint32_t imx9_lpi2c_toticks(int msgc, struct i2c_msg_s *msgs)
  *
  ****************************************************************************/
 
-#ifndef CONFIG_I2C_POLLED
-static inline int
-imx9_lpi2c_sem_waitdone(struct imx9_lpi2c_priv_s *priv)
-{
-  int ret;
-
-#ifdef CONFIG_IMX9_LPI2C_DYNTIMEO
-  ret = nxsem_tickwait_uninterruptible(&priv->sem_isr,
-                                       imx9_lpi2c_toticks(priv->msgc,
-                                                          priv->msgv));
-#else
-  ret = nxsem_tickwait_uninterruptible(&priv->sem_isr,
-                                       CONFIG_IMX9_LPI2C_TIMEOTICKS);
-#endif
-
-  /* Set the interrupt state back to IDLE */
-
-  priv->intstate = INTSTATE_IDLE;
-
-  return ret;
-}
-#else
 static inline int
 imx9_lpi2c_sem_waitdone(struct imx9_lpi2c_priv_s *priv)
 {
@@ -799,42 +784,56 @@ imx9_lpi2c_sem_waitdone(struct imx9_lpi2c_priv_s *priv)
   clock_t elapsed;
   int ret;
 
-  /* Get the timeout value */
+  if (priv->polling_mode)
+    {
+      /* Get the timeout value */
 
 #ifdef CONFIG_IMX9_LPI2C_DYNTIMEO
-  timeout = imx9_lpi2c_toticks(priv->msgc, priv->msgv);
+     timeout = imx9_lpi2c_toticks(priv->msgc, priv->msgv);
 #else
-  timeout = CONFIG_IMX9_LPI2C_TIMEOTICKS;
+      timeout = CONFIG_IMX9_LPI2C_TIMEOTICKS;
 #endif
-  start = clock_systime_ticks();
+      start = clock_systime_ticks();
 
-  do
+      do
+        {
+          /* Calculate the elapsed time */
+
+          elapsed = clock_systime_ticks() - start;
+
+          /* Poll by simply calling the timer interrupt handler until it
+           * reports that it is done.
+           */
+
+          imx9_lpi2c_isr_process(priv);
+        }
+
+      /* Loop until the transfer is complete. */
+
+      while (priv->intstate != INTSTATE_DONE && elapsed < timeout);
+
+      i2cinfo("intstate: %d elapsed: %ld threshold: %ld status: %08x\n",
+              priv->intstate, (long)elapsed, (long)timeout, priv->status);
+
+      /* Set the interrupt state back to IDLE */
+
+      ret = priv->intstate == INTSTATE_DONE ? OK : -ETIMEDOUT;
+    }
+  else
     {
-      /* Calculate the elapsed time */
-
-      elapsed = clock_systime_ticks() - start;
-
-      /* Poll by simply calling the timer interrupt handler until it
-       * reports that it is done.
-       */
-
-      imx9_lpi2c_isr_process(priv);
+#ifdef CONFIG_IMX9_LPI2C_DYNTIMEO
+      ret = nxsem_tickwait_uninterruptible(&priv->sem_isr,
+                                       imx9_lpi2c_toticks(priv->msgc,
+                                                          priv->msgv));
+#else
+      ret = nxsem_tickwait_uninterruptible(&priv->sem_isr,
+                                       CONFIG_IMX9_LPI2C_TIMEOTICKS);
+#endif
     }
 
-  /* Loop until the transfer is complete. */
-
-  while (priv->intstate != INTSTATE_DONE && elapsed < timeout);
-
-  i2cinfo("intstate: %d elapsed: %ld threshold: %ld status: %08x\n",
-          priv->intstate, (long)elapsed, (long)timeout, priv->status);
-
-  /* Set the interrupt state back to IDLE */
-
-  ret = priv->intstate == INTSTATE_DONE ? OK : -ETIMEDOUT;
   priv->intstate = INTSTATE_IDLE;
   return ret;
 }
-#endif
 
 /****************************************************************************
  * Name: imx9_rxdma_callback
@@ -1346,20 +1345,23 @@ static int imx9_lpi2c_stop_transfer(struct imx9_lpi2c_priv_s *priv)
 
 #ifndef CONFIG_I2C_POLLED
 
-  /* Disable interrupts */
-
-  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MIER_OFFSET,
-                       LPI2C_MIER_TDIE | LPI2C_MIER_RDIE |
-                       LPI2C_MIER_NDIE | LPI2C_MIER_ALIE |
-                       LPI2C_MIER_SDIE | LPI2C_MIER_EPIE, 0);
-
-  /* Inform the thread that transfer is complete
-   * and wake it up
-   */
-
-  if (priv->intstate == INTSTATE_WAITING)
+  if (!priv->polling_mode)
     {
-      nxsem_post(&priv->sem_isr);
+      /* Disable interrupts */
+
+      imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MIER_OFFSET,
+                          LPI2C_MIER_TDIE | LPI2C_MIER_RDIE |
+                          LPI2C_MIER_NDIE | LPI2C_MIER_ALIE |
+                          LPI2C_MIER_SDIE | LPI2C_MIER_EPIE, 0);
+
+      /* Inform the thread that transfer is complete
+       * and wake it up
+       */
+
+      if (priv->intstate == INTSTATE_WAITING)
+        {
+          nxsem_post(&priv->sem_isr);
+        }
     }
 #endif
 
@@ -1690,10 +1692,11 @@ static int imx9_lpi2c_init(struct imx9_lpi2c_priv_s *priv)
 
   /* Attach ISRs */
 
-#ifndef CONFIG_I2C_POLLED
-  irq_attach(priv->config->irq, imx9_lpi2c_isr, priv);
-  up_enable_irq(priv->config->irq);
-#endif
+  if (!priv->polling_mode)
+    {
+      irq_attach(priv->config->irq, imx9_lpi2c_isr, priv);
+      up_enable_irq(priv->config->irq);
+    }
 
   /* Enable I2C */
 
@@ -1722,10 +1725,11 @@ static int imx9_lpi2c_deinit(struct imx9_lpi2c_priv_s *priv)
 
   /* Disable and detach interrupts */
 
-#ifndef CONFIG_I2C_POLLED
-  up_disable_irq(priv->config->irq);
-  irq_detach(priv->config->irq);
-#endif
+  if (!priv->polling_mode)
+    {
+      up_disable_irq(priv->config->irq);
+      irq_detach(priv->config->irq);
+    }
 
   /* Disable clocking */
 
@@ -1978,19 +1982,25 @@ static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
                                struct i2c_msg_s *msgs, int count)
 {
   struct imx9_lpi2c_priv_s *priv = (struct imx9_lpi2c_priv_s *)dev;
-  int ret;
+  int ret = OK;
 #ifdef CONFIG_IMX9_LPI2C_DMA
   int m;
 #endif
 
   DEBUGASSERT(count > 0);
 
-  /* Ensure that address or flags don't change meanwhile */
+  /* Ensure that address or flags don't change meanwhile.
+   * Check if the i2c is requested from kernel panic
+   * handler (for pmic reset).
+   */
 
-  ret = nxmutex_lock(&priv->lock);
-  if (ret < 0)
+  if (!priv->polling_mode)
     {
-      return ret;
+      ret = nxmutex_lock(&priv->lock);
+      if (ret < 0)
+        {
+          return ret;
+        }
     }
 
   /* Clear any pending error interrupts */
@@ -2073,7 +2083,10 @@ static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
        * imx9_lpi2c_stop_transfer above
        */
 
-      nxsem_reset(&priv->sem_isr, 0);
+      if (!priv->polling_mode)
+        {
+          nxsem_reset(&priv->sem_isr, 0);
+        }
     }
 
   /* Check for error status conditions */
@@ -2131,8 +2144,104 @@ static int imx9_lpi2c_transfer(struct i2c_master_s *dev,
     }
 #endif
 
-  nxmutex_unlock(&priv->lock);
+  if (!priv->polling_mode)
+    {
+      nxmutex_unlock(&priv->lock);
+    }
+
   return ret;
+}
+
+/****************************************************************************
+ * Name: imx9_lpi2c_recover_bus
+ *
+ * Description:
+ *   Panic-safe I2C bus recovery for when the bus is stuck
+ *   This function can be called from interrupts disabled context
+ *   Uses polling-based bus recovery without delays or locks
+ *
+ * Input Parameters:
+ *   priv - I2C device private data
+ *
+ * Returned Value:
+ *   OK if bus recovered successfully
+ *   -EIO if bus recovery failed
+ *
+ ****************************************************************************/
+
+static int imx9_lpi2c_recover_bus(struct i2c_master_s *dev)
+{
+  uint32_t status;
+  int count;
+
+  struct imx9_lpi2c_priv_s *priv = (struct imx9_lpi2c_priv_s *)dev;
+
+  if (priv == NULL)
+    {
+      return -EINVAL;
+    }
+
+  /* Check if bus is busy */
+
+  status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+  if ((status & LPI2C_MSR_BBF) == 0)
+    {
+      /* Bus is free, no recovery needed */
+
+      return OK;
+    }
+
+  /* Bus is stuck, attempt recovery */
+
+  /* Set relaxed mode - allows clocking the bus even when busy */
+
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR0_OFFSET,
+                       0, LPI2C_MCFG0_RELAX);
+
+  /* Clock the bus by sending START and STOP conditions (max 10 attempts) */
+
+  for (count = 0; count < 10; count++)
+    {
+      /* Check status and clear any error flags */
+
+      status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+      if ((status & LPI2C_MSR_ERROR_MASK) != 0)
+        {
+          imx9_lpi2c_putreg(priv, IMX9_LPI2C_MSR_OFFSET,
+                            status & LPI2C_MSR_ERROR_MASK);
+        }
+
+      /* Send START and STOP to clock the bus */
+
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET,
+                        LPI2C_MTDR_CMD_START | LPI2C_MTDR_DATA(0));
+      imx9_lpi2c_putreg(priv, IMX9_LPI2C_MTDR_OFFSET,
+                        LPI2C_MTDR_CMD_STOP);
+
+      /* Poll to check if bus is now free (without delays) */
+
+      status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+      if ((status & LPI2C_MSR_BBF) == 0)
+        {
+          /* Bus recovered successfully */
+
+          break;
+        }
+    }
+
+  /* Exit relaxed mode */
+
+  imx9_lpi2c_modifyreg(priv, IMX9_LPI2C_MCFGR0_OFFSET,
+                       LPI2C_MCFG0_RELAX, 0);
+
+  /* Check final status */
+
+  status = imx9_lpi2c_getreg(priv, IMX9_LPI2C_MSR_OFFSET);
+
+  return ((status & LPI2C_MSR_BBF) == 0) ? OK : -EIO;
 }
 
 /****************************************************************************
@@ -2216,18 +2325,16 @@ static int imx9_lpi2c_reset(struct i2c_master_s *dev)
 #endif /* CONFIG_I2C_RESET */
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: imx9_i2cbus_initialize
+ * Name: imx9_i2cbus_initialize_mode
  *
  * Description:
  *   Initialize one I2C bus
- *
+ *   Select for normal init or init from interrupts disabled context
  ****************************************************************************/
 
-struct i2c_master_s *imx9_i2cbus_initialize(int port)
+static struct i2c_master_s *imx9_i2cbus_initialize_mode(int port,
+                                                        bool polling_mode,
+                                                        bool force)
 {
   struct imx9_lpi2c_priv_s * priv = NULL;
   irqstate_t flags;
@@ -2286,21 +2393,30 @@ struct i2c_master_s *imx9_i2cbus_initialize(int port)
 
   flags = enter_critical_section();
 
-  if ((volatile int)priv->refs++ == 0)
+  if ((volatile int)priv->refs++ == 0 || force)
     {
+      priv->polling_mode = polling_mode;
       imx9_lpi2c_init(priv);
 
 #ifdef CONFIG_IMX9_LPI2C_DMA
-      if (priv->config->dma_txreqsrc != 0)
+      if (!priv->polling_mode)
         {
-          priv->txdma = imx9_dmach_alloc(priv->config->dma_txreqsrc, 0);
-          DEBUGASSERT(priv->txdma != NULL);
-        }
+          if (priv->config->dma_txreqsrc != 0)
+            {
+              priv->txdma = imx9_dmach_alloc(priv->config->dma_txreqsrc, 0);
+              DEBUGASSERT(priv->txdma != NULL);
+            }
 
-      if (priv->config->dma_rxreqsrc != 0)
+          if (priv->config->dma_rxreqsrc != 0)
+            {
+              priv->rxdma = imx9_dmach_alloc(priv->config->dma_rxreqsrc, 0);
+              DEBUGASSERT(priv->rxdma != NULL);
+            }
+        }
+      else
         {
-          priv->rxdma = imx9_dmach_alloc(priv->config->dma_rxreqsrc, 0);
-          DEBUGASSERT(priv->rxdma != NULL);
+          priv->txdma = NULL;
+          priv->rxdma = NULL;
         }
 #endif
     }
@@ -2308,6 +2424,42 @@ struct i2c_master_s *imx9_i2cbus_initialize(int port)
   leave_critical_section(flags);
 
   return (struct i2c_master_s *)priv;
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: imx9_i2cbus_initialize
+ *
+ * Description:
+ *   Initialize one I2C bus for interrupt based mode
+ *
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize(int port)
+{
+  return imx9_i2cbus_initialize_mode(port,
+#ifdef CONFIG_I2C_POLLED
+    true,
+#else
+    false,
+#endif
+    false);
+}
+
+/****************************************************************************
+ * Name: imx9_i2cbus_initialize_forced_polling
+ *
+ * Description:
+ *   Force to override initialization of one I2C bus for polling mode
+ *
+ ****************************************************************************/
+
+struct i2c_master_s *imx9_i2cbus_initialize_forced_polling(int port)
+{
+  return imx9_i2cbus_initialize_mode(port, true, true);
 }
 
 /****************************************************************************
@@ -2345,24 +2497,48 @@ int imx9_i2cbus_uninitialize(struct i2c_master_s *dev)
   /* Disable power and other HW resource (GPIO's) */
 
 #ifdef CONFIG_IMX9_LPI2C_DMA
-  if (priv->rxdma != NULL)
+  if (!priv->polling_mode)
     {
-      imx9_dmach_stop(priv->rxdma);
-      imx9_dmach_free(priv->rxdma);
-      priv->rxdma = NULL;
-    }
+      if (priv->rxdma != NULL)
+        {
+          imx9_dmach_stop(priv->rxdma);
+          imx9_dmach_free(priv->rxdma);
+          priv->rxdma = NULL;
+        }
 
-  if (priv->txdma != NULL)
-    {
-      imx9_dmach_stop(priv->txdma);
-      imx9_dmach_free(priv->txdma);
-      priv->txdma = NULL;
+      if (priv->txdma != NULL)
+        {
+          imx9_dmach_stop(priv->txdma);
+          imx9_dmach_free(priv->txdma);
+          priv->txdma = NULL;
+        }
     }
 #endif
 
   imx9_lpi2c_deinit(priv);
 
   return OK;
+}
+
+/****************************************************************************
+ * Name: imx9_i2cbus_recover
+ *
+ * Description:
+ *   Attempt to recover a stuck I2C bus.
+ *
+ * Input Parameters:
+ *   devt - Pointer to I2C bus device
+ *
+ * Returned Value:
+ *   OK if bus recovered successfully or was already free
+ *   -EIO if recovery failed
+ *   -EINVAL if invalid port
+ *
+ ****************************************************************************/
+
+int imx9_i2cbus_recover(struct i2c_master_s *dev)
+{
+  return imx9_lpi2c_recover_bus(dev);
 }
 
 #endif /* CONFIG_IMX9_LPI2C */

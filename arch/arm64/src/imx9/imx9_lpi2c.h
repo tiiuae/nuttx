@@ -27,6 +27,7 @@
  * Included Files
  ****************************************************************************/
 
+#include <stdbool.h>
 #include <nuttx/config.h>
 #include <nuttx/i2c/i2c_master.h>
 
@@ -69,5 +70,24 @@ struct i2c_master_s *imx9_i2cbus_initialize(int port);
  ****************************************************************************/
 
 int imx9_i2cbus_uninitialize(struct i2c_master_s *dev);
+
+/****************************************************************************
+ * Name: imx9_i2cbus_recover
+ *
+ * Description:
+ *   Attempt to recover a stuck I2C bus.
+ *   Uses polling-based bus recovery without locks or delays.
+ *
+ * Input Parameters:
+ *   Device structure as returned by the imx9_i2cbus_initialize()
+ *
+ * Returned Value:
+ *   OK if bus recovered successfully or was already free
+ *   -EIO if recovery failed
+ *   -EINVAL if invalid port
+ *
+ ****************************************************************************/
+
+int imx9_i2cbus_recover(struct i2c_master_s *dev);
 
 #endif /* __ARCH_ARM64_SRC_IMX9_IMX9_LPI2C_H */
