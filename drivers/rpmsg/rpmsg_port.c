@@ -31,6 +31,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/clock.h>
 
 #include <metal/mutex.h>
 #include <metal/sys.h>
@@ -752,11 +753,11 @@ void rpmsg_port_update_timestamp(FAR struct rpmsg_port_queue_s *queue,
   clock_gettime(CLOCK_MONOTONIC, &ts);
   if (tx)
     {
-      rpts->tx_nsec = 1000000000ull * ts.tv_sec + ts.tv_nsec;
+      rpts->tx_nsec = clock_time2nsec(&ts);
     }
   else if (hdr->len <= queue->len - sizeof(struct rpmsg_timestamp_s))
     {
-      rpts->rx_nsec = 1000000000ull * ts.tv_sec + ts.tv_nsec;
+      rpts->rx_nsec = clock_time2nsec(&ts);
     }
 }
 

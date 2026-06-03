@@ -40,6 +40,7 @@
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/circbuf.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/clock.h>
 #include <time.h>
 #include <inttypes.h>
 #include <fixedmath.h>
@@ -325,7 +326,7 @@ static inline uint64_t touch_get_time(void)
   struct timespec ts;
 
   clock_systime_timespec(&ts);
-  return 1000000ull * ts.tv_sec + ts.tv_nsec / 1000;
+  return clock_time2usec(&ts);
 }
 
 /****************************************************************************

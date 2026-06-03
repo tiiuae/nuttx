@@ -415,9 +415,7 @@ int esp32c3_oneshot_cancel(struct esp32c3_oneshot_s *oneshot,
           /* Remaining time (us) = timeout (us) - current (us) */
 
           remaining_us = timeout_us - current_us;
-          ts->tv_sec   = remaining_us / USEC_PER_SEC;
-          remaining_us = remaining_us - ts->tv_sec * USEC_PER_SEC;
-          ts->tv_nsec  = remaining_us * NSEC_PER_USEC;
+          clock_usec2time(ts, remaining_us);
         }
 
         oneshot->running  = false;

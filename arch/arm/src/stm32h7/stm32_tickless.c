@@ -74,6 +74,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/timers/arch_timer.h>
 #include <nuttx/debug.h>
+#include <nuttx/clock.h>
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
@@ -947,8 +948,7 @@ int up_timer_start(const struct timespec *ts)
 
   /* Express the delay in microseconds */
 
-  usec = ts->tv_sec * USEC_PER_SEC +
-         (ts->tv_nsec / NSEC_PER_USEC);
+  usec = clock_time2usec(ts);
 
   /* Get the timer counter frequency and determine the number of counts need
    * to achieve the requested delay.
@@ -995,8 +995,7 @@ int up_timer_start(const struct timespec *ts)
 int up_alarm_start(const struct timespec *ts)
 {
   size_t offset = 1;
-  uint64_t tm = (ts->tv_sec * NSEC_PER_SEC + ts->tv_nsec) /
-                NSEC_PER_TICK;
+  uint64_t tm = clock_time2nsec(ts) / NSEC_PER_TICK;
   irqstate_t flags;
 
   flags = enter_critical_section();
@@ -1039,8 +1038,7 @@ int up_alarm_cancel(struct timespec *ts)
                     STM32_TIM_GETCOUNTER(g_tickless.tch)) * NSEC_PER_TICK;
 #endif
 
-  ts->tv_sec = nsecs / NSEC_PER_SEC;
-  ts->tv_nsec = nsecs - ts->tv_sec * NSEC_PER_SEC;
+  clock_nsec2time(ts, nsecs);
 
   stm32_tickless_disableint(CONFIG_STM32H7_TICKLESS_CHANNEL);
 

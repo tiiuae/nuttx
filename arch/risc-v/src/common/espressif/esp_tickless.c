@@ -221,8 +221,7 @@ int IRAM_ATTR up_timer_gettime(struct timespec *ts)
   irqstate_t flags = spin_lock_irqsave(&g_esp_tickless_lock);
 
   time_us = systimer_hal_get_time(&systimer_hal, SYSTIMER_COUNTER_OS_TICK);
-  ts->tv_sec  = time_us / USEC_PER_SEC;
-  ts->tv_nsec = (time_us % USEC_PER_SEC) * NSEC_PER_USEC;
+  clock_usec2time(ts, time_us);
 
   spin_unlock_irqrestore(&g_esp_tickless_lock, flags);
 

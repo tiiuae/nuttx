@@ -38,6 +38,7 @@
 #include <nuttx/mutex.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/i2c/i2c_master.h>
+#include <nuttx/clock.h>
 #include <nuttx/sensors/hyt271.h>
 #include <nuttx/sensors/sensor.h>
 
@@ -203,7 +204,7 @@ static unsigned long hyt271_curtime(void)
   struct timespec ts;
 
   clock_systime_timespec(&ts);
-  return 1000000ull * ts.tv_sec + ts.tv_nsec / 1000;
+  return clock_time2usec(&ts);
 }
 
 /****************************************************************************

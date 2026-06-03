@@ -30,6 +30,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <nuttx/clock.h>
+
 #include "sim_internal.h"
 
 #ifdef __APPLE__
@@ -73,7 +75,7 @@ int host_inittimer(void)
 
   clock_gettime(CLOCK_MONOTONIC, &tp);
 
-  g_start = 1000000000ull * tp.tv_sec + tp.tv_nsec;
+  g_start = clock_time2nsec(&tp);
 
 #ifdef __APPLE__
   g_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
@@ -110,7 +112,7 @@ uint64_t host_gettime(bool rtc)
   uint64_t current;
 
   clock_gettime(rtc ? CLOCK_REALTIME : CLOCK_MONOTONIC, &tp);
-  current = 1000000000ull * tp.tv_sec + tp.tv_nsec;
+  current = clock_time2nsec(&tp);
 
   if (rtc)
     {
@@ -197,7 +199,7 @@ int host_settimer(uint64_t nsec)
   uint64_t now_ns;
 
   clock_gettime(CLOCK_MONOTONIC, &now);
-  now_ns = 1000000000ull * now.tv_sec + now.tv_nsec;
+  now_ns = clock_time2nsec(&now);
   start = dispatch_walltime(NULL, nsec - now_ns);
   dispatch_source_set_timer(g_timer, start, DISPATCH_TIME_FOREVER, 1000);
   return 0;
@@ -207,8 +209,7 @@ int host_settimer(uint64_t nsec)
       0
     };
 
-  tspec.it_value.tv_sec  = nsec / 1000000000;
-  tspec.it_value.tv_nsec = nsec % 1000000000;
+  clock_nsec2time(&tspec.it_value, nsec);
 
   return timer_settime(g_timer, TIMER_ABSTIME, &tspec, NULL);
 #endif

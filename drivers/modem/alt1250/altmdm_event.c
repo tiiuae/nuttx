@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/clock.h>
 
 #include "altmdm_event.h"
 
@@ -48,9 +49,7 @@ static int set_expiretime(int expire_time, FAR struct timespec *set_time)
       return ERROR;
     }
 
-  set_time->tv_sec = expire_time / 1000;
-  set_time->tv_nsec =
-    (expire_time - (set_time->tv_sec * 1000)) * 1000 * 1000;
+  clock_msec2time(set_time, expire_time);
 
   set_time->tv_sec += curr_time.tv_sec;
   set_time->tv_nsec += curr_time.tv_nsec;

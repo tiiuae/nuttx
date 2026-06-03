@@ -35,6 +35,7 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/arch.h>
 #include <nuttx/nuttx.h>
+#include <nuttx/clock.h>
 
 #include "cfi.h"
 
@@ -368,7 +369,7 @@ static inline uint32_t cfi_get_time_us(void)
   struct timespec ts;
 
   clock_systime_timespec(&ts);
-  return 1000000 * ts.tv_sec + ts.tv_nsec / 1000;
+  return clock_time2usec(&ts);
 }
 
 /****************************************************************************

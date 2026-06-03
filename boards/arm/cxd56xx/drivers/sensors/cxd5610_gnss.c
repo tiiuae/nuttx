@@ -39,6 +39,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/signal.h>
 #include <nuttx/mutex.h>
+#include <nuttx/clock.h>
 #include <nuttx/sensors/cxd5610_gnss.h>
 #include <arch/chip/gnss.h>
 
@@ -457,7 +458,7 @@ static int cxd5610_gnss_notify_time(struct cxd5610_gnss_dev_s *priv, int len)
   /* Record the current timestamp in usec */
 
   clock_systime_timespec(&ts);
-  priv->posdat2->timestamp  = 1000000ull * ts.tv_sec + ts.tv_nsec / 1000;
+  priv->posdat2->timestamp  = clock_time2usec(&ts);
 
   /* Receive UTC time information */
 

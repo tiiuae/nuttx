@@ -35,6 +35,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/timers/oneshot.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/clock.h>
 
 #include "esp32s2_oneshot.h"
 
@@ -286,9 +287,7 @@ static int oneshot_lh_current(struct oneshot_lowerhalf_s *lower,
   DEBUGASSERT(ts != NULL);
 
   esp32s2_oneshot_current(&priv->oneshot, &current_us);
-  ts->tv_sec  = current_us / USEC_PER_SEC;
-  current_us  = current_us - ts->tv_sec * USEC_PER_SEC;
-  ts->tv_nsec = current_us * NSEC_PER_USEC;
+  clock_usec2time(ts, current_us);
 
   return OK;
 }

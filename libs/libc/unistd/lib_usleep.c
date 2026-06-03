@@ -97,16 +97,13 @@
 int usleep(useconds_t usec)
 {
   struct timespec rqtp;
-  time_t sec;
   int ret = 0;
 
   if (usec)
     {
       /* Let clock_nanosleep() do all of the work. */
 
-      sec          = USEC2SEC(usec);
-      rqtp.tv_sec  = sec;
-      rqtp.tv_nsec = (usec - (sec * USEC_PER_SEC)) * NSEC_PER_USEC;
+      clock_usec2time(&rqtp, usec);
 
       ret = clock_nanosleep(CLOCK_REALTIME, 0, &rqtp, NULL);
     }

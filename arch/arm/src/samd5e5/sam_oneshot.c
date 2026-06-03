@@ -233,7 +233,7 @@ int sam_oneshot_start(struct sam_oneshot_s *oneshot,
 
   /* Express the delay in microseconds */
 
-  usec = ts->tv_sec * USEC_PER_SEC + (ts->tv_nsec / NSEC_PER_USEC);
+  usec = clock_time2usec(ts);
 
   /* Get the timer counter frequency and determine
    * the number of counts need to achieve the requested delay.

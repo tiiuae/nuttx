@@ -131,7 +131,7 @@ static uint64_t _get_current_time64(void)
   struct timespec ts;
 
   clock_systime_timespec(&ts);
-  return ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+  return clock_time2nsec(&ts);
 }
 
 /****************************************************************************

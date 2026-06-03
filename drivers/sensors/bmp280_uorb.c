@@ -36,6 +36,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/i2c/i2c_master.h>
+#include <nuttx/clock.h>
 #include <nuttx/sensors/bmp280.h>
 #include <nuttx/sensors/sensor.h>
 
@@ -658,7 +659,7 @@ static int bmp280_fetch(FAR struct sensor_lowerhalf_s *lower,
 
   clock_systime_timespec(&ts);
 
-  baro_data.timestamp = 1000000ull * ts.tv_sec + ts.tv_nsec / 1000;
+  baro_data.timestamp = clock_time2usec(&ts);
   baro_data.pressure = sensor_data_divi(press, 100);
   baro_data.temperature = sensor_data_divi(temp, 100);
 

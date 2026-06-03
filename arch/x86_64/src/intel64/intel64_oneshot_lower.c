@@ -35,6 +35,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/timers/oneshot.h>
+#include <nuttx/clock.h>
 
 #include "intel64_oneshot.h"
 
@@ -153,8 +154,7 @@ static void intel64_timer_start_absolute(struct oneshot_lowerhalf_s *lower,
 
   DEBUGASSERT(ret == OK);
 
-  ts.tv_sec  = delta_us / USEC_PER_SEC;
-  ts.tv_nsec = delta_us % USEC_PER_SEC * 1000ull;
+  clock_usec2time(&ts, delta_us);
   ret = intel64_oneshot_start(&priv->oneshot, intel64_oneshot_handler,
                               priv, &ts);
 

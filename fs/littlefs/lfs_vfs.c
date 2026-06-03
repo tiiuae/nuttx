@@ -36,6 +36,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/mtd/mtd.h>
 #include <nuttx/mutex.h>
+#include <nuttx/clock.h>
 
 #include <sys/stat.h>
 #include <sys/statfs.h>
@@ -404,7 +405,7 @@ static int littlefs_open(FAR struct file *filep, FAR const char *relpath,
       clock_gettime(CLOCK_REALTIME, &time);
       memset(&attr, 0, sizeof(attr));
       attr.at_mode = mode;
-      attr.at_ctim = 1000000000ull * time.tv_sec + time.tv_nsec;
+      attr.at_ctim = clock_time2nsec(&time);
       attr.at_atim = attr.at_ctim;
       attr.at_mtim = attr.at_ctim;
       ret = littlefs_convert_result(lfs_setattr(&fs->lfs, relpath, 0,
@@ -847,12 +848,9 @@ static int littlefs_fstat(FAR const struct file *filep, FAR struct stat *buf)
   buf->st_mode         = attr.at_mode | S_IFREG;
   buf->st_uid          = attr.at_uid;
   buf->st_gid          = attr.at_gid;
-  buf->st_atim.tv_sec  = attr.at_atim / 1000000000ull;
-  buf->st_atim.tv_nsec = attr.at_atim % 1000000000ull;
-  buf->st_mtim.tv_sec  = attr.at_mtim / 1000000000ull;
-  buf->st_mtim.tv_nsec = attr.at_mtim % 1000000000ull;
-  buf->st_ctim.tv_sec  = attr.at_ctim / 1000000000ull;
-  buf->st_ctim.tv_nsec = attr.at_ctim % 1000000000ull;
+  clock_nsec2time(&buf->st_atim, attr.at_atim);
+  clock_nsec2time(&buf->st_mtim, attr.at_mtim);
+  clock_nsec2time(&buf->st_ctim, attr.at_ctim);
 #endif /* CONFIG_FS_LITTLEFS_ATTR_UPDATE */
   buf->st_blksize      = fs->cfg.block_size;
   buf->st_blocks       = (buf->st_size + buf->st_blksize - 1) /
@@ -915,19 +913,16 @@ static int littlefs_fchstat(FAR const struct file *filep,
       attr.at_gid = buf->st_gid;
     }
 
-  attr.at_ctim = 1000000000ull * buf->st_ctim.tv_sec +
-                 buf->st_ctim.tv_nsec;
+  attr.at_ctim = clock_time2nsec(&buf->st_ctim);
 
   if ((CH_STAT_ATIME & flags) == CH_STAT_ATIME)
     {
-      attr.at_atim = 1000000000ull * buf->st_atim.tv_sec +
-                     buf->st_atim.tv_nsec;
+      attr.at_atim = clock_time2nsec(&buf->st_atim);
     }
 
   if ((CH_STAT_MTIME & flags) == CH_STAT_MTIME)
     {
-      attr.at_mtim = 1000000000ull * buf->st_mtim.tv_sec +
-                     buf->st_mtim.tv_nsec;
+      attr.at_mtim = clock_time2nsec(&buf->st_mtim);
     }
 
   ret = littlefs_convert_result(lfs_file_setattr(&fs->lfs, &priv->file, 0,
@@ -1706,7 +1701,7 @@ static int littlefs_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
       clock_gettime(CLOCK_REALTIME, &time);
       memset(&attr, 0, sizeof(attr));
       attr.at_mode = mode;
-      attr.at_ctim = 1000000000ull * time.tv_sec + time.tv_nsec;
+          attr.at_ctim = clock_time2nsec(&time);
       attr.at_atim = attr.at_ctim;
       attr.at_mtim = attr.at_ctim;
       ret = littlefs_convert_result(lfs_setattr(&fs->lfs, path, 0,
@@ -1845,12 +1840,9 @@ static int littlefs_stat(FAR struct inode *mountpt, FAR const char *relpath,
   buf->st_mode         = attr.at_mode;
   buf->st_uid          = attr.at_uid;
   buf->st_gid          = attr.at_gid;
-  buf->st_atim.tv_sec  = attr.at_atim / 1000000000ull;
-  buf->st_atim.tv_nsec = attr.at_atim % 1000000000ull;
-  buf->st_mtim.tv_sec  = attr.at_mtim / 1000000000ull;
-  buf->st_mtim.tv_nsec = attr.at_mtim % 1000000000ull;
-  buf->st_ctim.tv_sec  = attr.at_ctim / 1000000000ull;
-  buf->st_ctim.tv_nsec = attr.at_ctim % 1000000000ull;
+  clock_nsec2time(&buf->st_atim, attr.at_atim);
+  clock_nsec2time(&buf->st_mtim, attr.at_mtim);
+  clock_nsec2time(&buf->st_ctim, attr.at_ctim);
   buf->st_blksize      = fs->cfg.block_size;
   buf->st_blocks       = (buf->st_size + buf->st_blksize - 1) /
                          buf->st_blksize;
@@ -1920,19 +1912,16 @@ static int littlefs_chstat(FAR struct inode *mountpt,
       attr.at_gid = buf->st_gid;
     }
 
-  attr.at_ctim = 1000000000ull * buf->st_ctim.tv_sec +
-                 buf->st_ctim.tv_nsec;
+  attr.at_ctim = clock_time2nsec(&buf->st_ctim);
 
   if ((CH_STAT_ATIME & flags) == CH_STAT_ATIME)
     {
-      attr.at_atim = 1000000000ull * buf->st_atim.tv_sec +
-                     buf->st_atim.tv_nsec;
+      attr.at_atim = clock_time2nsec(&buf->st_atim);
     }
 
   if ((CH_STAT_MTIME & flags) == CH_STAT_MTIME)
     {
-      attr.at_mtim = 1000000000ull * buf->st_mtim.tv_sec +
-                     buf->st_mtim.tv_nsec;
+      attr.at_mtim = clock_time2nsec(&buf->st_mtim);
     }
 
   ret = littlefs_convert_result(lfs_setattr(&fs->lfs, relpath, 0,

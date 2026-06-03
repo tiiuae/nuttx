@@ -31,6 +31,7 @@
 #include <nuttx/debug.h>
 #include <nuttx/irq.h>
 #include <nuttx/signal.h>
+#include <nuttx/clock.h>
 #include <signal.h>
 
 #include "altmdm_timer.h"
@@ -102,10 +103,8 @@ timer_t altmdm_timer_start(int first_ms, int interval_ms,
       return NULL;
     }
 
-  timer.it_value.tv_sec = first_ms / 1000;
-  timer.it_value.tv_nsec = (first_ms % 1000) * 1000 * 1000;
-  timer.it_interval.tv_sec = interval_ms / 1000;
-  timer.it_interval.tv_nsec = (interval_ms % 1000) * 1000 * 1000;
+  clock_msec2time(&timer.it_value, first_ms);
+  clock_msec2time(&timer.it_interval, interval_ms);
 
   ret = timer_settime(timerid, 0, &timer, NULL);
   if (ret != OK)
@@ -121,10 +120,8 @@ int altmdm_timer_restart(timer_t timerid, int first_ms, int interval_ms)
   int ret;
   struct itimerspec timer;
 
-  timer.it_value.tv_sec = first_ms / 1000;
-  timer.it_value.tv_nsec = (first_ms % 1000) * 1000 * 1000;
-  timer.it_interval.tv_sec = interval_ms / 1000;
-  timer.it_interval.tv_nsec = (interval_ms % 1000) * 1000 * 1000;
+  clock_msec2time(&timer.it_value, first_ms);
+  clock_msec2time(&timer.it_interval, interval_ms);
 
   ret = timer_settime(timerid, 0, &timer, NULL);
   if (ret != OK)

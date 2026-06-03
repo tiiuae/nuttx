@@ -29,6 +29,8 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include <nuttx/clock.h>
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -49,5 +51,5 @@ hrtime_t gethrtime(void)
   struct timespec ts;
 
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return 1000000000 * ts.tv_sec + ts.tv_nsec;
+  return clock_time2nsec(&ts);
 }

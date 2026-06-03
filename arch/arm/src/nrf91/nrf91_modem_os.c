@@ -32,6 +32,7 @@
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/signal.h>
+#include <nuttx/clock.h>
 
 #include <nuttx/mm/mm.h>
 
@@ -309,8 +310,7 @@ int32_t nrf_modem_os_timedwait(uint32_t context, int32_t *timeout)
     {
       /* Wait for event or timeout */
 
-      abstime.tv_sec  = *timeout / 1000;
-      abstime.tv_nsec = (*timeout % 1000) * 1000000;
+      clock_msec2time(&abstime, *timeout);
 
       nxsem_timedwait(&waiting->sem, &abstime);
     }
@@ -479,8 +479,7 @@ int nrf_modem_os_sem_take(void *sem, int timeout)
     {
       struct timespec abstime;
 
-      abstime.tv_sec  = timeout / 1000;
-      abstime.tv_nsec = (timeout % 1000) * 1000000;
+      clock_msec2time(&abstime, timeout);
 
       ret = nxsem_timedwait(s, &abstime);
     }

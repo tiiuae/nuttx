@@ -34,6 +34,7 @@
 #include <nuttx/debug.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/clock.h>
 
 #include "arm_internal.h"
 #include "hardware/nrf52_rtc.h"
@@ -114,8 +115,7 @@ static inline void rtc_counter_to_ts(uint32_t counter, struct timespec *now)
   uint32_t usec;
 
   usec = COUNTER_TO_USEC(counter);
-  now->tv_sec  = usec / USEC_PER_SEC;
-  now->tv_nsec = (usec % USEC_PER_SEC) * NSEC_PER_USEC;
+  clock_usec2time(now, usec);
 
   now->tv_sec += g_tickless_dev.periods * NRF52_RTC_PERIOD;
 }
@@ -137,7 +137,7 @@ static void rtc_prepare_alarm(void)
   /* Obtain relative time to alarm */
 
   clock_timespec_subtract(&g_tickless_dev.alarm, &now, &delta);
-  usec = delta.tv_sec * USEC_PER_SEC + delta.tv_nsec / NSEC_PER_USEC;
+  usec = clock_time2usec(&delta);
 
   /* Check if the alarm is to expire within one RTC period, if so we can set
    * the CC.

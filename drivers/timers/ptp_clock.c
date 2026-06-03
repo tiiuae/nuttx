@@ -30,6 +30,7 @@
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/mutex.h>
+#include <nuttx/clock.h>
 #include <nuttx/timers/ptp_clock.h>
 
 /****************************************************************************
@@ -127,7 +128,7 @@ static int ptp_clock_adjtime(FAR struct ptp_lowerhalf_s *lower,
           return -EINVAL;
         }
 
-      delta = ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+      delta = clock_time2nsec(&ts);
       ret = lower->ops->adjtime(lower, delta);
     }
   else if ((tx->modes & ADJ_FREQUENCY) && lower->ops->adjfine != NULL)

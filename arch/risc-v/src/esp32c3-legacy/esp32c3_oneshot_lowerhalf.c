@@ -36,6 +36,7 @@
 #include <nuttx/timers/oneshot.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/spinlock.h>
+#include <nuttx/clock.h>
 
 #include "esp32c3_oneshot.h"
 
@@ -161,8 +162,7 @@ static void esp32c3_lh_start_absolute(struct oneshot_lowerhalf_s *lower,
   curr  = esp32c3_lh_current(lower);
   delta = expected < curr ? 0 : expected - curr;
 
-  ts.tv_sec  = delta / USEC_PER_SEC;
-  ts.tv_nsec = delta % USEC_PER_SEC * NSEC_PER_USEC;
+  clock_usec2time(&ts, delta);
   ret   = esp32c3_oneshot_start(&priv->oneshot, esp32c3_lh_handler,
                                 priv, &ts);
   leave_critical_section(flags);
@@ -186,8 +186,7 @@ static void esp32c3_lh_start(struct oneshot_lowerhalf_s *lower,
 
   /* Save the callback information and start the timer */
 
-  ts.tv_sec  = delta / USEC_PER_SEC;
-  ts.tv_nsec = delta % USEC_PER_SEC * NSEC_PER_USEC;
+  clock_usec2time(&ts, delta);
 
   flags = enter_critical_section();
   ret   = esp32c3_oneshot_start(&priv->oneshot, esp32c3_lh_handler,

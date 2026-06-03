@@ -330,8 +330,7 @@ static ssize_t critmon_read_cpu(FAR struct critmon_file_s *attr,
     }
 
   elapsed = clock() * CONFIG_USEC_PER_TICK;
-  rate = (all_time.tv_sec * 1000000 + all_time.tv_nsec / 1000) *
-         1000000 / elapsed;
+  rate = clock_time2usec(&all_time) * 1000000 / elapsed;
 
   /* Generate output for all busywait time to enter csection(get spinlock) */
 

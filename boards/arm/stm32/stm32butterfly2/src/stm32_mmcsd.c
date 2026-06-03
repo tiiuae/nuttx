@@ -35,6 +35,7 @@
 #include <nuttx/mmcsd.h>
 #include <nuttx/signal.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/clock.h>
 #include <nuttx/spi/spi.h>
 
 #include "stm32.h"
@@ -121,7 +122,7 @@ static int stm32_cd(int irq, void *context, void *arg)
   struct timespec tp;
 
   clock_systime_timespec(&tp);
-  now = tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
+  now = clock_time2msec(&tp);
 
   /* When inserting card, card detect plate might bounce causing this
    * interrupt to be called many time on single card insert/deinsert. Thus

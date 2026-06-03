@@ -60,6 +60,7 @@
 #include <nuttx/signal.h>
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/clock.h>
 
 #include <bl602_netdev.h>
 
@@ -1146,7 +1147,7 @@ uint64_t bl_os_clock_gettime_ms(void)
 {
   struct timespec ts;
   clock_systime_timespec(&ts);
-  return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  return clock_time2msec(&ts);
 }
 
 /****************************************************************************

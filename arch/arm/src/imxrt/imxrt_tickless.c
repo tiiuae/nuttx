@@ -73,6 +73,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/debug.h>
 #include <nuttx/irq.h>
+#include <nuttx/clock.h>
 
 #include "arm_internal.h"
 #include "imxrt_periphclks.h"
@@ -466,9 +467,7 @@ int up_timer_gettime(struct timespec *ts)
 
   /* And return the value of the timer */
 
-  sec         = (uint32_t)(usec / USEC_PER_SEC);
-  ts->tv_sec  = sec;
-  ts->tv_nsec = (usec - (sec * USEC_PER_SEC)) * NSEC_PER_USEC;
+  clock_usec2time(ts, usec);
 
   return OK;
 }
@@ -501,8 +500,7 @@ int up_timer_gettime(struct timespec *ts)
 int up_alarm_start(const struct timespec *ts)
 {
   size_t offset = 1;
-  uint64_t tm = (ts->tv_sec * NSEC_PER_SEC + ts->tv_nsec) /
-                NSEC_PER_TICK;
+  uint64_t tm = clock_time2nsec(ts) / NSEC_PER_TICK;
   irqstate_t flags;
   uint32_t regval;
 
@@ -588,8 +586,7 @@ int up_alarm_cancel(struct timespec *ts)
                     NSEC_PER_TICK;
   uint32_t regval;
 
-  ts->tv_sec = nsecs / NSEC_PER_SEC;
-  ts->tv_nsec = nsecs - ts->tv_sec * NSEC_PER_SEC;
+  clock_nsec2time(ts, nsecs);
 
   /* Disable the compare interrupt */
 

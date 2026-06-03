@@ -35,6 +35,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/clock.h>
 
 #include <arch/chip/cisif.h>
 #include <nuttx/video/imgdata.h>
@@ -288,7 +289,7 @@ static uint64_t cisif_get_msec_time(void)
 
   clock_systime_timespec(&tp);
 
-  return tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
+  return clock_time2msec(&tp);
 }
 
 static void cisif_trace_time_start(void)

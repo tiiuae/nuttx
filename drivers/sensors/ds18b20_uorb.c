@@ -41,6 +41,7 @@
 #include <nuttx/1wire/1wire.h>
 #include <nuttx/1wire/1wire_master.h>
 #include <nuttx/1wire/1wire_crc.h>
+#include <nuttx/clock.h>
 #include <nuttx/sensors/ds18b20.h>
 #include <nuttx/sensors/sensor.h>
 
@@ -568,7 +569,7 @@ static unsigned long ds18b20_curtime(void)
   struct timespec ts;
 
   clock_systime_timespec(&ts);
-  return 1000000ull * ts.tv_sec + ts.tv_nsec / 1000;
+  return clock_time2usec(&ts);
 }
 
 /****************************************************************************

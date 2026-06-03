@@ -31,6 +31,7 @@
 #include <nuttx/list.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/lirc.h>
+#include <nuttx/clock.h>
 
 #include <time.h>
 
@@ -47,7 +48,7 @@ static inline uint64_t lirc_get_timestamp(void)
   struct timespec ts;
 
   clock_systime_timespec(&ts);
-  return 1000000000ull * ts.tv_sec + ts.tv_nsec;
+  return clock_time2nsec(&ts);
 }
 
 /****************************************************************************

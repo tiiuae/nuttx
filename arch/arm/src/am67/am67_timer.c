@@ -28,6 +28,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/timers/arch_alarm.h>
+#include <nuttx/clock.h>
 #include <arm_internal.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -441,8 +442,7 @@ int up_timer_gettime(struct timespec *ts)
 
   internal_timer = am67_timer_get_count(AM67_DMTIMER1_1MS_TIMER0_VADDR);
 
-  ts->tv_nsec = (uint32_t)(internal_timer * 1000000);
-  ts->tv_sec = (uint32_t)(internal_timer / 1000);
+  clock_msec2time(ts, internal_timer);
 
   return OK;
 }

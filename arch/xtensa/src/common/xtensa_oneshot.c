@@ -30,6 +30,7 @@
 #include <nuttx/spinlock.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/timers/oneshot.h>
+#include <nuttx/clock.h>
 
 #include "xtensa_counter.h"
 #include "xtensa.h"
@@ -139,8 +140,7 @@ static int xtensa_oneshot_maxdelay(struct oneshot_lowerhalf_s *lower_,
 
   uint64_t maxnsec = nsec_from_count(UINT32_MAX, lower->freq);
 
-  ts->tv_sec  = maxnsec / NSEC_PER_SEC;
-  ts->tv_nsec = maxnsec % NSEC_PER_SEC;
+  clock_nsec2time(ts, maxnsec);
 
   return 0;
 }

@@ -28,6 +28,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/lib/lib.h>
 #include <nuttx/signal.h>
+#include <nuttx/clock.h>
 
 #include <inttypes.h>
 #include <string.h>
@@ -202,7 +203,7 @@ static void rpmsg_ping_logout_rate(uint64_t len, clock_t avg)
 
   perf_convert(avg, &ts);
 
-  ratebits = len * 8 * 1000000000 / (ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec);
+  ratebits = len * 8 * 1000000000 / clock_time2nsec(&ts);
   rateint = ratebits / 1000000;
   ratedec = ratebits - rateint * 1000000;
 

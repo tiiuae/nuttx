@@ -292,8 +292,7 @@ int weak_function up_timer_gettime(struct timespec *ts)
 
   if (g_timer.lower != NULL)
     {
-      ts->tv_sec  = current_usec() / USEC_PER_SEC;
-      ts->tv_nsec = (current_usec() % USEC_PER_SEC) * NSEC_PER_USEC;
+      clock_usec2time(ts, current_usec());
       ret = OK;
     }
 

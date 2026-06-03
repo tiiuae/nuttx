@@ -36,6 +36,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/timers/rtc.h>
+#include <nuttx/clock.h>
 
 #include "clock/clock.h"
 
@@ -739,8 +740,7 @@ int up_rtc_gettime(struct timespec *tp)
       time_us = esp_rtc_get_time_us() + esp_rtc_get_boot_time();
     }
 
-  tp->tv_sec  = time_us / USEC_PER_SEC;
-  tp->tv_nsec = (time_us % USEC_PER_SEC) * NSEC_PER_USEC;
+  clock_usec2time(tp, time_us);
 
   spin_unlock_irqrestore(&g_rtc_lowerhalf.lock, flags);
 

@@ -39,6 +39,7 @@
 #include <errno.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/clock.h>
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
@@ -207,16 +208,14 @@ void up_timer_initialize(void)
 
 int up_timer_gettime(struct timespec *ts)
 {
-  ts->tv_sec = (uint32_t)(g_internal_timer / 1000000000);
-  ts->tv_nsec = (uint32_t)(g_internal_timer % 1000000000);
+  clock_nsec2time(ts, g_internal_timer);
 
   return OK;
 }
 
 int up_alarm_cancel(struct timespec *ts)
 {
-  ts->tv_sec = (uint32_t)(g_internal_timer / 1000000000);
-  ts->tv_nsec = (uint32_t)(g_internal_timer % 1000000000);
+  clock_nsec2time(ts, g_internal_timer);
   g_alarm = 0;
   return OK;
 }
@@ -228,7 +227,7 @@ int up_alarm_start(const struct timespec *ts)
    * coded.
    */
 
-  g_alarm = ts->tv_sec * 1000000000 + ts->tv_nsec;
+  g_alarm = clock_time2nsec(ts);
   return OK;
 }
 
@@ -251,7 +250,7 @@ int up_timer_start(const struct timespec *ts)
    */
 
   g_alarm = g_internal_timer;
-  g_alarm += ts->tv_sec * 1000000000 + ts->tv_nsec;
+  g_alarm += clock_time2nsec(ts);
   return OK;
 }
 
