@@ -317,50 +317,15 @@ extern "C"
  * Public Function Prototypes
  ****************************************************************************/
 
-#define clock_ticks2time(ts, tick) \
-  do \
-    { \
-      clock_t _tick = (tick); \
-      (ts)->tv_sec = div_const(_tick, TICK_PER_SEC); \
-      _tick -= (ts)->tv_sec * TICK_PER_SEC; \
-      (ts)->tv_nsec = _tick * NSEC_PER_TICK; \
-    } \
-  while (0)
-
-#define clock_time2ticks(ts) \
-  ((ts)->tv_sec * TICK_PER_SEC + \
-   div_const_roundup((ts)->tv_nsec, NSEC_PER_TICK))
-
-#define clock_time2ticks_floor(ts) \
-  ((ts)->tv_sec * TICK_PER_SEC + \
-   div_const((ts)->tv_nsec, NSEC_PER_TICK))
-
-#define clock_usec2time(ts, usec) \
-  do \
-    { \
-      int64_t _usec = (usec); \
-      (ts)->tv_sec = div_const(_usec, USEC_PER_SEC); \
-      _usec -= (ts)->tv_sec * USEC_PER_SEC; \
-      (ts)->tv_nsec = _usec * NSEC_PER_USEC; \
-    } \
-  while (0)
-
-#define clock_time2usec(ts) \
-  ((ts)->tv_sec * USEC_PER_SEC + \
-   div_const((ts)->tv_nsec, NSEC_PER_USEC))
-
-#define clock_nsec2time(ts, nsec) \
-  do \
-    { \
-      int64_t _nsec = (nsec); \
-      (ts)->tv_sec = div_const(_nsec, NSEC_PER_SEC); \
-      _nsec -= (ts)->tv_sec * NSEC_PER_SEC; \
-      (ts)->tv_nsec = _nsec; \
-    } \
-  while (0)
-
-#define clock_time2nsec(ts) \
-  ((ts)->tv_sec * NSEC_PER_SEC + (ts)->tv_nsec)
+void clock_ticks2time(FAR struct timespec *ts, clock_t tick);
+clock_t clock_time2ticks(FAR const struct timespec *ts);
+clock_t clock_time2ticks_floor(FAR const struct timespec *ts);
+void clock_msec2time(FAR struct timespec *ts, int64_t msec);
+int64_t clock_time2msec(FAR const struct timespec *ts);
+void clock_usec2time(FAR struct timespec *ts, int64_t usec);
+int64_t clock_time2usec(FAR const struct timespec *ts);
+void clock_nsec2time(FAR struct timespec *ts, int64_t nsec);
+int64_t clock_time2nsec(FAR const struct timespec *ts);
 
 /* Calculate delay+1, forcing the delay into a range that we can handle.
  *
