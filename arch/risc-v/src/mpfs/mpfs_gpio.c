@@ -114,8 +114,8 @@ static int mpfs_gpio_isr(int irq, void *context, void *arg)
   uint8_t irq_n = irq - MPFS_IRQ_GPIO02_BIT0;
   int ret = OK;
 
-  uint8_t mss_bank = irq_n < GPIO_BANK1_NUM_PINS ? 0 : 1;
-  uint8_t pin = mss_bank == 1 ? irq_n - GPIO_BANK0_NUM_PINS : irq_n;
+  uint8_t mss_bank = irq_n < GPIO_BANK0_NUM_PINS ? 0 : 1;
+  uint8_t mss_pin = mss_bank == 1 ? irq_n - GPIO_BANK0_NUM_PINS : irq_n;
   uint32_t event_reg;
   struct gpio_callback_s *cb;
 
@@ -123,20 +123,25 @@ static int mpfs_gpio_isr(int irq, void *context, void *arg)
 
   /* bank 0 and bank 1 pins */
 
-  cb = &g_mss_gpio_callbacks[irq_n];
-  event_reg = getreg32(g_gpio_base[mss_bank] + MPFS_GPIO_INTR_OFFSET);
-
-  /* if the callback is registered and there is an interrupt on the mss_pin */
-
-  if (cb->callback != NULL && (event_reg & (1 << pin)) != 0)
+  if (irq_n < (GPIO_BANK0_NUM_PINS + GPIO_BANK1_NUM_PINS))
     {
-      /* clear the pending interrupt */
+      cb = &g_mss_gpio_callbacks[irq_n];
+      event_reg = getreg32(g_gpio_base[mss_bank] + MPFS_GPIO_INTR_OFFSET);
 
-      mpfs_gpio_irq_clear(mss_bank, pin);
+      /* if the callback is registered and there is an interrupt on the
+       * mss_pin
+       */
 
-      /* dispatch the interrupt to the handler */
+      if (cb->callback != NULL && (event_reg & (1 << mss_pin)) != 0)
+        {
+          /* clear the pending interrupt */
 
-      ret = cb->callback(irq, context, cb->arg);
+          mpfs_gpio_irq_clear(mss_bank, mss_pin);
+
+          /* dispatch the interrupt to the handler */
+
+          ret = cb->callback(irq, context, cb->arg);
+        }
     }
 
   /* handle the muxed gpio bank2 interrupt */
@@ -145,11 +150,11 @@ static int mpfs_gpio_isr(int irq, void *context, void *arg)
     {
       cb = &g_fab_gpio_callbacks[irq_n];
       event_reg = getreg32(g_gpio_base[2] + MPFS_GPIO_INTR_OFFSET);
-      if (cb->callback != NULL && (event_reg & (1 << pin)) != 0)
+      if (cb->callback != NULL && (event_reg & (1 << irq_n)) != 0)
         {
           /* clear the pending interrupt */
 
-          mpfs_gpio_irq_clear(2, pin);
+          mpfs_gpio_irq_clear(2, irq_n);
 
           /* dispatch the interrupt to the handler */
 
