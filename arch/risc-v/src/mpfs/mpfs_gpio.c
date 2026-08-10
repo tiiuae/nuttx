@@ -111,47 +111,53 @@ static void mpfs_gpio_irq_clear(int bank, int pin)
 
 static int mpfs_gpio_isr(int irq, void *context, void *arg)
 {
-  uint8_t irq_n = irq - MPFS_IRQ_GPIO02_BIT0;
   int ret = OK;
 
-  uint8_t mss_bank = irq_n < GPIO_BANK1_NUM_PINS ? 0 : 1;
-  uint8_t pin = mss_bank == 1 ? irq_n - GPIO_BANK0_NUM_PINS : irq_n;
-  uint32_t event_reg;
-  struct gpio_callback_s *cb;
+  /* Calculate the GPIO IRQ number offset */
 
-  /* if mss gpio interrupt is enabled and there is an event */
+  uint8_t irq_n = irq - MPFS_IRQ_GPIO02_BIT0;
 
-  /* bank 0 and bank 1 pins */
+  /* ---------- Handle MSS GPIO Bank 0 and Bank 1 ---------- */
 
-  cb = &g_mss_gpio_callbacks[irq_n];
-  event_reg = getreg32(g_gpio_base[mss_bank] + MPFS_GPIO_INTR_OFFSET);
-
-  /* if the callback is registered and there is an interrupt on the mss_pin */
-
-  if (cb->callback != NULL && (event_reg & (1 << pin)) != 0)
+  if (irq_n < GPIO_BANK0_NUM_PINS + GPIO_BANK1_NUM_PINS)
     {
-      /* clear the pending interrupt */
+      uint8_t mss_bank = irq_n < GPIO_BANK0_NUM_PINS ? 0 : 1;
+      uint8_t pin = mss_bank == 1 ? irq_n - GPIO_BANK0_NUM_PINS : irq_n;
 
-      mpfs_gpio_irq_clear(mss_bank, pin);
+      uint32_t event_reg = getreg32(g_gpio_base[mss_bank] +
+                                    MPFS_GPIO_INTR_OFFSET);
 
-      /* dispatch the interrupt to the handler */
+      struct gpio_callback_s *cb = &g_mss_gpio_callbacks[irq_n];
 
-      ret = cb->callback(irq, context, cb->arg);
+      if (cb->callback != NULL && (event_reg & (1 << pin)) != 0)
+        {
+          /* Clear pending interrupt */
+
+          mpfs_gpio_irq_clear(mss_bank, pin);
+
+          /* Dispatch to the registered callback */
+
+          ret = cb->callback(irq, context, cb->arg);
+        }
     }
 
-  /* handle the muxed gpio bank2 interrupt */
+  /* ---------- Handle Fabric GPIO Bank 2 ---------- */
 
   if (irq_n < GPIO_BANK2_NUM_PINS)
     {
-      cb = &g_fab_gpio_callbacks[irq_n];
-      event_reg = getreg32(g_gpio_base[2] + MPFS_GPIO_INTR_OFFSET);
-      if (cb->callback != NULL && (event_reg & (1 << pin)) != 0)
+  /* ---------- Handle Fabric GPIO Bank 2 ---------- */
+
+      uint8_t pin2 = irq_n;
+      uint32_t event_reg = getreg32(g_gpio_base[2] + MPFS_GPIO_INTR_OFFSET);
+      struct gpio_callback_s *cb = &g_fab_gpio_callbacks[irq_n];
+
+      if (cb->callback != NULL && (event_reg & (1 << pin2)) != 0)
         {
-          /* clear the pending interrupt */
+          /* Clear pending interrupt */
 
-          mpfs_gpio_irq_clear(2, pin);
+          mpfs_gpio_irq_clear(2, pin2);
 
-          /* dispatch the interrupt to the handler */
+          /* Dispatch to the registered callback */
 
           ret = cb->callback(irq, context, cb->arg);
         }
