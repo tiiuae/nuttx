@@ -84,6 +84,24 @@
 /* MIMXRT1170DVMA TODO
  */
 #  define IMXRT_GPIO_NPORTS            13           /* Thirteen total ports */
+#elif defined(CONFIG_ARCH_CHIP_MIMXRT1189CVM8C) || \
+      defined(CONFIG_ARCH_CHIP_MIMXRT1189CVM8C_CM33)
+/* MIMXRT1189CVM8C - Dual-core Cortex-M33 + Cortex-M7.  NuttX can target
+ * either core (see CONFIG_ARCH_CHIP_IMXRT vs CONFIG_ARCH_CHIP_IMXRT_CM33).
+ *
+ *   OCRAM1: 512 KB (of which the first 16 KB is reserved by boot ROM)
+ *   OCRAM2: 256 KB
+ *   ITCM:   256 KB (Cortex-M7 tightly-coupled instruction memory)
+ *   DTCM:   256 KB (Cortex-M7 tightly-coupled data memory)
+ *   M33 System TCM: 128 KB at 0x2000_0000 (M33-only)
+ *   M33 Code TCM:   128 KB at 0x0FFE_0000 (M33-only)
+ *
+ * The usable OCRAM1 base/size (past the ROM patch reservation) are
+ * exported by hardware/rt118x/imxrt118x_memorymap.h as
+ * IMXRT_OCRAM_BASE / IMXRT_OCRAM_SIZE.
+ */
+
+#  define IMXRT_GPIO_NPORTS            6            /* Six general purpose GPIO ports */
 #else
 #  error "Unknown i.MX RT chip type"
 #endif
