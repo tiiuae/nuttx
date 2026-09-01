@@ -867,6 +867,15 @@ config ARCH_BOARD_IMXRT1170_EVK
 		This is the board configuration for the port of NuttX to the NXP i.MXRT
 		evaluation kit, MIMXRT1170-EVK.  This board features the MIMXRT1176DVMAA MCU.
 
+config ARCH_BOARD_IMXRT1180_EVK
+	bool "NXP i.MX RT 1180 EVK"
+	depends on ARCH_CHIP_MIMXRT1189CVM8C || ARCH_CHIP_MIMXRT1189CVM8C_CM33
+	---help---
+		This is the board configuration for the port of NuttX to the NXP i.MXRT
+		evaluation kit, MIMXRT1180-EVK.  This board features the MIMXRT1189CVM8C
+		SoC.  NuttX can be built for either the Cortex-M7 core or for the
+		Cortex-M33 core (as a bootloader that releases the M7 to run).
+
 config ARCH_BOARD_IMX95_EVK
 	bool "NXP i.MX 95 EVK"
 	depends on ARCH_CHIP_IMX9_CORTEX_M
@@ -3565,6 +3574,7 @@ config ARCH_BOARD
 	default "imxrt1060-evk"             if ARCH_BOARD_IMXRT1060_EVK
 	default "imxrt1064-evk"             if ARCH_BOARD_IMXRT1064_EVK
 	default "imxrt1170-evk"             if ARCH_BOARD_IMXRT1170_EVK
+	default "imxrt1180-evk"             if ARCH_BOARD_IMXRT1180_EVK
 	default "imx95-evk"                 if ARCH_BOARD_IMX95_EVK
 	default "kwikstik-k40"              if ARCH_BOARD_KWIKSTIK_K40
 	default "launchxl-cc1310"           if ARCH_BOARD_LAUNCHXL_CC1310
@@ -4001,6 +4011,9 @@ source "boards/arm/imxrt/imxrt1064-evk/Kconfig"
 endif
 if ARCH_BOARD_IMXRT1170_EVK
 source "boards/arm/imxrt/imxrt1170-evk/Kconfig"
+endif
+if ARCH_BOARD_IMXRT1180_EVK
+source "boards/arm/imxrt/imxrt1180-evk/Kconfig"
 endif
 if ARCH_BOARD_IMX95_EVK
 source "boards/arm/imx9/imx95-evk/Kconfig"
