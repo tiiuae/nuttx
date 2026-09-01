@@ -22,9 +22,17 @@
 
 include $(TOPDIR)/.config
 include $(TOPDIR)/tools/Config.mk
-include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
 
+# Select the right Toolchain.defs (ARMv7-M for the M7 build, ARMv8-M for the
+# M33 build) and the matching per-core linker script.
+
+ifeq ($(CONFIG_ARCH_CORTEXM33),y)
+include $(TOPDIR)/arch/arm/src/armv8-m/Toolchain.defs
+LDSCRIPT = flash-m33.ld
+else
+include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
 LDSCRIPT = flash.ld
+endif
 
 ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
 
@@ -39,29 +47,37 @@ AFLAGS := $(CFLAGS) -D__ASSEMBLY__
 
 # Post-build: assemble the flashable image.
 #
+# CM33 builds (imxrt1180-evk:nsh-m33, imxrt1180-evk:bl):
 #   flash.bin = FCB (0x400)
-#             + AHAB stack (ELE FW + M33 stub AHAB container) at 0x1000
-#             + Cortex-M7 NuttX payload at 0x20000
+#             + AHAB container (this NuttX image) at 0x1000
+#   Programmed at FlexSPI offset 0 (flash address 0x28000000).  The M33
+#   image is confined to the first 512 KB of NOR.
 #
-# The AHAB stack is assembled by NXP SPSDK "nxpimage".  The build script
-# bootstraps a private SPSDK venv and downloads the NXP-signed ELE FW
-# AHAB container on first run (see tools/imxrt1180/build_flash_image.sh
-# for the license note and cache location).
+# CM7 build (imxrt1180-evk:nsh):
+#   nuttx.bin = raw XIP payload, no FCB and no AHAB container.
+#   Programmed at FlexSPI offset 0x80000 (flash address 0x28080000), i.e.
+#   right after the 512 KB M33 reserve.  The M33 bootloader ("bl" config)
+#   releases the M7 with INITVTOR pointing there.
+#
+# The AHAB container is assembled by NXP SPSDK "nxpimage".  The build
+# script bootstraps a private SPSDK venv on first run (see
+# tools/imxrt1180/build_flash_image.sh for the license note and cache
+# location).
 
-STUB_DIR      = $(BOARD_DIR)$(DELIM)src$(DELIM)m33_stub
-STUB_OUT      = $(TOPDIR)$(DELIM)m33_stub_build
 FLASH_BUILDER = $(TOPDIR)$(DELIM)tools$(DELIM)imxrt1180$(DELIM)build_flash_image.sh
 
+ifeq ($(CONFIG_ARCH_CORTEXM33),y)
 define POSTBUILD
-	$(Q) echo "Building Cortex-M33 boot stub"
-	$(Q) $(MAKE) -C $(STUB_DIR) -f Makefile.stub \
-	     STUB_DIR=$(STUB_DIR) STUB_OUT=$(STUB_OUT) \
-	     CROSS=$(CROSSDEV)
-	$(Q) echo "Assembling MIMXRT1180-EVK FlexSPI NOR image"
+	$(Q) echo "Assembling MIMXRT1180-EVK FlexSPI NOR image (CM33 target)"
 	$(Q) $(OBJCOPY) -O binary -R .bss -R .initstack $(BIN) nuttx.bin
 	$(Q) $(FLASH_BUILDER) \
-	     --stub $(STUB_OUT)/stub.bin \
-	     --nuttx nuttx.bin \
+	     --m33 nuttx.bin \
 	     --out flash.bin
 	$(Q) echo "flash.bin" >> nuttx.manifest
 endef
+else
+define POSTBUILD
+	$(Q) echo "Building MIMXRT1180-EVK Cortex-M7 payload (nuttx.bin)"
+	$(Q) $(OBJCOPY) -O binary -R .bss -R .initstack $(BIN) nuttx.bin
+endef
+endif
