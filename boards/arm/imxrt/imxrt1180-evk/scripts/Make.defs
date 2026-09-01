@@ -1,0 +1,67 @@
+############################################################################
+# boards/arm/imxrt/imxrt1180-evk/scripts/Make.defs
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.  The
+# ASF licenses this file to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance with the
+# License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+############################################################################
+
+include $(TOPDIR)/.config
+include $(TOPDIR)/tools/Config.mk
+include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
+
+LDSCRIPT = flash.ld
+
+ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
+
+ARCHPICFLAGS = -fpic -msingle-pic-base -mpic-register=r10
+
+CFLAGS := $(ARCHCFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
+CPICFLAGS = $(ARCHPICFLAGS) $(CFLAGS)
+CXXFLAGS := $(ARCHCXXFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHXXINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
+CXXPICFLAGS = $(ARCHPICFLAGS) $(CXXFLAGS)
+CPPFLAGS := $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS)
+AFLAGS := $(CFLAGS) -D__ASSEMBLY__
+
+# Post-build: assemble the flashable image.
+#
+#   flash.bin = FCB (0x400)
+#             + AHAB stack (ELE FW + M33 stub AHAB container) at 0x1000
+#             + Cortex-M7 NuttX payload at 0x20000
+#
+# The AHAB stack is assembled by NXP SPSDK "nxpimage".  The build script
+# bootstraps a private SPSDK venv and downloads the NXP-signed ELE FW
+# AHAB container on first run (see tools/imxrt1180/build_flash_image.sh
+# for the license note and cache location).
+
+STUB_DIR      = $(BOARD_DIR)$(DELIM)src$(DELIM)m33_stub
+STUB_OUT      = $(TOPDIR)$(DELIM)m33_stub_build
+FLASH_BUILDER = $(TOPDIR)$(DELIM)tools$(DELIM)imxrt1180$(DELIM)build_flash_image.sh
+
+define POSTBUILD
+	$(Q) echo "Building Cortex-M33 boot stub"
+	$(Q) $(MAKE) -C $(STUB_DIR) -f Makefile.stub \
+	     STUB_DIR=$(STUB_DIR) STUB_OUT=$(STUB_OUT) \
+	     CROSS=$(CROSSDEV)
+	$(Q) echo "Assembling MIMXRT1180-EVK FlexSPI NOR image"
+	$(Q) $(OBJCOPY) -O binary -R .bss -R .initstack $(BIN) nuttx.bin
+	$(Q) $(FLASH_BUILDER) \
+	     --stub $(STUB_OUT)/stub.bin \
+	     --nuttx nuttx.bin \
+	     --out flash.bin
+	$(Q) echo "flash.bin" >> nuttx.manifest
+endef
