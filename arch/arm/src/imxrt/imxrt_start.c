@@ -47,6 +47,10 @@
 #include "imxrt_start.h"
 #include "imxrt_gpio.h"
 
+#ifdef CONFIG_IMXRT_ELE
+#  include "imxrt118x_ele.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -100,6 +104,7 @@ extern const void * const _vectors[];
 
 static inline void imxrt_tcmenable(void)
 {
+#ifdef CONFIG_ARCH_CORTEXM7
   uint32_t regval;
 
   UP_MB();
@@ -131,6 +136,7 @@ static inline void imxrt_tcmenable(void)
 
 #warning Missing logic
 #endif
+#endif /* CONFIG_ARCH_CORTEXM7 */
 }
 
 /****************************************************************************
@@ -239,6 +245,15 @@ void __start(void)
   /* Initialize onboard resources */
 
   imxrt_boardinitialize();
+
+#ifdef CONFIG_IMXRT_ELE
+  /* Bring the EdgeLock Enclave up (load FW, enable APC, take TRDC
+   * ownership, open TRDC access control).  Prerequisite for anything
+   * that later touches restricted peripherals or releases the M7.
+   */
+
+  imxrt118x_ele_init();
+#endif
 
 #ifdef CONFIG_ARM_MPU
 #ifdef CONFIG_BUILD_PROTECTED
