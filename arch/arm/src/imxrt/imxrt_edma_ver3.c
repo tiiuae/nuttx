@@ -68,6 +68,7 @@
 #include "imxrt_lowputc.h"
 
 #include "hardware/imxrt_ccm.h"
+#include "hardware/imxrt_lpuart.h"
 #include "hardware/rt118x/imxrt118x_edma.h"
 #include "hardware/imxrt_dmamux.h"
 
@@ -91,6 +92,165 @@
 #define EDMA_ALIGN        ARMV7M_DCACHE_LINESIZE
 #define EDMA_ALIGN_MASK   (EDMA_ALIGN - 1)
 #define EDMA_ALIGN_UP(n)  (((n) + EDMA_ALIGN_MASK) & ~EDMA_ALIGN_MASK)
+
+/* Raw polled-UART tracing for the eDMA driver.
+ *
+ * When the console LPUART is routed through this eDMA driver, using
+ * syslog / _info / _alert to trace the DMA path recurses back into the
+ * broken path and prints nothing.  When IMXRT_EDMA_RAWTRACE is 1, the
+ * driver bit-bangs bytes directly out of IMXRT_CONSOLE_BASE by polling
+ * STAT[TDRE] and writing DATA[7:0].  This bypasses the NuttX serial
+ * driver, the DMA engine and even TDMAE — the CPU just pushes bytes into
+ * the LPUART TX FIFO the same way imxrt_lowputc() does at boot.
+ *
+ * Set this to 0 to remove the tracing entirely.  Leave it at 1 while
+ * bringing up the DMA path — the extra ~1.5 KB of code and the polling
+ * writes are the price for actually seeing what the hardware is doing.
+ */
+
+#define IMXRT_EDMA_RAWTRACE 1
+
+#if IMXRT_EDMA_RAWTRACE
+
+/* Hard-wired to LPUART1 (the imxrt1180-evk console).  If you're using
+ * this driver to bring up TX DMA on a different LPUART, retarget this
+ * base too or the raw prints will spin waiting for TDRE on the wrong
+ * peripheral.
+ */
+
+#define IMXRT_EDMA_RAWTRACE_BASE IMXRT_LPUART1_BASE
+
+static void imxrt_edma_raw_putc(char c)
+{
+  while ((getreg32(IMXRT_EDMA_RAWTRACE_BASE + IMXRT_LPUART_STAT_OFFSET) &
+          LPUART_STAT_TDRE) == 0);
+  putreg32((uint32_t)(uint8_t)c,
+           IMXRT_EDMA_RAWTRACE_BASE + IMXRT_LPUART_DATA_OFFSET);
+  if (c == '\n')
+    {
+      while ((getreg32(IMXRT_EDMA_RAWTRACE_BASE + IMXRT_LPUART_STAT_OFFSET) &
+              LPUART_STAT_TDRE) == 0);
+      putreg32((uint32_t)'\r',
+               IMXRT_EDMA_RAWTRACE_BASE + IMXRT_LPUART_DATA_OFFSET);
+    }
+}
+
+static void imxrt_edma_raw_puts(const char *s)
+{
+  while (*s)
+    {
+      imxrt_edma_raw_putc(*s++);
+    }
+}
+
+static void imxrt_edma_raw_puthex(uint32_t v, unsigned width)
+{
+  static const char hex[] = "0123456789abcdef";
+  int i;
+
+  for (i = (int)width - 1; i >= 0; i--)
+    {
+      imxrt_edma_raw_putc(hex[(v >> (i * 4)) & 0xf]);
+    }
+}
+
+/* Dump every register the eDMA / LPUART DMA path depends on.  Call this
+ * with base=IMXRT_EDMA_TCD(dmach->base, dmach->chan) and the channel's
+ * dma engine base.
+ */
+
+static void imxrt_edma_raw_dump(const char *tag, uintptr_t engine,
+                                unsigned chan, uintptr_t base,
+                                uintptr_t uartbase)
+{
+  imxrt_edma_raw_puts("[edma:");
+  imxrt_edma_raw_puts(tag);
+  imxrt_edma_raw_puts("] ch=");
+  imxrt_edma_raw_puthex(chan, 2);
+  imxrt_edma_raw_puts(" MP_CSR=");
+  imxrt_edma_raw_puthex(getreg32(engine + IMXRT_EDMA_CSR_OFFSET), 8);
+  imxrt_edma_raw_puts(" MP_ES=");
+  imxrt_edma_raw_puthex(getreg32(engine + IMXRT_EDMA_ES_OFFSET), 8);
+
+  /* HRS location depends on engine */
+
+  if (engine == IMXRT_DMA3_BASE)
+    {
+      imxrt_edma_raw_puts(" HRS=");
+      imxrt_edma_raw_puthex(getreg32(engine + IMXRT_EDMA_HRS_OFFSET), 8);
+      imxrt_edma_raw_puts(" INT=");
+      imxrt_edma_raw_puthex(getreg32(engine + IMXRT_EDMA_INT_OFFSET), 8);
+    }
+  else
+    {
+      imxrt_edma_raw_puts(" HRSL=");
+      imxrt_edma_raw_puthex(getreg32(engine +
+                                     IMXRT_EDMA_HRS_LOW_OFFSET), 8);
+      imxrt_edma_raw_puts(" HRSH=");
+      imxrt_edma_raw_puthex(getreg32(engine +
+                                     IMXRT_EDMA_HRS_HIGH_OFFSET), 8);
+    }
+
+  imxrt_edma_raw_puts("\n  CH_CSR=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_CH_CSR_OFFSET), 8);
+  imxrt_edma_raw_puts(" CH_ES=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_CH_ES_OFFSET), 8);
+  imxrt_edma_raw_puts(" CH_INT=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_CH_INT_OFFSET), 8);
+  imxrt_edma_raw_puts(" CH_MUX=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_CH_MUX_OFFSET), 8);
+  imxrt_edma_raw_puts(" CH_SBR=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_CH_SBR_OFFSET), 8);
+  imxrt_edma_raw_puts("\n  SADDR=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_TCD_SADDR_OFFSET), 8);
+  imxrt_edma_raw_puts(" DADDR=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_TCD_DADDR_OFFSET), 8);
+  imxrt_edma_raw_puts(" NBYTES=");
+  imxrt_edma_raw_puthex(getreg32(base + IMXRT_EDMA_TCD_NBYTES_OFFSET), 8);
+  imxrt_edma_raw_puts(" ATTR=");
+  imxrt_edma_raw_puthex(getreg16(base + IMXRT_EDMA_TCD_ATTR_OFFSET), 4);
+  imxrt_edma_raw_puts(" SOFF=");
+  imxrt_edma_raw_puthex(getreg16(base + IMXRT_EDMA_TCD_SOFF_OFFSET), 4);
+  imxrt_edma_raw_puts(" DOFF=");
+  imxrt_edma_raw_puthex(getreg16(base + IMXRT_EDMA_TCD_DOFF_OFFSET), 4);
+  imxrt_edma_raw_puts(" CITER=");
+  imxrt_edma_raw_puthex(getreg16(base + IMXRT_EDMA_TCD_CITER_OFFSET), 4);
+  imxrt_edma_raw_puts(" BITER=");
+  imxrt_edma_raw_puthex(getreg16(base + IMXRT_EDMA_TCD_BITER_OFFSET), 4);
+  imxrt_edma_raw_puts(" TCD_CSR=");
+  imxrt_edma_raw_puthex(getreg16(base + IMXRT_EDMA_TCD_CSR_OFFSET), 4);
+
+  if (uartbase != 0)
+    {
+      uint32_t baud = getreg32(uartbase + IMXRT_LPUART_BAUD_OFFSET);
+      uint32_t stat = getreg32(uartbase + IMXRT_LPUART_STAT_OFFSET);
+      uint32_t fifo = getreg32(uartbase + IMXRT_LPUART_FIFO_OFFSET);
+      imxrt_edma_raw_puts("\n  LPUART BAUD=");
+      imxrt_edma_raw_puthex(baud, 8);
+      imxrt_edma_raw_puts(" STAT=");
+      imxrt_edma_raw_puthex(stat, 8);
+      imxrt_edma_raw_puts(" FIFO=");
+      imxrt_edma_raw_puthex(fifo, 8);
+      imxrt_edma_raw_puts(" [TDMAE=");
+      imxrt_edma_raw_putc((baud & LPUART_BAUD_TDMAE) ? '1' : '0');
+      imxrt_edma_raw_puts(" TDRE=");
+      imxrt_edma_raw_putc((stat & LPUART_STAT_TDRE) ? '1' : '0');
+      imxrt_edma_raw_puts(" TXFE=");
+      imxrt_edma_raw_putc((fifo & LPUART_FIFO_TXFE) ? '1' : '0');
+      imxrt_edma_raw_puts("]");
+    }
+
+  imxrt_edma_raw_puts("\n");
+}
+
+#  define IMXRT_EDMA_RAW_DUMP(tag, dmach, base, uartbase)                    \
+      imxrt_edma_raw_dump((tag), (dmach)->base, (dmach)->chan, (base),       \
+                          (uartbase))
+#  define IMXRT_EDMA_RAW_PUTS(s)   imxrt_edma_raw_puts(s)
+#else
+#  define IMXRT_EDMA_RAW_DUMP(tag, dmach, base, uartbase) do { } while (0)
+#  define IMXRT_EDMA_RAW_PUTS(s)                          do { } while (0)
+#endif
 
 /****************************************************************************
  * Private Types
@@ -407,7 +567,6 @@ static inline void imxrt_tcd_configure(struct imxrt_edmatcd_s *tcd,
  *
  ****************************************************************************/
 
-#if CONFIG_IMXRT_EDMA_NTCD > 0
 static void imxrt_tcd_instantiate(struct imxrt_dmach_s *dmach,
                                  const struct imxrt_edmatcd_s *tcd)
 {
@@ -433,7 +592,6 @@ static void imxrt_tcd_instantiate(struct imxrt_dmach_s *dmach,
 
   putreg16(tcd->biter,    base + IMXRT_EDMA_TCD_BITER_OFFSET);
 }
-#endif
 
 /****************************************************************************
  * Name: imxrt_dmaterminate
@@ -571,6 +729,9 @@ static int imxrt_edma_isr(int irq, void *context, void *arg)
   chan  = dmach->chan;
   base  = IMXRT_EDMA_TCD(dmach->base, dmach->chan);
 
+  IMXRT_EDMA_RAW_PUTS("isr enter\n");
+  IMXRT_EDMA_RAW_DUMP("isr", dmach, base, IMXRT_LPUART1_BASE);
+
   /* Get the eDMA Error Status register value. */
 
   errval32  = getreg32(base + IMXRT_EDMA_CH_ES_OFFSET);
@@ -705,11 +866,27 @@ static void imxrt_edma_configure(uintptr_t base)
 {
   uint32_t regval;
 
-  /* Configure the eDMA controllers */
+  /* Configure the eDMA controllers.
+   *
+   * We must clear MP_CSR[HALT] here.  With HAE=1 the eDMA latches HALT on
+   * any error and halts every channel of the engine until software writes
+   * HALT back to 0.  If prior firmware or a spurious probe error left HALT
+   * set, every subsequent DMA request would be ignored silently.
+   *
+   * Enable MP_CSR[GMRC] (Global Master-ID Replication Control) so each
+   * channel's CH_SBR[EMI] can be programmed.  With EMI=1 (set in
+   * imxrt_dmach_alloc()) the DMA transfer inherits the MID/SEC/PAL of
+   * whoever wrote CH_SBR (the M7 in our case), rather than the eDMA's
+   * fixed reset MID.  This lets DMA writes reuse the M7's TRDC access
+   * rights, which is important on iMXRT1180 where the eDMA3 master's
+   * own domain is closed for AIPS1 peripherals like LPUART1.
+   */
 
   regval = getreg32(IMXRT_EDMA_CSR(base));
-  regval &= ~(EDMA_CSR_EDBG | EDMA_CSR_ERCA | EDMA_CSR_HAE | EDMA_CSR_GCLC |
-              EDMA_CSR_GMRC);
+  regval &= ~(EDMA_CSR_EDBG | EDMA_CSR_ERCA | EDMA_CSR_HAE | EDMA_CSR_HALT |
+              EDMA_CSR_GCLC | EDMA_CSR_GMRC);
+
+  regval |= EDMA_CSR_GMRC;
 
 #ifdef CONFIG_IMXRT_EDMA_EDBG
   regval |= EDMA_CSR_EDBG;   /* Enable Debug */
@@ -793,16 +970,30 @@ void weak_function arm_dma_initialize(void)
 
   dmainfo("Initialize eDMA\n");
 
-  /* Enable root clock */
-
-  imx9_ccm_configure_root_clock(CCM_CR_WAKEUPAXI, SYS_PLL1PFD0, 4);
-
-  /* Configure the instances */
+  /* Configure the instances.
+   *
+   * Per the iMXRT1180 RM (Table 133 "Clock Roots" and Table 133 "LPCGs"):
+   *
+   *   eDMA3 (LPCG29) is clocked from m33_clk_root.  That root is already
+   *   configured by the M33 boot ROM to a rate suitable for the M33 domain
+   *   (max 300 MHz HSRUN / 240 MHz RUN) so we only need to enable the LPCG.
+   *
+   *   eDMA4 (LPCG30) is clocked from wakeup_axi_clk_root.  Configure that
+   *   root here before enabling the gate.  The max wakeup_axi rate per RM
+   *   is 240 MHz in HSRUN (Over-Drive), 200 MHz in RUN and 100 MHz in
+   *   Under-Drive.  SYS_PLL3_OUT (480 MHz) / 2 = 240 MHz matches the NXP
+   *   SDK's clock_config for this SoC and assumes the boot ROM left VDD_SOC
+   *   in Over-Drive (as required to run FlexSPI1 XIP at speed on the M7).
+   *
+   *   The CCM GPR "m33_mask_edma3/4" bits (GPR_SHARED2 BIT2 / BIT3) only
+   *   mask the M33's low-power-state control to the eDMA blocks, so their
+   *   reset value (0) is fine for normal operation.
+   */
 
   dmach = &g_edma.dmach[0];
 
 #ifdef IMXRT_DMA3_BASE
-  /* Enable peripheral clock */
+  /* Enable peripheral clock (eDMA3: m33_clk_root, LPCG29) */
 
   imxrt_ccm_gate_on(CCM_LPCG_EDMA3, true);
 
@@ -820,7 +1011,14 @@ void weak_function arm_dma_initialize(void)
 #endif
 
 #ifdef IMXRT_DMA4_BASE
-  /* Enable peripheral clock */
+  /* Configure eDMA4's clock root and enable its LPCG.
+   *
+   * wakeup_axi_clk_root = SYS_PLL3_OUT (480 MHz) / 2 = 240 MHz.
+   */
+
+  imxrt_ccm_configure_root_clock(CCM_CR_WAKEUP_AXI, SYS_PLL3_OUT, 2);
+
+  /* Enable peripheral clock (eDMA4: wakeup_axi_clk_root, LPCG30) */
 
   imxrt_ccm_gate_on(CCM_LPCG_EDMA4, true);
 
@@ -1179,6 +1377,8 @@ int imxrt_dmach_xfrsetup(DMACH_HANDLE handle,
   up_clean_dcache((uintptr_t)tcd,
                   (uintptr_t)tcd + sizeof(struct imxrt_edmatcd_s));
 #else
+  struct imxrt_edmatcd_s tcd_mem;
+  struct imxrt_edmatcd_s *tcd = &tcd_mem;
 
   /* Scatter/gather DMA is NOT supported */
 
@@ -1193,17 +1393,24 @@ int imxrt_dmach_xfrsetup(DMACH_HANDLE handle,
       return -EBUSY;
     }
 
-  /* Configure channel TCD registers to the values specified in config. */
+  /* Build the TCD in a stack local so the field writes cannot be reordered
+   * or coalesced by the compiler, then push it into the hardware TCD
+   * registers via putreg*() writes in a defined order.
+   */
 
-  imxrt_tcd_configure((struct imxrt_edmatcd_s *)
-                     (base + IMXRT_EDMA_TCD_SADDR_OFFSET), config);
+  imxrt_tcd_configure(tcd, config);
 
   /* Enable the DONE interrupt when the major iteration count completes. */
 
-  modifyreg16(base + IMXRT_EDMA_TCD_CSR_OFFSET, 0, EDMA_TCD_CSR_INTMAJOR);
+  tcd->csr |= EDMA_TCD_CSR_INTMAJOR;
+
+  imxrt_tcd_instantiate(dmach, tcd);
 #endif
 
   dmach->state = IMXRT_DMA_CONFIGURED;
+
+  IMXRT_EDMA_RAW_PUTS("xfrsetup done\n");
+  IMXRT_EDMA_RAW_DUMP("cfg", dmach, base, IMXRT_LPUART1_BASE);
   return OK;
 }
 
@@ -1275,6 +1482,9 @@ int imxrt_dmach_start(DMACH_HANDLE handle, edma_callback_t callback,
     }
 
   spin_unlock_irqrestore(&g_edma.lock, flags);
+
+  IMXRT_EDMA_RAW_PUTS("dmach_start: after ERQ\n");
+  IMXRT_EDMA_RAW_DUMP("start", dmach, base, IMXRT_LPUART1_BASE);
   return OK;
 }
 
