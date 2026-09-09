@@ -369,7 +369,7 @@ struct imxrt_usbdev_s
 
   uint8_t                 ep0state;      /* State of certain EP0 operations */
                                          /* buffer for EP0 short transfers */
-  uint8_t                 ep0buf[64] CACHE_ALIGNED_DATA;
+  uint8_t                *ep0buf;
   uint8_t                 paddr;         /* Address assigned by SETADDRESS */
   uint8_t                 stalled:1;     /* 1: Protocol stalled */
   uint8_t                 selfpowered:1; /* 1: Device is self powered */
@@ -389,6 +389,8 @@ struct imxrt_usbdev_s
 
   struct imxrt_ep_s       eplist[IMXRT_NPHYSENDPOINTS];
 };
+
+#define IMXRT_EP0BUF_SIZE         64       /* Size of the EP0 short transfer buffer */
 
 #define EP0STATE_IDLE             0        /* Idle State, leave on receiving a setup packet or epsubmit */
 #define EP0STATE_SETUP_OUT        1        /* Setup Packet received - SET/CLEAR */
@@ -514,10 +516,16 @@ static int         imxrt_pullup(struct usbdev_s *dev, bool enable);
 static struct imxrt_usbdev_s g_usbdev;
 
 static struct imxrt_dqh_s g_qh[IMXRT_NPHYSENDPOINTS]
+                               locate_data(".dmamemory")
                                aligned_data(2048);
 
 static struct imxrt_dtd_s g_td[IMXRT_NPHYSENDPOINTS]
+                               locate_data(".dmamemory")
                                aligned_data(32);
+
+static uint8_t g_ep0buf[IMXRT_EP0BUF_SIZE]
+                        locate_data(".dmamemory")
+                        aligned_data(32);
 
 static const struct usbdev_epops_s g_epops =
 {
@@ -1715,7 +1723,7 @@ static void imxrt_ep0complete(struct imxrt_usbdev_s *priv, uint8_t epphy)
        */
 
       up_invalidate_dcache((uintptr_t)priv->ep0buf,
-                           (uintptr_t)priv->ep0buf + sizeof(priv->ep0buf));
+                           (uintptr_t)priv->ep0buf + IMXRT_EP0BUF_SIZE);
 
       imxrt_dispatchrequest(priv, &priv->ep0ctrl);
       imxrt_ep0state(priv, EP0STATE_WAIT_NAK_IN);
@@ -2831,6 +2839,7 @@ void arm_usbinitialize(void)
   priv->usbdev.ops = &g_devops;
   priv->usbdev.ep0 = &priv->eplist[IMXRT_EP0_IN].ep;
   priv->epavail    = IMXRT_EPALLSET & ~IMXRT_EPCTRLSET;
+  priv->ep0buf     = g_ep0buf;
 
   /* Initialize the endpoint list */
 
@@ -2885,7 +2894,7 @@ void arm_usbinitialize(void)
 
   imxrt_clockall_usboh3();
 
-#ifdef CONFIG_ARCH_FAMILY_IMXRT117x
+#if defined(CONFIG_ARCH_FAMILY_IMXRT117x) || defined(CONFIG_ARCH_FAMILY_IMXRT118x)
   up_mdelay(1);
 
   putreg32(USBPHY1_PLL_SIC_PLL_POWER |
