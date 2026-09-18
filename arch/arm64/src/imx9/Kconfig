@@ -82,6 +82,7 @@ config IMX9_BOOTLOADER
 	bool "Bootloader"
 	select ARM64_DECODEFIQ if ARCH_ARM64_EXCEPTION_LEVEL = 3
 	select IMX9_DDR_TRAINING if ARCH_ARM64_EXCEPTION_LEVEL = 3
+	select IMX9_ELE
 	default n
 	---help---
 		Configure NuttX as the bootloader. NuttX will be compiled
@@ -126,7 +127,29 @@ config IMX_AHAB_CNTR_ADDR
 	---help---
 		Physical address where the AHAB container header is loaded into memory.
 
+config IMX9_ELE
+	bool "EdgeLock Enclave (ELE) services"
+	default n
+	---help---
+		Build the ELE message interface. Selected automatically by the
+		bootloader, which needs it for secure boot. Select it directly to
+		reach ELE services, such as the true random number generator, from
+		the application core.
+
+		The ELE addresses its buffers physically, so a caller on the
+		application core must pass memory whose physical address it knows.
+
 menu "i.MX9 Peripheral Selection"
+
+config IMX9_RNG
+	bool "ELE true random number generator"
+	depends on IMX9_ELE
+	default n
+	select ARCH_HAVE_RNG
+	---help---
+		Register /dev/random and /dev/urandom, both backed by the ELE
+		true random number generator. Without this the entropy pool is
+		never seeded from hardware.
 
 config IMX9_EDMA
 	bool "eDMA"
