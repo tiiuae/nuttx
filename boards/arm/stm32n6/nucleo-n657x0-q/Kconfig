@@ -22,7 +22,8 @@ config NUCLEO_N657X0_Q_BOOT_SRAM
 		plain "load" from GDB and no external flash is involved.
 
 		Nothing is retained across a power cycle: the board has to be
-		re-loaded by the debugger on every boot.
+		re-loaded by the debugger on every boot.  tools/sramload.sh does
+		that with STM32_Programmer_CLI.
 
 		Uses scripts/sram.ld.
 
