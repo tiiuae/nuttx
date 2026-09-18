@@ -22,6 +22,10 @@
 
 set(SRCS stm32_boot.c stm32_bringup.c)
 
+if(CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI)
+  list(APPEND SRCS stm32_xipboot.S)
+endif()
+
 if(CONFIG_ARCH_LEDS)
   list(APPEND SRCS stm32_autoleds.c)
 else()
@@ -30,4 +34,14 @@ endif()
 
 target_sources(board PRIVATE ${SRCS})
 
-set_property(GLOBAL PROPERTY LD_SCRIPT "${NUTTX_BOARD_DIR}/scripts/flash.ld")
+# The STM32N657X0 has no internal flash: either the image is downloaded
+# straight into SRAM by the debugger (DEV boot mode), or it is stored in the
+# external Octo-SPI NOR on XSPI2 and copied to SRAM at startup.
+
+if(CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI)
+  set(LDSCRIPT flash.ld)
+else()
+  set(LDSCRIPT sram.ld)
+endif()
+
+set_property(GLOBAL PROPERTY LD_SCRIPT "${NUTTX_BOARD_DIR}/scripts/${LDSCRIPT}")

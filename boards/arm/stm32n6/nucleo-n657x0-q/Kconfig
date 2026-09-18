@@ -5,4 +5,47 @@
 
 if ARCH_BOARD_NUCLEO_N657X0_Q
 
+choice
+	prompt "Boot configuration"
+	default NUCLEO_N657X0_Q_BOOT_SRAM
+	---help---
+		The STM32N657X0 has no internal flash, so where the image lives has
+		to be decided at build time.  This selects the linker script and the
+		startup path used for the build.
+
+config NUCLEO_N657X0_Q_BOOT_SRAM
+	bool "DEV boot mode (image downloaded into SRAM)"
+	---help---
+		Link everything to run from AXISRAM at 0x34000400 and load it there
+		directly, which is what the ST-Link does in DEV boot mode.  This is
+		the quickest edit/debug cycle: the image can be downloaded with a
+		plain "load" from GDB and no external flash is involved.
+
+		Nothing is retained across a power cycle: the board has to be
+		re-loaded by the debugger on every boot.
+
+		Uses scripts/sram.ld.
+
+config NUCLEO_N657X0_Q_BOOT_XSPI
+	bool "Boot from external XSPI2 NOR flash"
+	---help---
+		Store the image in the external Octo-SPI NOR flash (MX25UM51245G,
+		memory mapped at 0x70000000 on XSPI2) so that the board boots
+		standalone.
+
+		The image still *runs* from AXISRAM: the boot ROM branches to a
+		small in-flash stub (src/stm32_xipboot.S) which copies the image
+		from flash to SRAM and jumps to it.
+
+		The build produces nuttx-signed.bin, i.e. nuttx.bin wrapped in an
+		STM32 v2.3 boot header by tools/mkimage.sh.  That requires
+		STM32_SigningTool_CLI, which is looked up via the STM32_PRG_PATH
+		environment variable.  Program the result at 0x70000000 with the
+		boot switches in DEV boot mode, then switch them to boot-from-flash
+		and reset.
+
+		Uses scripts/flash.ld.
+
+endchoice # Boot configuration
+
 endif
