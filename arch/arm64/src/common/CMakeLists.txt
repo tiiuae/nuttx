@@ -68,7 +68,7 @@ if(CONFIG_ARCH_HAVE_EL3)
 endif()
 
 if(CONFIG_ARCH_HAVE_MMU)
-  list(APPEND SRCS arm64_mmu.c)
+  list(APPEND SRCS arm64_mmu.c arm64_physpgaddr.c)
 endif()
 
 if(CONFIG_ARM64_MTE)

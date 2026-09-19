@@ -76,7 +76,7 @@ CMN_ASRCS += arm64_smccc.S
 endif
 
 ifeq ($(CONFIG_ARCH_HAVE_MMU),y)
-CMN_CSRCS += arm64_mmu.c
+CMN_CSRCS += arm64_mmu.c arm64_physpgaddr.c
 endif
 
 ifeq ($(CONFIG_ARM64_MTE),y)
