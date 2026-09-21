@@ -56,6 +56,7 @@ int imxrt_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize DMA allocator: %d\n",
              ret);
+      return ret;
     }
 #endif
 
