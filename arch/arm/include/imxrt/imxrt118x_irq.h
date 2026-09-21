@@ -273,10 +273,14 @@
 #define IMXRT_IRQ_ASRC                                (IMXRT_IRQ_EXTINT + 235)
 #define IMXRT_IRQ_GPIO6                               (IMXRT_IRQ_EXTINT + 236)
 #define IMXRT_IRQ_DBG_TRACE                           (IMXRT_IRQ_EXTINT + 237)
+#define IMXRT_IRQ_ECAT_RESET_OUT                      (IMXRT_IRQ_EXTINT + 238)
+#define IMXRT_IRQ_EDGELOCK                            (IMXRT_IRQ_EXTINT + 239)
 
-/* Total number of external interrupts (matches the SDK IRQn_Type range). */
+/* Total number of external interrupts (IMXRT1180RM Table 11 lists IRQ
+ * 0..239, i.e. 240 external interrupts).
+ */
 
-#define IMXRT_IRQ_NEXTINT        (238)
+#define IMXRT_IRQ_NEXTINT        (240)
 
 /* Interrupt count for the M33 core on imxrt118x. */
 
