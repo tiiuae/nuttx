@@ -68,9 +68,9 @@ MEMORY
 
     flash (rx) : ORIGIN = 0x70000400, LENGTH = 64M - 0x400
 
-    /* AXISRAM, minus the 1 KiB boot ROM header area */
+    /* AXI SRAM2, minus the 1 KiB boot ROM header area */
 
-    sram (rwx) : ORIGIN = 0x34000400, LENGTH = 4193280
+    sram (rwx) : ORIGIN = 0x34180400, LENGTH = 511k
 }
 
 OUTPUT_ARCH(arm)
