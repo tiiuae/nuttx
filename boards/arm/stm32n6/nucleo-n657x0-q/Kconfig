@@ -13,6 +13,7 @@ choice
 		to be decided at build time.  This selects the linker script and the
 		startup path used for the build.
 
+
 config NUCLEO_N657X0_Q_BOOT_SRAM
 	bool "DEV boot mode (image downloaded into SRAM)"
 	---help---
@@ -48,5 +49,19 @@ config NUCLEO_N657X0_Q_BOOT_XSPI
 		Uses scripts/flash.ld.
 
 endchoice # Boot configuration
+
+config NUCLEO_N657X0_Q_BOOTLOADER
+	bool "Build SRAM2 bootloader image"
+	depends on !NUCLEO_N657X0_Q_BOOT_XSPI
+	---help---
+		Build a small NuttX bootloader that the STM32N6 boot ROM loads from
+		external XSPI2 flash into AXI SRAM2 at 0x34180000.  The linked image
+		starts at 0x34180400, after the boot ROM's 1 KiB context area, and
+		runs bootloader_main().
+
+		This is separate from the boot-mode choice: it uses scripts/bl_flash.ld
+		and is packaged with a ROM load address of 0x34180000.  It must not be
+		combined with CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI, which is the XIP-stub
+		configuration.
 
 endif

@@ -69,7 +69,6 @@ MEMORY
     flash (rx) : ORIGIN = 0x70000400, LENGTH = 64M - 0x400
 
     /* AXI SRAM2, minus the 1 KiB boot ROM header area */
-
     sram (rwx) : ORIGIN = 0x34180400, LENGTH = 511k
 }
 
@@ -82,8 +81,8 @@ EXTERN(_flash_start)
 
 SECTIONS
 {
-    /* The XIP loader stub.  This is the only code that ever executes from
-     * the memory-mapped flash, so it is linked (VMA) in flash as well.
+    /* The XIP loader stub.  This is the only code that executes from the
+     * memory-mapped flash, so it is linked in flash as well.
      */
 
     .xipboot : {

@@ -130,37 +130,63 @@ SIGNTOOL="$STM32_PRG_PATH/STM32_SigningTool_CLI"
 
 PAYLOAD_BASE=$(printf "0x%x" $((FLASHBASE + PAYLOAD_OFFSET)))
 
+# 0xffffffff selects XIP.  Any other load address selects LRUN: the boot ROM
+# copies the payload to LOADADDR and branches to its SRAM entry point.
+
+if [ "$LOADADDR" = "0xffffffff" ] || [ "$LOADADDR" = "0xFFFFFFFF" ]; then
+  XIP=1
+else
+  XIP=0
+fi
+
 if [ -f "$ELF" ]; then
   xipboot_lma=$("${CROSSDEV}objdump" -h "$ELF" 2>/dev/null |
                 awk '$2 == ".xipboot" { print "0x" $5 }')
 
-  if [ -n "$xipboot_lma" ]; then
-    if [ $((xipboot_lma)) -ne $((PAYLOAD_BASE)) ]; then
+  if [ -z "$ENTRY" ]; then
+    ENTRY=$("${CROSSDEV}readelf" -h "$ELF" 2>/dev/null |
+            awk '/Entry point address/ { print $NF }')
+    if [ -z "$ENTRY" ] || [ $((ENTRY)) -eq 0 ]; then
+      ENTRY=
+    fi
+  fi
+
+  if [ "$XIP" -eq 1 ]; then
+    [ -n "$xipboot_lma" ] ||
+      echo "$progname: WARNING: no .xipboot section in '$ELF';" \
+           "is this an XIP build?" 1>&2
+
+    if [ -n "$xipboot_lma" ] &&
+       [ $((xipboot_lma)) -ne $((PAYLOAD_BASE)) ]; then
       die ".xipboot is loaded at $xipboot_lma but the header puts the payload
        at $PAYLOAD_BASE.  Update ORIGIN of the 'flash' region in
        scripts/flash.ld, or pass --offset/--flash-base."
     fi
 
-    # Only trust the ELF entry point when this really is an external-flash
-    # build.  It already carries the Thumb bit.
-
-    if [ -z "$ENTRY" ]; then
-      ENTRY=$("${CROSSDEV}readelf" -h "$ELF" 2>/dev/null |
-              awk '/Entry point address/ { print $NF }')
-      if [ -z "$ENTRY" ] || [ $((ENTRY)) -eq 0 ]; then
-        ENTRY=
-      fi
+    if [ -n "$ENTRY" ] &&
+       { [ $((ENTRY)) -lt $((FLASHBASE)) ] ||
+         [ $((ENTRY)) -ge $((FLASHBASE + 0x4000000)) ]; }; then
+      die "the ELF entry point $ENTRY is outside external flash; an XIP image
+       must enter the .xipboot stub in the flash window."
     fi
   else
-    echo "$progname: WARNING: no .xipboot section in '$ELF';" \
-         "is this an external-flash build?" 1>&2
+    if [ -n "$ENTRY" ] && [ $((ENTRY)) -ge $((FLASHBASE)) ]; then
+      die "the ELF entry point $ENTRY is in external flash, but the header
+       requests an SRAM load at $LOADADDR."
+    fi
   fi
 fi
 
-# Fall back to the first instruction of the payload.  Bit 0 is set because
-# the ROM branches to the entry point and the Cortex-M55 is Thumb only.
+# Fall back to the first instruction of the selected execution region.  Bit 0
+# selects Thumb state, required by the Cortex-M55.
 
-[ -n "$ENTRY" ] || ENTRY=$(printf "0x%x" $((PAYLOAD_BASE | 1)))
+if [ -z "$ENTRY" ]; then
+  if [ "$XIP" -eq 1 ]; then
+    ENTRY=$(printf "0x%x" $((PAYLOAD_BASE | 1)))
+  else
+    ENTRY=$(printf "0x%x" $((LOADADDR | 1)))
+  fi
+fi
 
 # Package #####################################################################
 

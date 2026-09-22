@@ -184,11 +184,5 @@ fi
 cat <<EOF
 $progname: done.  To run it:
     1. set the boot switches to boot-from-flash
-    2. press NRST
-    3. the console appears on USART1 via the ST-LINK VCP
-
-Note that the debug port is not available in boot-from-flash mode, so
-switch back to DEV boot mode before using sramload.sh or the debugger
-again.  See CONFIG_NUCLEO_N657X0_Q_XIPBOOT_TRACE for diagnosing a boot
-that does not reach NSH.
+    2. press NRST (or power cycle)
 EOF
