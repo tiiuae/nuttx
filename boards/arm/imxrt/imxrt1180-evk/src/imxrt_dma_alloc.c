@@ -61,15 +61,13 @@
  * overhead and other endpoints.
  */
 
-#define IMXRT_DMA_POOL_SIZE   (6 * 1024)
-
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
 static GRAN_HANDLE g_dma_allocator;
 
-static uint8_t g_dma_heap[IMXRT_DMA_POOL_SIZE]
+static uint8_t g_dma_heap[CONFIG_IMXRT_DMA_POOL_SIZE]
                           locate_data(".dmamemory")
                           aligned_data(32);
 

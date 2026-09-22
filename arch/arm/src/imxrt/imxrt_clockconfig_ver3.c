@@ -502,6 +502,17 @@ int imxrt_get_rootclock(uint32_t clkroot, uint32_t *frequency)
 void imxrt_clockconfig(void)
 {
 #ifdef CONFIG_ARCH_CHIP_MIMXRT1189CVM8C_CM33
+  /* The boot ROM leaves the clock-root authorization list open. This
+   * clockconfig closes it after completing clock setup.  Use that bit
+   * the check it clockconfig is already made.
+   */
+
+  if ((getreg32(IMXRT_CCM_CR_AUTH(CCM_CR_M33)) &
+       CCM_CR_AUTH_LOCK_LIST) != 0)
+    {
+      return;
+    }
+
   /* Raise VDD1P0 to the HSRUN (OverDrive) level.  Both cores share this
    * rail and the M33 is the boot core, so it does this on behalf of both.
    *
