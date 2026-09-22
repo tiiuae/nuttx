@@ -32,9 +32,18 @@ MEMORY
 
     flash (rx)  : ORIGIN = 0x70100400, LENGTH = 63M - 0x400
 
-    /* AXI SRAM, excluding the 1 KiB boot-ROM context area. */
+    /* AXI SRAM, excluding the 1 KiB boot-ROM context area.
+     *
+     * The contiguous AXISRAM1+AXISRAM2 block runs from 0x34000000 to
+     * 0x34200000, so only 511 KiB remains above the ROM context area.
+     * This matches ST's own FSBL templates, which use
+     * "ORIGIN = 0x34180400, LENGTH = 511K".  AXISRAM3..6 are not
+     * contiguous with this block and cannot simply extend it: sizing the
+     * region past 0x34200000 makes mm_initialize() fault when it writes
+     * the heap's tail node at the far end.
+     */
 
-    sram (rwx)  : ORIGIN = 0x34180400, LENGTH = 4095K
+    sram (rwx)  : ORIGIN = 0x34180400, LENGTH = 511K
 }
 
 OUTPUT_ARCH(arm)
