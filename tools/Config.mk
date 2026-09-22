@@ -728,9 +728,29 @@ $(1)_$(2):
 
 endef
 
-export DEFINE_PREFIX ?= $(subst X,,${shell $(DEFINE) "$(CC)" X 2> ${EMPTYFILE}})
-export INCDIR_PREFIX ?= $(subst "X",,${shell $(INCDIR) "$(CC)" X 2> ${EMPTYFILE}})
-export INCSYSDIR_PREFIX ?= $(subst "X",,${shell $(INCDIR) -s "$(CC)" X 2> ${EMPTYFILE}})
+# Each of these compiler prefix probes spawns a shell (tools/define.sh and
+# tools/incdir.sh).  "?=" defines them as recursively expanded variables, so
+# the probe re-runs on every single reference - and they are referenced by
+# the ARCHDEFINES/ARCHINCLUDES below, which are in turn expanded for every
+# compilation rule.  Use simply expanded variables so each probe runs only
+# once per make invocation, and keep the "?=" semantics of not overriding a
+# value already provided (i.e. exported by a parent make).
+
+ifeq ($(origin DEFINE_PREFIX),undefined)
+  DEFINE_PREFIX := $(subst X,,${shell $(DEFINE) "$(CC)" X 2> ${EMPTYFILE}})
+endif
+
+ifeq ($(origin INCDIR_PREFIX),undefined)
+  INCDIR_PREFIX := $(subst "X",,${shell $(INCDIR) "$(CC)" X 2> ${EMPTYFILE}})
+endif
+
+ifeq ($(origin INCSYSDIR_PREFIX),undefined)
+  INCSYSDIR_PREFIX := $(subst "X",,${shell $(INCDIR) -s "$(CC)" X 2> ${EMPTYFILE}})
+endif
+
+export DEFINE_PREFIX
+export INCDIR_PREFIX
+export INCSYSDIR_PREFIX
 
 # ARCHxxx means the predefined setting(either toolchain, arch, or system specific)
 ARCHDEFINES += ${DEFINE_PREFIX}__NuttX__
