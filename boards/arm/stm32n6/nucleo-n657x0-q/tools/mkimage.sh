@@ -24,11 +24,9 @@
 # Wrap nuttx.bin in an STM32 v2.3 boot header so that the STM32N6 boot ROM
 # accepts it from the external Octo-SPI NOR flash on XSPI2.
 #
-# The header declares a load address of 0xffffffff, which tells the ROM
-# "execute in place, do not relocate".  The ROM therefore leaves XSPI2 in
-# memory-mapped mode and branches straight to the entry point, which is the
-# _flash_start stub in src/stm32_xipboot.S.  That stub is what copies the
-# image from flash into SRAM (see scripts/flash.ld).
+# A load address of 0xffffffff selects XIP.  The `nsh-xspi` configuration is
+# chain-loaded by the SRAM2 bootloader, but still uses this header format and
+# its payload is linked at 0x70100400 (after the header at 0x70100000).
 #
 # The "-align" option makes the signing tool pad the header out to 0x400
 # bytes, which matches ORIGIN of the "flash" region in scripts/flash.ld.
@@ -140,8 +138,8 @@ else
 fi
 
 if [ -f "$ELF" ]; then
-  xipboot_lma=$("${CROSSDEV}objdump" -h "$ELF" 2>/dev/null |
-                awk '$2 == ".xipboot" { print "0x" $5 }')
+  payload_lma=$("${CROSSDEV}objdump" -h "$ELF" 2>/dev/null |
+                awk '$2 == ".text" { print "0x" $5 }')
 
   if [ -z "$ENTRY" ]; then
     ENTRY=$("${CROSSDEV}readelf" -h "$ELF" 2>/dev/null |
@@ -152,13 +150,11 @@ if [ -f "$ELF" ]; then
   fi
 
   if [ "$XIP" -eq 1 ]; then
-    [ -n "$xipboot_lma" ] ||
-      echo "$progname: WARNING: no .xipboot section in '$ELF';" \
-           "is this an XIP build?" 1>&2
+    [ -n "$payload_lma" ] ||
+      die "no .text section found in '$ELF'; cannot verify the XIP payload"
 
-    if [ -n "$xipboot_lma" ] &&
-       [ $((xipboot_lma)) -ne $((PAYLOAD_BASE)) ]; then
-      die ".xipboot is loaded at $xipboot_lma but the header puts the payload
+    if [ $((payload_lma)) -ne $((PAYLOAD_BASE)) ]; then
+      die ".text is loaded at $payload_lma but the header puts the payload
        at $PAYLOAD_BASE.  Update ORIGIN of the 'flash' region in
        scripts/flash.ld, or pass --offset/--flash-base."
     fi

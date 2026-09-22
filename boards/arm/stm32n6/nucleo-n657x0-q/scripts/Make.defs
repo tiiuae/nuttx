@@ -24,9 +24,9 @@ include ${TOPDIR}/.config
 include ${TOPDIR}/tools/Config.mk
 include ${TOPDIR}/arch/arm/src/armv8-m/Toolchain.defs
 
-# The STM32N657X0 has no internal flash, so the image either runs from SRAM
-# where the debugger put it (DEV boot mode), or it is stored in the external
-# Octo-SPI NOR on XSPI2 and copied to SRAM at startup.  See the board Kconfig.
+# The STM32N657X0 has no internal flash.  The production image is stored in
+# the external Octo-SPI NOR on XSPI2 and executes in place after the SRAM2
+# bootloader has configured the flash interface.  See the board Kconfig.
 
 ifeq ($(CONFIG_NUCLEO_N657X0_Q_BOOTLOADER),y)
 LDSCRIPT = bl_flash.ld
@@ -38,11 +38,6 @@ endif
 
 ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
 
-# Toolchain.defs selects __start by default.  The XIP image must instead
-# enter the in-flash relocation stub before __start is present in SRAM.
-ifeq ($(CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI),y)
-LDFLAGS += --entry=_flash_start
-endif
 
 CFLAGS := $(ARCHCFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS)
 CXXFLAGS := $(ARCHCXXFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHXXINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS)
@@ -58,7 +53,8 @@ LDNXFLATFLAGS = -e main -s 2048
 # STM32_SigningTool_CLI, which is expected in $(STM32_PRG_PATH), i.e. the
 # STM32CubeProgrammer "bin" directory.
 #
-# The result, nuttx-signed.bin, is what gets programmed at 0x70000000.  If
+# The bootloader result, bl-signed.bin, is programmed at 0x70000000.  The
+# XIP application result, nuttx-signed.bin, is programmed at 0x70100000.  If
 # STM32_PRG_PATH is unset the step is skipped with a warning so that a plain
 # "make" still succeeds on machines without STM32CubeProgrammer installed.
 
@@ -70,6 +66,12 @@ ifeq ($(CONFIG_NUCLEO_N657X0_Q_BOOTLOADER),y)
 # LRUN: the boot ROM copies the payload to the SRAM2 bank base, then enters
 # the linked image at _stext (0x34180400).
 MKIMAGE_FLAGS = --load 0x34180000
+MKIMAGE_OUTPUT = bl-flash.bin
+else
+# Reserve the first MiB for the bootloader; this XIP application and its
+# STM32 header start at 0x70100000.
+MKIMAGE_FLAGS = --flash-base 0x70100000
+MKIMAGE_OUTPUT = nuttx-flash.bin
 endif
 
 define POSTBUILD
@@ -77,8 +79,8 @@ define POSTBUILD
 		echo "WARNING: STM32_PRG_PATH is not set; skipping STM32 image packaging."; \
 		echo "         nuttx.bin cannot be booted from external flash as-is."; \
 	else \
-		$(MKIMAGE) -e nuttx -i nuttx.bin -o nuttx-signed.bin $(MKIMAGE_FLAGS) && \
-		echo nuttx-signed.bin >> nuttx.manifest; \
+		$(MKIMAGE) -e nuttx -i nuttx.bin -o $(MKIMAGE_OUTPUT) $(MKIMAGE_FLAGS) && \
+		echo $(MKIMAGE_OUTPUT) >> nuttx.manifest; \
 	fi
 endef
 

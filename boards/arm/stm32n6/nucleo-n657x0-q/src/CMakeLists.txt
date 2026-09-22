@@ -22,8 +22,8 @@
 
 set(SRCS stm32_boot.c stm32_bringup.c)
 
-if(CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI)
-  list(APPEND SRCS stm32_xipboot.S)
+if(CONFIG_NUCLEO_N657X0_Q_BOOTLOADER)
+  list(APPEND SRCS stm32_bootloader.c)
 endif()
 
 if(CONFIG_ARCH_LEDS)
@@ -34,11 +34,12 @@ endif()
 
 target_sources(board PRIVATE ${SRCS})
 
-# The STM32N657X0 has no internal flash: either the image is downloaded
-# straight into SRAM by the debugger (DEV boot mode), or it is stored in the
-# external Octo-SPI NOR on XSPI2 and copied to SRAM at startup.
+# The production application executes in place from XSPI2 after the SRAM2
+# bootloader configures the flash interface.
 
-if(CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI)
+if(CONFIG_NUCLEO_N657X0_Q_BOOTLOADER)
+  set(LDSCRIPT bl_flash.ld)
+elseif(CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI)
   set(LDSCRIPT flash.ld)
 else()
   set(LDSCRIPT sram.ld)

@@ -31,20 +31,20 @@ config NUCLEO_N657X0_Q_BOOT_SRAM
 config NUCLEO_N657X0_Q_BOOT_XSPI
 	bool "Boot from external XSPI2 NOR flash"
 	---help---
-		Store the image in the external Octo-SPI NOR flash (MX25UM51245G,
-		memory mapped at 0x70000000 on XSPI2) so that the board boots
-		standalone.
+		Build the second-stage application for the external Octo-SPI NOR
+		(MX25UM51245G) on XSPI2.  The signed image is programmed at
+		0x70100000, reserving 1 MiB at 0x70000000 for the SRAM2 bootloader.
 
-		The image still *runs* from AXISRAM: the boot ROM branches to a
-		small in-flash stub (src/stm32_xipboot.S) which copies the image
-		from flash to SRAM and jumps to it.
+		The application is fully XIP: code and read-only data execute from
+		the XSPI2 memory window, while only writable data is copied to AXI
+		SRAM at startup.  The bootloader must configure XSPI2 for 200 MHz
+		memory-mapped reads before entering this image.
 
 		The build produces nuttx-signed.bin, i.e. nuttx.bin wrapped in an
 		STM32 v2.3 boot header by tools/mkimage.sh.  That requires
 		STM32_SigningTool_CLI, which is looked up via the STM32_PRG_PATH
-		environment variable.  Program the result at 0x70000000 with the
-		boot switches in DEV boot mode, then switch them to boot-from-flash
-		and reset.
+		environment variable.  Build and program the `bl` configuration at
+		0x70000000, then program this result at 0x70100000.
 
 		Uses scripts/flash.ld.
 
