@@ -421,10 +421,12 @@ static int stm32_xspi2_memorymap(void)
   UP_DSB();
   UP_ISB();
 
+  /*
   _alert("XSPI2_CR   : %08lx (after)",
          (unsigned long)getreg32(STM32_XSPI2_BASE + STM32_XSPI_CR_OFFSET));
   _alert("RCC_AHB5LPEN:%08lx (after)",
          (unsigned long)getreg32(STM32_RCC_AHB5LPENR));
+  */
 
   return OK;
 }
@@ -445,16 +447,15 @@ static void __attribute__((noreturn)) stm32_boot_nsh_xspi(void)
   uint32_t msp;
   uint32_t reset;
 
-  _alert("stm32_boot_nsh_xspi");
-
-  _alert("XSPI_VECTOR BASE: %p", vectors);
+  _alert("memory-map XSPI2");
+  _alert("");
 
   /* Report the state the boot ROM left behind before touching XSPI2.  Only
    * RCC, XSPIM and XSPI1 are read here; all three are clocked, unlike XSPI2.
    */
 
-  stm32_dump_xspi_clocks();
-  stm32_dump_xspi1();
+  //stm32_dump_xspi_clocks();
+  //stm32_dump_xspi1();
 
   up_irq_disable();
   putreg32(0, NVIC_SYSTICK_CTRL);
@@ -470,13 +471,8 @@ static void __attribute__((noreturn)) stm32_boot_nsh_xspi(void)
       for (; ; );
     }
 
-  _alert("after XSPI2 setup");
-
   msp   = vectors[0];
   reset = vectors[1];
-
-  _alert("XSPI_VECTORS msp=%08lx reset=%08lx",
-         (unsigned long)msp, (unsigned long)reset);
 
   putreg32(NSH_XSPI_VECTOR_BASE, NVIC_VECTAB);
   UP_DSB();
@@ -519,8 +515,6 @@ int bootloader_main(int argc, char *argv[])
 {
   UNUSED(argc);
   UNUSED(argv);
-  _alert("");
-  _alert("---------------");
-  _alert("bootloader_main");
+  _alert("start");
   stm32_boot_nsh_xspi();
 }
