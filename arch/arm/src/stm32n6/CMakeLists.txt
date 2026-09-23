@@ -43,6 +43,10 @@ if(CONFIG_STM32_USART)
   list(APPEND SRCS stm32_serial.c)
 endif()
 
+if(CONFIG_STM32_TIM)
+  list(APPEND SRCS stm32_tim.c)
+endif()
+
 # Chip-specific RCC
 
 if(CONFIG_STM32_STM32N6XXXX)

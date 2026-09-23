@@ -93,14 +93,14 @@
 #define STM32_GTIM_CCMR1_OFFSET    0x0018  /* Capture/compare mode register 1 (32-bit) */
 #define STM32_GTIM_CCMR2_OFFSET    0x001c  /* Capture/compare mode register 2 (32-bit on TIM2,5 only) */
 #define STM32_GTIM_CCER_OFFSET     0x0020  /* Capture/compare enable register (16-bit) */
-#define STM32_GTIM_CNT_OFFSET      0x0024  /* Counter (16 bit and 32-bit on TIM2, 5 only) */
+#define STM32_GTIM_CNT_OFFSET      0x0024  /* Counter (16 bit and 32-bit on TIM2, 4, 5 only) */
 #define STM32_GTIM_PSC_OFFSET      0x0028  /* Prescaler (16-bit) */
-#define STM32_GTIM_ARR_OFFSET      0x002c  /* Auto-reload register (16 bit and 32-bit on TIM2, 5 only) */
+#define STM32_GTIM_ARR_OFFSET      0x002c  /* Auto-reload register (16 bit and 32-bit on TIM2, 4, 5 only) */
 #define STM32_GTIM_RCR_OFFSET      0x0030
-#define STM32_GTIM_CCR1_OFFSET     0x0034  /* Capture/compare register 1 (16-bit on all TIMx and 32-bit on TIM2,5 only) */
-#define STM32_GTIM_CCR2_OFFSET     0x0038  /* Capture/compare register 2 (16-bit TIM 3-4, 9, 12 and 32-bit on TIM2,5 only) */
-#define STM32_GTIM_CCR3_OFFSET     0x003c  /* Capture/compare register 3 (16-bit TIM 3-4 and 32-bit on TIM2,5 only) */
-#define STM32_GTIM_CCR4_OFFSET     0x0040  /* Capture/compare register 4 (16-bit TIM 3-4 and 32-bit on TIM2,5 only) */
+#define STM32_GTIM_CCR1_OFFSET     0x0034  /* Capture/compare register 1 (16-bit on all TIMx and 32-bit on TIM2,4,5 only) */
+#define STM32_GTIM_CCR2_OFFSET     0x0038  /* Capture/compare register 2 (16-bit TIM3,9,12 and 32-bit on TIM2,4,5 only) */
+#define STM32_GTIM_CCR3_OFFSET     0x003c  /* Capture/compare register 3 (16-bit TIM3 and 32-bit on TIM2,4,5 only) */
+#define STM32_GTIM_CCR4_OFFSET     0x0040  /* Capture/compare register 4 (16-bit TIM3 and 32-bit on TIM2,4,5 only) */
 #define STM32_GTIM_BDTR_OFFSET     0x0044
 #define STM32_GTIM_DTR2_OFFSET     0x0054
 #define STM32_GTIM_ECR_OFFSET      0x0058
