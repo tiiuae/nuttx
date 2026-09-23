@@ -25,6 +25,8 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/debug.h>
+
 #include <arch/stm32n6/chip.h>
 #include <arch/board/board.h>
 
@@ -156,6 +158,24 @@ void stm32_stdclockconfig(void)
   if ((regval & RCC_CFGR1_CPUSWS_MASK) == RCC_CFGR1_CPUSWS_IC1 &&
       (regval & RCC_CFGR1_SYSSWS_MASK) == RCC_CFGR1_SYSSWS_IC2_IC6_IC11)
     {
+      regval = getreg32(STM32_RCC_CFGR2);
+      if ((regval & (RCC_CFGR2_TIMPRE_MASK | RCC_CFGR2_HPRE_MASK |
+                     RCC_CFGR2_PPRE1_MASK | RCC_CFGR2_PPRE2_MASK)) !=
+          (STM32_RCC_CFGR2_TIMPRE | STM32_RCC_CFGR2_HPRE |
+           STM32_RCC_CFGR2_PPRE1 | STM32_RCC_CFGR2_PPRE2))
+        {
+          _err("PANIC!!! RCC CFGR2 mismatch: got %08lx, expected %08lx\n",
+               (unsigned long)(regval & (RCC_CFGR2_TIMPRE_MASK |
+                                         RCC_CFGR2_HPRE_MASK |
+                                         RCC_CFGR2_PPRE1_MASK |
+                                         RCC_CFGR2_PPRE2_MASK)),
+               (unsigned long)(STM32_RCC_CFGR2_TIMPRE |
+                               STM32_RCC_CFGR2_HPRE |
+                               STM32_RCC_CFGR2_PPRE1 |
+                               STM32_RCC_CFGR2_PPRE2));
+          PANIC();
+        }
+
       return;
     }
 
@@ -234,7 +254,11 @@ void stm32_stdclockconfig(void)
    * be written exactly once with both CPUSW and SYSSW in place.
    */
 
-  putreg32(RCC_CFGR2_HPRE_SYSCLKd2, STM32_RCC_CFGR2);
+  putreg32(STM32_RCC_CFGR2_TIMPRE
+         | STM32_RCC_CFGR2_HPRE
+         | STM32_RCC_CFGR2_PPRE1
+         | STM32_RCC_CFGR2_PPRE2,
+           STM32_RCC_CFGR2);
 
   regval = getreg32(STM32_RCC_CFGR1);
   regval &= ~(RCC_CFGR1_CPUSW_MASK | RCC_CFGR1_SYSSW_MASK);

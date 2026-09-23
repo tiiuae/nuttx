@@ -65,10 +65,49 @@
 #define STM32_PCLK1_FREQUENCY   STM32_HCLK_FREQUENCY
 #define STM32_PCLK2_FREQUENCY   STM32_HCLK_FREQUENCY
 
-/* Timer input clock = SYSCLK (TIMPRE=0 default) */
+/* RCC CFGR2 bus prescalers */
 
-#define STM32_APB1_TIM_FREQUENCY STM32_SYSCLK_FREQUENCY
-#define STM32_APB2_TIM_FREQUENCY STM32_SYSCLK_FREQUENCY
+#define STM32_RCC_CFGR2_HPRE    RCC_CFGR2_HPRE_SYSCLKd2
+#define STM32_RCC_CFGR2_PPRE1   RCC_CFGR2_PPRE1_SYSBUS2
+#define STM32_RCC_CFGR2_PPRE2   RCC_CFGR2_PPRE2_SYSBUS2
+
+/* Timer kernel clocks are derived directly from sys_bus_ck, independently
+ * of the AHB and APB prescalers.  RCC_CFGR2.TIMPRE selects a shared divider
+ * for both timer groups; this board uses its reset value, divide by one.
+ */
+
+#define STM32_RCC_CFGR2_TIMPRE  RCC_CFGR2_TIMPRE_SYSBUS
+#define STM32_TIMPRE_DIVIDER     1
+#define STM32_TIMG_FREQUENCY     (STM32_SYSCLK_FREQUENCY / STM32_TIMPRE_DIVIDER)
+
+/* Retain the bus-group aliases for board code which needs them. */
+
+#define STM32_APB1_TIM_FREQUENCY STM32_TIMG_FREQUENCY
+#define STM32_APB2_TIM_FREQUENCY STM32_TIMG_FREQUENCY
+
+/* APB1 timer kernel clock inputs: TIM2-7 and TIM10-14. */
+
+#define STM32_TIM2_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM3_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM4_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM5_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM6_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM7_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM10_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM11_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM12_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM13_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM14_CLKIN        STM32_TIMG_FREQUENCY
+
+/* APB2 timer kernel clock inputs: TIM1, TIM8-9, and TIM15-18. */
+
+#define STM32_TIM1_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM8_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM9_CLKIN         STM32_TIMG_FREQUENCY
+#define STM32_TIM15_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM16_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM17_CLKIN        STM32_TIMG_FREQUENCY
+#define STM32_TIM18_CLKIN        STM32_TIMG_FREQUENCY
 
 /* I/O voltage domains ******************************************************/
 
