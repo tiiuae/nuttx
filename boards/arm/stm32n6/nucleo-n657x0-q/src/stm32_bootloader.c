@@ -36,6 +36,7 @@
 #include "nvic.h"
 #include "hardware/stm32n6xxx_memorymap.h"
 #include "hardware/stm32n6xxx_rcc.h"
+#include "hardware/stm32n6xxx_uart.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -165,142 +166,21 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: stm32_dump_xspi_clocks
+ * Name: stm32_uart_flush_tx
  *
  * Description:
- *   Dump the RCC state that governs whether XSPI2 is usable at all.  This
- *   only touches the RCC block, which is always clocked, so it is safe to
- *   call before any XSPI2 register or memory-mapped access -- both of which
- *   stall the bus if the XSPI2 peripheral clock is gated off.
- *
- *   What to look for:
- *     AHB5ENR - the XSPI2 / XSPIM enable bits (see RM0486 RCC_AHB5ENR).
- *               If they are clear, the boot ROM did not leave XSPI2
- *               clocked and it must be re-initialized here before either
- *               its registers or 0x70000000 can be touched.
- *     CCIPRn  - the XSPI kernel clock source mux.
- *     IC3CFGR / DIVENR - the IC3 divider feeding the XSPI2 kernel clock.
- *     MEMENR  - SRAM/cache RAM clocks only; shown for completeness.
+ *   Wait for the console UART to finish shifting its last character before
+ *   interrupts are disabled for the application hand-off.
  *
  ****************************************************************************/
 
-static void stm32_dump_xspi_clocks(void)
+static void stm32_uart_flush_tx(void)
 {
-  uint32_t ahb5enr = getreg32(STM32_RCC_AHB5ENR);
-  uint32_t ccipr6  = getreg32(STM32_RCC_CCIPR6);
-  uint32_t offset;
-  int i;
-
-  _alert("RCC_AHB5ENR: %08lx", (unsigned long)ahb5enr);
-  _alert("RCC_AHB5LPEN:%08lx",
-         (unsigned long)getreg32(STM32_RCC_AHB5LPENR));
-  _alert("  XSPI1EN=%d XSPI2EN=%d XSPIMEN=%d XSPI2SEL=%d (0=HCLK 1=CLKP "
-         "2=IC3 3=IC4)",
-         (ahb5enr & RCC_AHB5ENR_XSPI1EN) != 0,
-         (ahb5enr & RCC_AHB5ENR_XSPI2EN) != 0,
-         (ahb5enr & RCC_AHB5ENR_XSPIMEN) != 0,
-         (int)((ccipr6 & RCC_CCIPR6_XSPI2SEL_MASK) >>
-               RCC_CCIPR6_XSPI2SEL_SHIFT));
-  _alert("RCC_MEMENR : %08lx",
-         (unsigned long)getreg32(STM32_RCC_MEMENR));
-  _alert("RCC_DIVENR : %08lx",
-         (unsigned long)getreg32(STM32_RCC_DIVENR));
-  _alert("RCC_IC3CFGR: %08lx",
-         (unsigned long)getreg32(STM32_RCC_IC3CFGR));
-  _alert("RCC_CFGR1  : %08lx",
-         (unsigned long)getreg32(STM32_RCC_CFGR1));
-  _alert("RCC_CFGR2  : %08lx",
-         (unsigned long)getreg32(STM32_RCC_CFGR2));
-
-  for (i = 0; i < STM32_RCC_CCIPR_COUNT; i++)
+#ifdef CONFIG_USART1_SERIAL_CONSOLE
+  while ((getreg32(STM32_USART1_ISR) & USART_ISR_TC) == 0)
     {
-      _alert("RCC_CCIPR%-2d: %08lx", i + 1,
-             (unsigned long)getreg32(STM32_RCC_CCIPR1 + 4 * i));
     }
-
-  /* Raw dump of the peripheral clock enable block, so the AHB5ENR offset
-   * inferred above can be confirmed against its neighbours.
-   */
-
-  for (offset = STM32_RCC_ENR_DUMP_FIRST;
-       offset <= STM32_RCC_ENR_DUMP_LAST;
-       offset += 4)
-    {
-      _alert("RCC+0x%03lx  : %08lx", (unsigned long)offset,
-             (unsigned long)getreg32(STM32_RCC_BASE + offset));
-    }
-}
-
-/****************************************************************************
- * Name: stm32_dump_xspi1
- *
- * Description:
- *   Dump the XSPIM multiplexer and the XSPI1 controller state left behind
- *   by the boot ROM.  Both blocks are clocked (AHB5ENR.XSPIMEN and
- *   AHB5ENR.XSPI1EN are set), so these reads are safe -- in contrast to
- *   XSPI2, whose clock is gated and whose registers stall the bus.
- *
- *   Decision this drives:
- *     CR.EN = 1 and CR.FMODE = 3 on XSPI1 means the ROM left a live
- *     memory-mapped window at 0x90000000, and the application should be
- *     reached there rather than through an XSPI2 bring-up.  CR.EN = 0
- *     means the ROM tore its configuration down and a full controller +
- *     flash initialization is unavoidable.
- *
- ****************************************************************************/
-
-static void stm32_dump_xspi1(void)
-{
-  uint32_t cr = getreg32(STM32_XSPI1_BASE + STM32_XSPI_CR_OFFSET);
-  uint32_t xspim_cr = getreg32(STM32_XSPIM_CR);
-
-  _alert("XSPIM_CR   : %08lx (MUXEN=%d MODE=%d)",
-         (unsigned long)xspim_cr,
-         (xspim_cr & XSPIM_CR_MUXEN) != 0,
-         (xspim_cr & XSPIM_CR_MODE) != 0);
-
-  _alert("XSPI1_CR   : %08lx (EN=%d FMODE=%d, 3=memory-mapped)",
-         (unsigned long)cr, (cr & XSPI_CR_EN) != 0,
-         (int)((cr & XSPI_CR_FMODE_MASK) >> XSPI_CR_FMODE_SHIFT));
-
-  _alert("XSPI1_DCR1 : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_DCR1_OFFSET));
-  _alert("XSPI1_DCR2 : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_DCR2_OFFSET));
-  _alert("XSPI1_DCR3 : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_DCR3_OFFSET));
-  _alert("XSPI1_DCR4 : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_DCR4_OFFSET));
-  _alert("XSPI1_SR   : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_SR_OFFSET));
-  _alert("XSPI1_CCR  : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_CCR_OFFSET));
-  _alert("XSPI1_TCR  : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_TCR_OFFSET));
-  _alert("XSPI1_IR   : %08lx",
-         (unsigned long)getreg32(STM32_XSPI1_BASE + STM32_XSPI_IR_OFFSET));
-
-  /* If, and only if, XSPI1 reports a live memory-mapped window, read the
-   * first words of its region.  This is the one access here that can stall
-   * the bus, so it is gated on FMODE and bracketed by prints: if the trace
-   * stops after "XSPI1 probe 0x90000000", the window is not actually
-   * readable despite the controller state.
-   */
-
-  if ((cr & XSPI_CR_EN) != 0 &&
-      ((cr & XSPI_CR_FMODE_MASK) >> XSPI_CR_FMODE_SHIFT) ==
-       XSPI_CR_FMODE_MEMMAPPED)
-    {
-      const uint32_t *mem = (const uint32_t *)XSPI1_MEM_BASE;
-
-      _alert("XSPI1 probe %08lx ...", (unsigned long)XSPI1_MEM_BASE);
-      _alert("XSPI1 [0..1]: %08lx %08lx",
-             (unsigned long)mem[0], (unsigned long)mem[1]);
-    }
-  else
-    {
-      _alert("XSPI1 not memory-mapped; skipping window probe");
-    }
+#endif
 }
 
 /****************************************************************************
@@ -448,14 +328,12 @@ static void __attribute__((noreturn)) stm32_boot_nsh_xspi(void)
   uint32_t reset;
 
   _alert("memory-map XSPI2");
-  _alert("");
 
-  /* Report the state the boot ROM left behind before touching XSPI2.  Only
-   * RCC, XSPIM and XSPI1 are read here; all three are clocked, unlike XSPI2.
+  /* Ensure the last bootloader message is fully drained before handing
+   * off to the application; up_irq_disable() below would otherwise race
+   * with interrupt-driven UART TX completion.
    */
-
-  //stm32_dump_xspi_clocks();
-  //stm32_dump_xspi1();
+  stm32_uart_flush_tx();   /* poll USART_ISR.TC (or equivalent) until set */
 
   up_irq_disable();
   putreg32(0, NVIC_SYSTICK_CTRL);
