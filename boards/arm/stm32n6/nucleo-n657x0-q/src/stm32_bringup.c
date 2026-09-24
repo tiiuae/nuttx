@@ -38,6 +38,8 @@
 #include <arch/board/board.h>
 
 #if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
+#include <arch/irq.h>
+#include "nvic.h"
 #include "stm32_rcc.h"
 #include "stm32_tim.h"
 #endif
@@ -47,6 +49,67 @@
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: systick_delay_10ms
+ *
+ * Description:
+ *   Poll NVIC SYSTICK count for 10ms wait
+ ****************************************************************************/
+
+static void systick_delay_10ms(void)
+{
+  const uint32_t mask = NVIC_SYSTICK_CURRENT_MASK;
+  uint32_t period;
+  uint32_t previous;
+  uint32_t current;
+  uint32_t elapsed = 0;
+  irqstate_t flags;
+
+  /* NuttX configures SysTick for a 10 ms period:
+   *
+   *   CPU clock = 200 MHz
+   *   RELOAD    = 1,999,999
+   *   period    = 2,000,000 counts
+   */
+
+  DEBUGASSERT((getreg32(NVIC_SYSTICK_CTRL) &
+               (NVIC_SYSTICK_CTRL_ENABLE |
+                NVIC_SYSTICK_CTRL_CLKSOURCE)) ==
+              (NVIC_SYSTICK_CTRL_ENABLE |
+               NVIC_SYSTICK_CTRL_CLKSOURCE));
+
+  period = (getreg32(NVIC_SYSTICK_RELOAD) & mask) + 1;
+
+  /* Prevent a context switch from lasting one or more complete SysTick
+   * periods, since CURRENT alone cannot tell how many wraps were missed.
+   * Acceptable for this temporary diagnostic.
+   */
+
+  flags = up_irq_save();
+
+  previous = getreg32(NVIC_SYSTICK_CURRENT) & mask;
+
+  while (elapsed < period)
+    {
+      current = getreg32(NVIC_SYSTICK_CURRENT) & mask;
+
+      if (previous >= current)
+        {
+          elapsed += previous - current;
+        }
+      else
+        {
+          /* Counter wrapped from zero back to RELOAD. */
+
+          elapsed += previous + period - current;
+        }
+
+      previous = current;
+    }
+
+  up_irq_restore(flags);
+}
+
+/****************************************************************************
  * Name: stm32_bringup
  *
  * Description:
@@ -54,6 +117,7 @@
  ****************************************************************************/
 
 #if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
+
 void stm32_timer_clocktest(void)
 {
   uint32_t reg, reg2;
@@ -96,17 +160,33 @@ void stm32_timer_clocktest(void)
   putreg16(reg2 | GTIM_CR1_CEN, STM32_TIM5_CR1);
 
   /* TODO: 5. Read and log CNT, delay with usleep and log CNT again */
-  reg = getreg32(STM32_TIM1_CNT);
-  reg2 = getreg32(STM32_TIM5_CNT);
 
   // 10ms delay using SYSTICK cnt
-  up_udelay(10000);
+  systick_delay_10ms();
 
   reg = getreg32(STM32_TIM1_CNT);
   reg2 = getreg32(STM32_TIM5_CNT);
   syslog(LOG_INFO, "After 10ms:");
   syslog(LOG_INFO, "TIM1 CNT: %lu", reg);
   syslog(LOG_INFO, "TIM5 CNT: %lu", reg2);
+
+  syslog(LOG_INFO, "CFGR1:      %08lx",
+         getreg32(STM32_RCC_CFGR1));
+  syslog(LOG_INFO, "PLL1CFGR1:  %08lx",
+         getreg32(STM32_RCC_PLL1CFGR1));
+  syslog(LOG_INFO, "PLL1CFGR3:  %08lx",
+         getreg32(STM32_RCC_PLL1CFGR3));
+  syslog(LOG_INFO, "IC1CFGR:    %08lx",
+         getreg32(STM32_RCC_IC1CFGR));
+  syslog(LOG_INFO, "IC2CFGR:    %08lx",
+         getreg32(STM32_RCC_IC2CFGR));
+  syslog(LOG_INFO, "IC6CFGR:    %08lx",
+         getreg32(STM32_RCC_IC6CFGR));
+  syslog(LOG_INFO, "IC11CFGR:   %08lx",
+         getreg32(STM32_RCC_IC11CFGR));
+  syslog(LOG_INFO, "SYSTICK: ctrl=%08lx reload=%08lx",
+         getreg32(NVIC_SYSTICK_CTRL),
+         getreg32(NVIC_SYSTICK_RELOAD));
 
   /* TODO: 6. Stop both timers */
   reg = getreg16(STM32_TIM1_CR1);
