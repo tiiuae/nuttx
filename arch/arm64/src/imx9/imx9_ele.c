@@ -82,6 +82,7 @@ struct ele_msg msg;
 static uint8_t g_ele_blob_data[ELE_BLOB_SLOTS][ELE_BLOB_SIZE]
   aligned_data(ARMV8A_DCACHE_LINESIZE);
 
+
 struct ele_blob_s
 {
   uint32_t id;
@@ -165,6 +166,22 @@ begin_packed_struct struct ele_sign_s
   uint8_t  flags;
   uint8_t  reserved;
   uint32_t scheme_id;
+  uint32_t crc;
+} end_packed_struct;
+
+begin_packed_struct struct ele_key_exchange_s
+{
+  uint32_t key_mgmt_handle;
+  uint16_t flags;
+  uint16_t reserved;
+  uint32_t in_content_addr;
+  uint32_t in_content_size;
+  uint32_t in_pub_addr;
+  uint32_t in_pub_size;
+  uint32_t fixed_info_addr;
+  uint32_t fixed_info_size;
+  uint32_t output_addr;
+  uint32_t output_size;
   uint32_t crc;
 } end_packed_struct;
 
@@ -1275,10 +1292,7 @@ int imx9_ele_key_mgmt_close(uint32_t mgmt)
  *
  * Input Parameters:
  *   mgmt      - an open key management handle
- *   key_type  - ELE_KEY_TYPE_ECC_PAIR_SECP_R1 and friends
- *   key_bits  - key size in bits
- *   algo      - the one algorithm this key is permitted to perform
- *   lifecycle - the device lifecycle the key may be used in
+ *   spec      - what kind of key to make; export usage is masked off
  *   pubkey    - buffer for the public half, cache line aligned and sized
  *   pubkey_len- its length
  *
@@ -1291,9 +1305,8 @@ int imx9_ele_key_mgmt_close(uint32_t mgmt)
  *
  ****************************************************************************/
 
-int imx9_ele_generate_key(uint32_t mgmt, uint16_t key_type,
-                          uint16_t key_bits, uint32_t algo,
-                          uint32_t lifecycle,
+int imx9_ele_generate_key(uint32_t mgmt,
+                          const struct imx9_ele_keyspec *spec,
                           void *pubkey, size_t pubkey_len,
                           uint32_t *key_id, uint32_t *rsp)
 {
@@ -1301,7 +1314,7 @@ int imx9_ele_generate_key(uint32_t mgmt, uint16_t key_type,
 
   uintptr_t paddr;
 
-  if (pubkey == NULL || key_id == NULL)
+  if (pubkey == NULL || key_id == NULL || spec == NULL)
     {
       return -EINVAL;
     }
@@ -1323,20 +1336,22 @@ int imx9_ele_generate_key(uint32_t mgmt, uint16_t key_type,
   memset(&cmd, 0, sizeof(cmd));
   cmd.key_mgmt_handle = mgmt;
   cmd.public_key_size = (uint16_t)pubkey_len;
-  cmd.key_group = ELE_KEY_GROUP_PERSISTENT;
-  cmd.key_type = key_type;
-  cmd.key_size = key_bits;
-  cmd.key_lifetime = ELE_KEY_LIFETIME_PERSISTENT;
+  cmd.key_group = spec->group;
+  cmd.key_type = spec->type;
+  cmd.key_size = spec->bits;
+  cmd.key_lifetime = spec->lifetime;
 
-  /* Sign only, and no export: the private half has no way out. */
+  /* Whatever the caller asks for, never export: the private half has no way
+   * out.
+   */
 
-  cmd.key_usage = ELE_KEY_USAGE_SIGN_HASH;
-  cmd.permitted_algo = algo;
-  cmd.key_lifecycle = lifecycle;
+  cmd.key_usage = spec->usage & ~ELE_KEY_USAGE_EXPORT;
+  cmd.permitted_algo = spec->algo;
+  cmd.key_lifecycle = spec->lifecycle;
 
-  /* The lifetime is intent; this is what writes the key to the store. */
+  /* The lifetime is intent; the strict flag is what writes it to the store. */
 
-  cmd.flags = ELE_KEY_FLAG_STRICT;
+  cmd.flags = spec->flags;
   cmd.public_key_addr = (uint32_t)paddr;
 
   up_flush_dcache((uintptr_t)pubkey, (uintptr_t)pubkey + pubkey_len);
@@ -1523,6 +1538,176 @@ int imx9_ele_sign(uint32_t svc, uint32_t key_id, uint32_t algo, bool digest,
     }
 
   up_invalidate_dcache((uintptr_t)out, (uintptr_t)out + out_span);
+
+  return 0;
+}
+
+/****************************************************************************
+ * Name: imx9_ele_key_exchange
+ *
+ * Description:
+ *   Run a key derivation, optionally preceded by an ECDH against a peer
+ *   public key. What comes back depends on the flags: a key store identifier
+ *   always, and the derived bytes themselves when the caller asks for the
+ *   output and the derived key permits export.
+ *
+ * Input Parameters:
+ *   mgmt        - an open key management handle
+ *   flags       - ELE_KEX_FLAG_*, see the header
+ *   content     - the operation descriptor, cache line aligned
+ *   content_len - its length
+ *   pub         - the peer public key, cache line aligned, may be NULL
+ *   pub_len     - its length
+ *   info        - KDF fixed info, cache line aligned, may be NULL
+ *   info_len    - its length
+ *   out         - buffer for the derived output, cache line aligned, may be
+ *                 NULL when only a key store identifier is wanted
+ *   out_len     - its length
+ *
+ * Output Parameters:
+ *   key_id  - identifier of the derived key
+ *   out_sz  - bytes written to out
+ *   rsp     - the raw response word
+ *
+ * Returned Value:
+ *   Zero (OK) is returned for success. A negated errno value is returned on
+ *   failure.
+ *
+ ****************************************************************************/
+
+int imx9_ele_key_exchange(uint32_t mgmt, uint16_t flags,
+                          void *content, size_t content_len,
+                          void *pub, size_t pub_len,
+                          void *info, size_t info_len,
+                          void *out, size_t out_len,
+                          uint32_t *key_id, uint32_t *out_sz, uint32_t *rsp)
+{
+  struct ele_key_exchange_s cmd;
+
+  uintptr_t content_pa;
+  uintptr_t pub_pa = 0;
+  uintptr_t info_pa = 0;
+  uintptr_t out_pa = 0;
+
+  if (content == NULL || content_len == 0)
+    {
+      return -EINVAL;
+    }
+
+  /* An algorithm that produces output, handed nowhere to put it, hangs the
+   * part hard enough to need a power cycle. Refuse it here.
+   */
+
+  if ((flags & ELE_KEX_FLAG_RETURN_OUTPUT) && (out == NULL || out_len == 0))
+    {
+      return -EINVAL;
+    }
+
+  if (!IS_ALIGNED((uintptr_t)content, ARMV8A_DCACHE_LINESIZE) ||
+      (pub != NULL && !IS_ALIGNED((uintptr_t)pub, ARMV8A_DCACHE_LINESIZE)) ||
+      (info != NULL && !IS_ALIGNED((uintptr_t)info, ARMV8A_DCACHE_LINESIZE)) ||
+      (out != NULL && !IS_ALIGNED((uintptr_t)out, ARMV8A_DCACHE_LINESIZE)))
+    {
+      return -EINVAL;
+    }
+
+  content_pa = imx9_ele_buffer_pa(content);
+  if (content_pa == 0)
+    {
+      return -EFAULT;
+    }
+
+  up_flush_dcache((uintptr_t)content,
+                  (uintptr_t)content +
+                  ALIGN_UP(content_len, ARMV8A_DCACHE_LINESIZE));
+
+  if (pub != NULL && pub_len != 0)
+    {
+      pub_pa = imx9_ele_buffer_pa(pub);
+      if (pub_pa == 0)
+        {
+          return -EFAULT;
+        }
+
+      up_flush_dcache((uintptr_t)pub,
+                      (uintptr_t)pub +
+                      ALIGN_UP(pub_len, ARMV8A_DCACHE_LINESIZE));
+    }
+
+  if (info != NULL && info_len != 0)
+    {
+      info_pa = imx9_ele_buffer_pa(info);
+      if (info_pa == 0)
+        {
+          return -EFAULT;
+        }
+
+      up_flush_dcache((uintptr_t)info,
+                      (uintptr_t)info +
+                      ALIGN_UP(info_len, ARMV8A_DCACHE_LINESIZE));
+    }
+
+  if (out != NULL && out_len != 0)
+    {
+      out_pa = imx9_ele_buffer_pa(out);
+      if (out_pa == 0)
+        {
+          return -EFAULT;
+        }
+
+      up_flush_dcache((uintptr_t)out,
+                      (uintptr_t)out +
+                      ALIGN_UP(out_len, ARMV8A_DCACHE_LINESIZE));
+    }
+
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.key_mgmt_handle = mgmt;
+  cmd.flags = flags;
+  cmd.in_content_addr = (uint32_t)content_pa;
+  cmd.in_content_size = (uint32_t)content_len;
+  cmd.in_pub_addr = (uint32_t)pub_pa;
+  cmd.in_pub_size = (uint32_t)(pub_pa != 0 ? pub_len : 0);
+  cmd.fixed_info_addr = (uint32_t)info_pa;
+  cmd.fixed_info_size = (uint32_t)(info_pa != 0 ? info_len : 0);
+  cmd.output_addr = (uint32_t)out_pa;
+  cmd.output_size = (uint32_t)(out_pa != 0 ? out_len : 0);
+
+  msg.header.version = ELE_VERSION_FW;
+  msg.header.tag = ELE_CMD_TAG;
+  msg.header.size = 1 + (sizeof(cmd) / sizeof(uint32_t));
+  msg.header.command = ELE_KEY_EXCHANGE_REQ;
+  memcpy(msg.data, &cmd, sizeof(cmd));
+  imx9_ele_update_crc(&msg);
+
+  imx9_ele_sendmsg(&msg);
+  imx9_ele_receivemsg(&msg);
+
+  if (rsp != NULL)
+    {
+      *rsp = msg.data[0];
+    }
+
+  if ((msg.data[0] & 0xff) != ELE_OK)
+    {
+      return -EIO;
+    }
+
+  if (key_id != NULL)
+    {
+      *key_id = msg.data[1];
+    }
+
+  if (out_sz != NULL)
+    {
+      *out_sz = msg.data[3];
+    }
+
+  if (out != NULL && out_len != 0)
+    {
+      up_invalidate_dcache((uintptr_t)out,
+                           (uintptr_t)out +
+                           ALIGN_UP(out_len, ARMV8A_DCACHE_LINESIZE));
+    }
 
   return 0;
 }

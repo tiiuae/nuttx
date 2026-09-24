@@ -342,9 +342,25 @@ int imx9_ele_key_store_close(uint32_t store);
 
 int imx9_ele_key_mgmt_open(uint32_t store, uint32_t *mgmt, uint32_t *rsp);
 int imx9_ele_key_mgmt_close(uint32_t mgmt);
-int imx9_ele_generate_key(uint32_t mgmt, uint16_t key_type,
-                          uint16_t key_bits, uint32_t algo,
-                          uint32_t lifecycle,
+/* Everything the enclave needs to be told about a key it is about to make.
+ * A key exchange wants a volatile key in its own group, while an identity key
+ * wants a persistent one written through, so none of this can be assumed.
+ */
+
+struct imx9_ele_keyspec
+{
+  uint16_t type;
+  uint16_t bits;
+  uint16_t group;
+  uint32_t usage;
+  uint32_t algo;
+  uint32_t lifetime;
+  uint32_t lifecycle;
+  uint8_t  flags;
+};
+
+int imx9_ele_generate_key(uint32_t mgmt,
+                          const struct imx9_ele_keyspec *spec,
                           void *pubkey, size_t pubkey_len,
                           uint32_t *key_id, uint32_t *rsp);
 
@@ -360,6 +376,13 @@ int imx9_ele_generate_key(uint32_t mgmt, uint16_t key_type,
  *   failure.
  *
  ****************************************************************************/
+
+int imx9_ele_key_exchange(uint32_t mgmt, uint16_t flags,
+                          void *content, size_t content_len,
+                          void *pub, size_t pub_len,
+                          void *info, size_t info_len,
+                          void *out, size_t out_len,
+                          uint32_t *key_id, uint32_t *out_sz, uint32_t *rsp);
 
 int imx9_ele_sig_gen_open(uint32_t store, uint32_t *svc, uint32_t *rsp);
 int imx9_ele_sig_gen_close(uint32_t svc);

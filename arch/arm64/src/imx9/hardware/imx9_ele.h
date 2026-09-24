@@ -81,6 +81,7 @@
 #define ELE_STORAGE_CHUNK_GET_DONE 0xe7
 #define ELE_SIG_GEN_CLOSE_REQ     0x71
 #define ELE_SIGNATURE_GEN_REQ     0x72
+#define ELE_KEY_EXCHANGE_REQ      0x47
 
 #define ELE_KEY_STORE_FLAG_CREATE 0x01
 
@@ -89,13 +90,35 @@
  */
 
 #define ELE_KEY_TYPE_ECC_PAIR_SECP_R1 0x7112
+#define ELE_KEY_USAGE_EXPORT          0x00000001
 #define ELE_KEY_USAGE_SIGN_HASH       0x00001000
 #define ELE_KEY_USAGE_VERIFY_HASH     0x00002000
+#define ELE_KEY_USAGE_DERIVE          0x00004000
 #define ELE_KEY_LIFETIME_PERSISTENT   0x00000001
 #define ELE_KEY_LIFECYCLE_OPEN        0x01
 #define ELE_KEY_LIFECYCLE_CLOSED      0x02
 #define ELE_ALGO_ECDSA_SHA256         0x06000609
+#define ELE_ALGO_ECDH                 0x09020000
 #define ELE_KEY_GROUP_PERSISTENT      1
+
+/* This enclave speaks the PSA flavour of the key exchange, whose derivations
+ * are HKDF rather than the TLS and SM2 list the older API offers. Extract and
+ * expand are reachable separately, which is what a protocol that chains its
+ * own key schedule needs.
+ */
+
+#define ELE_ALGO_ECDH_HKDF_SHA256     0x89020109
+#define ELE_ALGO_HKDF_SHA256          0x08000109
+#define ELE_ALGO_HKDF_EXTRACT_SHA256  0x08000409
+#define ELE_ALGO_HKDF_EXPAND_SHA256   0x08000509
+
+#define ELE_KEX_FLAG_PLAINTEXT_CONTENT 0x0001
+#define ELE_KEX_FLAG_RETURN_KEY_IDS    0x0002
+#define ELE_KEX_FLAG_RETURN_OUTPUT     0x0004
+
+#define ELE_KEY_TYPE_DERIVE           0x1200
+#define ELE_KEY_TYPE_AES              0x2400
+#define ELE_KEY_STORAGE_VOLATILE      0x00000000
 
 /* Without the strict flag a generated key lives in the enclave's own memory
  * and is never written to the key store, so it does not survive the store
