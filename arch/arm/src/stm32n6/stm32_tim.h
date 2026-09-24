@@ -31,7 +31,7 @@
 #include <nuttx/irq.h>
 
 #include "chip.h"
-#include "hardware/stm32_tim.h"
+#include "hardware/stm32n6xxx_tim.h"
 
 /****************************************************************************
  * Pre-processor Definitions

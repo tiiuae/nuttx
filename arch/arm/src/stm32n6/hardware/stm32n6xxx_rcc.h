@@ -30,6 +30,8 @@
 #include <nuttx/config.h>
 #include "hardware/stm32n6xxx_memorymap.h"
 
+#if defined(CONFIG_STM32_STM32N6XXXX)
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -380,4 +382,5 @@
 #define RCC_CCIPR13_USART1SEL_MASK    (0x7 << RCC_CCIPR13_USART1SEL_SHIFT)
 #define RCC_CCIPR13_USART1SEL_HSI     (6 << RCC_CCIPR13_USART1SEL_SHIFT)
 
+#endif /* CONFIG_STM32_STM32N6XXXX */
 #endif /* __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_RCC_H */
