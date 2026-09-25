@@ -761,6 +761,32 @@ config MX25UW25645G_QSPI_FREQUENCY
 
 endif # MTD_MX25UW25645G
 
+config MTD_MX25UM51245G
+	bool "Macronix MX25UM51245G XSPI flash"
+	default n
+	---help---
+		Enable the MTD driver for the 512-Mbit Macronix MX25UM51245G
+		OctaBus flash memory.  The driver uses the QSPI interface and enters
+		DTR OPI mode during initialization.  The generic QSPI API does not
+		expose DQS control, so DQS must be configured by the controller board
+		configuration.
+
+if MTD_MX25UM51245G
+
+config MX25UM51245G_QSPIMODE
+	int "MX25UM51245G QSPI mode"
+	default 0
+	---help---
+		The MX25UM51245G supports QSPI mode 0 or 3.
+
+config MX25UM51245G_QSPI_FREQUENCY
+	int "MX25UM51245G QSPI frequency"
+	default 75000000
+	---help---
+		Clock frequency used for MX25UM51245G transfers.
+
+endif # MTD_MX25UM51245G
+
 config MTD_MX35
 	bool "SPI-based MX35LF1GE4AB / MX35LF2GE4AB"
 	default n
