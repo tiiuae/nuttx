@@ -30,6 +30,14 @@ config STM32_N6_PERIPHERALS
 	select STM32_HAVE_TIM17
 	select STM32_HAVE_TIM18
 	select STM32_HAVE_USART1
+	select STM32_HAVE_XSPI
+
+config STM32_XSPI
+	bool "XSPI support"
+	depends on STM32_HAVE_XSPI
+	default n
+	---help---
+		Enable support for the STM32N6 XSPI controllers.
 
 config STM32_STM32N6XXXX
 	bool

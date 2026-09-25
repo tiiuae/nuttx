@@ -166,6 +166,7 @@
 
 #define STM32_AHB5_BASE       0x58020000    /* AHB5 (Secure) */
 #define STM32_HPDMA1_BASE     0x58020000    /* HPDMA1 (AHB5, Secure) */
+#define STM32_XSPI1_BASE      0x58025000    /* XSPI1 controller (AHB5, Secure) */
 #define STM32_XSPI2_BASE      0x5802A000    /* XSPI2 controller (AHB5, Secure) */
 #define STM32_XSPIM_BASE      0x5802B400    /* XSPIM IO Manager (AHB5, Secure) */
 #define STM32_USB1_HS_PHYC_BASE 0x5803FC00  /* USB1 HS PHY controller (Secure) */

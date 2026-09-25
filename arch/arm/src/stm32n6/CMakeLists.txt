@@ -47,6 +47,10 @@ if(CONFIG_STM32_TIM)
   list(APPEND SRCS stm32_tim.c)
 endif()
 
+if(CONFIG_STM32_XSPI)
+  list(APPEND SRCS stm32_xspi.c)
+endif()
+
 # Chip-specific RCC
 
 if(CONFIG_STM32_STM32N6XXXX)

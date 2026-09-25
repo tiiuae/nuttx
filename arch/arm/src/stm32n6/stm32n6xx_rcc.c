@@ -176,6 +176,45 @@ void stm32_stdclockconfig(void)
           PANIC();
         }
 
+      regval = getreg32(STM32_RCC_PLL1CFGR1);
+      if ((regval & (RCC_PLL1CFGR1_SEL_MASK |
+                     RCC_PLL1CFGR1_DIVM_MASK |
+                     RCC_PLL1CFGR1_DIVN_MASK)) !=
+          (RCC_PLL1CFGR1_SEL_HSI |
+           (STM32_PLL1_M << RCC_PLL1CFGR1_DIVM_SHIFT) |
+           (STM32_PLL1_N << RCC_PLL1CFGR1_DIVN_SHIFT)) ||
+          (getreg32(STM32_RCC_PLL1CFGR3) &
+           (RCC_PLL1CFGR3_PDIVEN | RCC_PLL1CFGR3_PDIV1_MASK |
+            RCC_PLL1CFGR3_PDIV2_MASK | RCC_PLL1CFGR3_MODSSDIS)) !=
+          (RCC_PLL1CFGR3_PDIVEN |
+           (1 << RCC_PLL1CFGR3_PDIV1_SHIFT) |
+           (1 << RCC_PLL1CFGR3_PDIV2_SHIFT) |
+           RCC_PLL1CFGR3_MODSSDIS) ||
+          getreg32(STM32_RCC_IC1CFGR) !=
+          (RCC_ICCFGR_SEL_PLL1 |
+           ((STM32_PLL1_IC1_DIV - 1) << RCC_ICCFGR_INT_SHIFT)) ||
+          getreg32(STM32_RCC_IC2CFGR) !=
+          (RCC_ICCFGR_SEL_PLL1 |
+           ((STM32_PLL1_IC2_DIV - 1) << RCC_ICCFGR_INT_SHIFT)) ||
+          getreg32(STM32_RCC_IC3CFGR) !=
+          (RCC_ICCFGR_SEL_PLL1 |
+           ((STM32_PLL1_IC3_DIV - 1) << RCC_ICCFGR_INT_SHIFT)) ||
+          getreg32(STM32_RCC_IC6CFGR) !=
+          (RCC_ICCFGR_SEL_PLL1 |
+           ((STM32_PLL1_IC6_DIV - 1) << RCC_ICCFGR_INT_SHIFT)) ||
+          getreg32(STM32_RCC_IC11CFGR) !=
+          (RCC_ICCFGR_SEL_PLL1 |
+           ((STM32_PLL1_IC11_DIV - 1) << RCC_ICCFGR_INT_SHIFT)) ||
+          (getreg32(STM32_RCC_DIVENR) &
+           (RCC_DIVENR_IC1EN | RCC_DIVENR_IC2EN | RCC_DIVENR_IC3EN |
+            RCC_DIVENR_IC6EN | RCC_DIVENR_IC11EN)) !=
+           (RCC_DIVENR_IC1EN | RCC_DIVENR_IC2EN | RCC_DIVENR_IC3EN |
+            RCC_DIVENR_IC6EN | RCC_DIVENR_IC11EN))
+        {
+          _err("PANIC!!! inherited RCC tree does not match board clocks\n");
+          PANIC();
+        }
+
       return;
     }
 
@@ -187,6 +226,12 @@ void stm32_stdclockconfig(void)
         }
     }
 
+  if (timeout == 0)
+    {
+      _err("PANIC!!! HSI did not become ready\n");
+      PANIC();
+    }
+
   putreg32(RCC_CR_PLL1ON, STM32_RCC_CCR);
 
   for (timeout = PLL1RDY_TIMEOUT; timeout > 0; timeout--)
@@ -195,6 +240,12 @@ void stm32_stdclockconfig(void)
         {
           break;
         }
+    }
+
+  if (timeout == 0)
+    {
+      _err("PANIC!!! PLL1 did not stop\n");
+      PANIC();
     }
 
   regval = (RCC_PLL1CFGR1_SEL_HSI)
@@ -218,31 +269,37 @@ void stm32_stdclockconfig(void)
         }
     }
 
+  if (timeout == 0)
+    {
+      _err("PANIC!!! PLL1 did not lock\n");
+      PANIC();
+    }
+
   /* IC dividers: register field is (divider - 1).  IC1_DIV from board.h
    * picks the CPU rate; the other ICs are fixed multiples that feed
    * SYSCLK and the XSPI2 kernel clock.
    *
-   *   IC1  = VCO / IC1_DIV       -> CPU
-   *   IC2  = VCO / (IC1_DIV * 2) -> SYSCLK
-   *   IC3  = VCO / (IC1_DIV * 4) -> XSPI2 kernel clock (reserved)
-   *   IC6  = VCO / (IC1_DIV * 3) -> SYSCLK
-   *   IC11 = VCO / (IC1_DIV * 2) -> SYSCLK
+   *   IC1  = VCO / IC1_DIV  -> CPU
+   *   IC2  = VCO / IC2_DIV  -> system bus
+   *   IC3  = VCO / IC3_DIV  -> XSPI2 kernel clock
+   *   IC6  = VCO / IC6_DIV  -> system bus
+   *   IC11 = VCO / IC11_DIV -> system bus
    */
 
   putreg32(RCC_ICCFGR_SEL_PLL1
          | ((STM32_PLL1_IC1_DIV - 1) << RCC_ICCFGR_INT_SHIFT),
            STM32_RCC_IC1CFGR);
   putreg32(RCC_ICCFGR_SEL_PLL1
-         | ((STM32_PLL1_IC1_DIV * 2 - 1) << RCC_ICCFGR_INT_SHIFT),
+         | ((STM32_PLL1_IC2_DIV - 1) << RCC_ICCFGR_INT_SHIFT),
            STM32_RCC_IC2CFGR);
   putreg32(RCC_ICCFGR_SEL_PLL1
-         | ((STM32_PLL1_IC1_DIV * 4 - 1) << RCC_ICCFGR_INT_SHIFT),
+         | ((STM32_PLL1_IC3_DIV - 1) << RCC_ICCFGR_INT_SHIFT),
            STM32_RCC_IC3CFGR);
   putreg32(RCC_ICCFGR_SEL_PLL1
-         | ((STM32_PLL1_IC1_DIV * 3 - 1) << RCC_ICCFGR_INT_SHIFT),
+         | ((STM32_PLL1_IC6_DIV - 1) << RCC_ICCFGR_INT_SHIFT),
            STM32_RCC_IC6CFGR);
   putreg32(RCC_ICCFGR_SEL_PLL1
-         | ((STM32_PLL1_IC1_DIV * 2 - 1) << RCC_ICCFGR_INT_SHIFT),
+         | ((STM32_PLL1_IC11_DIV - 1) << RCC_ICCFGR_INT_SHIFT),
            STM32_RCC_IC11CFGR);
 
   putreg32(RCC_DIVENR_IC1EN | RCC_DIVENR_IC2EN | RCC_DIVENR_IC3EN
@@ -281,5 +338,11 @@ void stm32_stdclockconfig(void)
         {
           break;
         }
+    }
+
+  if (timeout == 0)
+    {
+      _err("PANIC!!! system clock switch did not complete\n");
+      PANIC();
     }
 }
