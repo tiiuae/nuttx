@@ -23,7 +23,7 @@
 set(SRCS stm32_boot.c stm32_bringup.c)
 
 if(CONFIG_NUCLEO_N657X0_Q_BOOTLOADER)
-  list(APPEND SRCS stm32_bootloader.c)
+  list(APPEND SRCS stm32_bootloader.c stm32_mx25um51245g.c)
 endif()
 
 if(CONFIG_ARCH_LEDS)

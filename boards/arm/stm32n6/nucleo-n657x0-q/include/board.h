@@ -43,11 +43,12 @@
  *   HSI 64 MHz / M=4 * N=50 = 800 MHz VCO
  *     IC1  /4 = 200 MHz  -> CPU clock (CPUSW)
  *     IC2  /8 = 100 MHz  \
- *     IC6 /12 = 66.7 MHz  > SYSCLK components (SYSSW IC2_IC6_IC11)
+ *     IC6 /12 = 66.7 MHz  > system-bus clocks (SYSSW IC2_IC6_IC11)
  *     IC11 /8 = 100 MHz  /
- *   HPRE /2  = 50 MHz   -> HCLK
- *   PPRE1 /1 = 50 MHz   -> PCLK1
- *   PPRE2 /1 = 50 MHz   -> PCLK2
+ *     IC3  /4 = 200 MHz  -> XSPI2 kernel clock
+ *   HPRE /2  = 50 MHz    -> HCLK
+ *   PPRE1 /1 = 50 MHz    -> PCLK1
+ *   PPRE2 /1 = 50 MHz    -> PCLK2
  *
  * Works with the default VOS SCALE1, no SMPS overdrive required.  Higher
  * CPU frequencies (600/800 MHz) are deferred to a follow-up.
@@ -58,12 +59,17 @@
 #define STM32_PLL1_M            4
 #define STM32_PLL1_N            50
 #define STM32_PLL1_IC1_DIV      4
+#define STM32_PLL1_IC2_DIV      8
+#define STM32_PLL1_IC3_DIV      4
+#define STM32_PLL1_IC6_DIV      12
+#define STM32_PLL1_IC11_DIV     8
 
-#define STM32_CPUCLK_FREQUENCY  200000000ul
-#define STM32_SYSCLK_FREQUENCY  (STM32_CPUCLK_FREQUENCY / 2)
-#define STM32_HCLK_FREQUENCY    (STM32_CPUCLK_FREQUENCY / 4)
-#define STM32_PCLK1_FREQUENCY   STM32_HCLK_FREQUENCY
-#define STM32_PCLK2_FREQUENCY   STM32_HCLK_FREQUENCY
+#define STM32_CPUCLK_FREQUENCY       200000000ul
+#define STM32_SYSCLK_FREQUENCY       100000000ul
+#define STM32_HCLK_FREQUENCY         50000000ul
+#define STM32_PCLK1_FREQUENCY        50000000ul
+#define STM32_PCLK2_FREQUENCY        50000000ul
+#define STM32_XSPI2_KERNEL_FREQUENCY 200000000ul
 
 /* RCC CFGR2 bus prescalers */
 
@@ -181,6 +187,24 @@
 
 #define GPIO_USART1_TX   GPIO_USART1_TX_1
 #define GPIO_USART1_RX   GPIO_USART1_RX_1
+
+/* XSPI2 flash through XSPIM port 2.  The MX25UM51245G is connected to the
+ * VDDIO3 1.8 V domain and all signals use AF9, push-pull, no pull, and the
+ * very-high-speed GPIO setting.
+ */
+
+#define GPIO_XSPI2_P2_CONFIG (GPIO_SPEED_100MHZ | GPIO_PUSHPULL | GPIO_FLOAT)
+#define GPIO_XSPI2_CLK       (GPIO_XSPI2_CLK_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_DQS       (GPIO_XSPI2_DQS_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_NCS       (GPIO_XSPI2_NCS_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO0       (GPIO_XSPI2_IO0_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO1       (GPIO_XSPI2_IO1_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO2       (GPIO_XSPI2_IO2_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO3       (GPIO_XSPI2_IO3_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO4       (GPIO_XSPI2_IO4_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO5       (GPIO_XSPI2_IO5_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO6       (GPIO_XSPI2_IO6_1 | GPIO_XSPI2_P2_CONFIG)
+#define GPIO_XSPI2_IO7       (GPIO_XSPI2_IO7_1 | GPIO_XSPI2_P2_CONFIG)
 
 /****************************************************************************
  * Public Data

@@ -55,6 +55,7 @@
  *   Poll NVIC SYSTICK count for 10ms wait
  ****************************************************************************/
 
+#if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
 static void systick_delay_10ms(void)
 {
   const uint32_t mask = NVIC_SYSTICK_CURRENT_MASK;
@@ -115,8 +116,6 @@ static void systick_delay_10ms(void)
  * Description:
  *   Perform architecture-specific initialization
  ****************************************************************************/
-
-#if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
 
 void stm32_timer_clocktest(void)
 {

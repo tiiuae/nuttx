@@ -34,6 +34,10 @@
 #   2. Set MSP to vector 0 and PC to the image entry point (__start).
 #   3. Release the core.
 #
+# In --no-run mode, steps 2 and 3 are deliberately left to GDB.  Writing PC
+# through STM32_Programmer_CLI can briefly release the Cortex-M55 before a
+# subsequent -halt takes effect.
+#
 # Nothing persists across a power cycle; re-run this after every reset.  Use
 # the CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI configuration and tools/mkimage.sh if
 # you want the board to boot standalone from the external flash.
@@ -72,8 +76,8 @@ Options:
       --msp ADDR       Override the initial stack pointer
       --port PORT      ST-LINK port                (default: $PORT)
       --mode MODE      Connection mode: HOTPLUG/UR/NORMAL (default: $CONNMODE)
-  -n, --no-run         Leave the core halted at the entry point, ready for
-                       a debugger to attach
+  -n, --no-run         Download the image and leave the core halted in the
+                       DEV-ROM loop; use GDB to set MSP and PC
   -h, --help           Show this help
 
 Environment:
@@ -169,11 +173,17 @@ echo "$progname:   PC  : $ENTRY"
 
 set -- -c "port=$PORT" "mode=$CONNMODE" \
        -halt                            \
-       -w "$BIN" "$RAMSTART"            \
-       -coreReg "MSP=$MSP" "PC=$ENTRY"
+       -w "$BIN" "$RAMSTART"
 
 if [ "$RUN" -eq 1 ]; then
-  set -- "$@" -run
+  set -- "$@" -coreReg "MSP=$MSP" "PC=$ENTRY" -run
+else
+  # Do not write MSP or PC here.  On STM32N6, writing PC through
+  # STM32_Programmer_CLI can release the core before a following -halt is
+  # processed.  Keep the CPU parked in the DEV-ROM loop and let GDB install
+  # the SRAM vectors after it has attached and established control.
+
+  set -- "$@" -halt -score
 fi
 
 "$PROGRAMMER" "$@"
@@ -181,5 +191,10 @@ fi
 if [ "$RUN" -eq 1 ]; then
   echo "$progname: running.  Console is on USART1 via the ST-LINK VCP."
 else
-  echo "$progname: core halted at $ENTRY; attach a debugger to continue."
+  echo "$progname: image loaded; core left halted in the DEV-ROM loop."
+  echo "$progname: after attaching GDB, run:"
+  echo "  set \$msp = *(unsigned int *)$RAMSTART"
+  echo "  set \$pc  = *(unsigned int *)($RAMSTART + 4)"
+  echo "  hbreak *$ENTRY"
+  echo "  continue"
 fi

@@ -53,6 +53,7 @@ endchoice # Boot configuration
 config NUCLEO_N657X0_Q_BOOTLOADER
 	bool "Build SRAM2 bootloader image"
 	depends on !NUCLEO_N657X0_Q_BOOT_XSPI
+	depends on STM32_XSPI && MTD_MX25UM51245G
 	---help---
 		Build a small NuttX bootloader that the STM32N6 boot ROM loads from
 		external XSPI2 flash into AXI SRAM2 at 0x34180000.  The linked image

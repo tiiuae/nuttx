@@ -86,5 +86,9 @@
 
 int stm32_bringup(void);
 
+#ifdef CONFIG_NUCLEO_N657X0_Q_BOOTLOADER
+int stm32_xspi_flash_initialize(void);
+#endif
+
 #endif /* __ASSEMBLY__ */
 #endif /* __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H */
