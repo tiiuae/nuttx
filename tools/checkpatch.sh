@@ -323,7 +323,12 @@ check_msg() {
     fail=1
   fi
 
-  if (( ${#first} > $max_line_len )); then
+  first_notag="$first"
+  if [[ $first =~ ^\[[A-Za-z]+\][[:space:]]* ]]; then
+    first_notag="${first:${#BASH_REMATCH[0]}}"
+  fi
+
+  if (( ${#first_notag} > $max_line_len )); then
     echo "Commit subject too long > $max_line_len"
     fail=1
   fi
