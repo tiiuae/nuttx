@@ -1,3 +1,17 @@
+> **TII fork, `skunkworks`.** Apache NuttX for the Saluki boards, carrying
+> i.MX93 EdgeLock Enclave drivers. PX4 builds it only
+> through [px4-firmware `skunkworks`](https://github.com/tiiuae/px4-firmware/tree/skunkworks#build),
+> which pins this branch. Everything below is upstream's README.
+>
+> | Carried here                                | Upstream                                                   |
+> | ------------------------------------------- | ---------------------------------------------------------- |
+> | ELE-backed `/dev/random`                    | <https://github.com/apache/nuttx/pull/20191>, in review    |
+> | ELE key store, signing, persistence         | <https://github.com/apache/nuttx/pull/20343>, in review    |
+> | ELE physical and virtual addresses          | <https://github.com/apache/nuttx/pull/20196>, merged       |
+>
+> Change a driver upstream first when it is general, then carry it here.
+> Do not rebase `skunkworks`; it is shared.
+
 <p align="center">
 <img src="https://raw.githubusercontent.com/apache/nuttx/master/Documentation/_static/NuttX320.png" width="175">
 </p>
