@@ -170,6 +170,8 @@ begin_packed_struct struct ele_sign_s
   uint8_t  flags;
   uint8_t  reserved;
   uint32_t scheme_id;
+  uint16_t salt_len;
+  uint16_t reserved2;
   uint32_t crc;
 } end_packed_struct;
 
