@@ -49,7 +49,7 @@
 #define lower_32_bits(n) ((uint32_t)(n))
 
 #define ELE_RNG_TIMEOUT_US    5000
-#define ELE_POLL_SLEEP_US     100
+#define ELE_POLL_SLEEP_US     1
 
 /* A key generation is the slowest call, a few hundred milliseconds. */
 
@@ -64,6 +64,7 @@
 #define ELE_BLOB_SLOTS        8
 #define ELE_BLOB_SIZE         2048
 #define ELE_BLOB_MASTER_ID    0xffffffff
+#define ELE_SIG_SIZE          192
 #define ELE_CHUNK_GET_SUCCESS 0xca3bb3acu
 
 #define ELE_STORAGE_FAILURE   0x29
@@ -97,6 +98,8 @@ struct ele_blob_s
 };
 
 static struct ele_blob_s g_ele_blob[ELE_BLOB_SLOTS];
+
+static uint8_t g_ele_sig[ELE_SIG_SIZE] aligned_data(ARMV8A_DCACHE_LINESIZE);
 
 /* The command payloads, as the enclave's message interface lays them out. */
 
@@ -457,7 +460,7 @@ static void imx9_ele_service_request(struct ele_msg *req)
 
       /* The enclave writes behind the cache. */
 
-        up_flush_dcache((uintptr_t)g_ele_blob_data[slot],
+        up_clean_dcache((uintptr_t)g_ele_blob_data[slot],
                         (uintptr_t)g_ele_blob_data[slot] + ELE_BLOB_SIZE);
 
         rsp.header.size = 4;
@@ -488,7 +491,7 @@ static void imx9_ele_service_request(struct ele_msg *req)
         g_ele_blob[slot].len = req->data[1];
         g_ele_blob[slot].pending = true;
 
-        up_flush_dcache((uintptr_t)g_ele_blob_data[slot],
+        up_clean_dcache((uintptr_t)g_ele_blob_data[slot],
                         (uintptr_t)g_ele_blob_data[slot] + ELE_BLOB_SIZE);
 
         rsp.header.size = 3;
@@ -544,7 +547,7 @@ static void imx9_ele_service_request(struct ele_msg *req)
             break;
           }
 
-        up_flush_dcache((uintptr_t)g_ele_blob_data[slot],
+        up_clean_dcache((uintptr_t)g_ele_blob_data[slot],
                         (uintptr_t)g_ele_blob_data[slot] + ELE_BLOB_SIZE);
 
         rsp.header.size = 4;
@@ -1471,7 +1474,7 @@ int imx9_ele_sig_gen_close(uint32_t svc)
  *   digest  - true if input is already hashed, false to let the enclave hash
  *   in      - message or digest, cache line aligned
  *   inlen   - its length
- *   out     - buffer for the signature, cache line aligned
+ *   out     - buffer for the signature
  *   outlen  - its length, 2 * key bytes + 1 for ECDSA
  *
  * Returned Value:
@@ -1489,26 +1492,22 @@ int imx9_ele_sign(uint32_t svc, uint32_t key_id, uint32_t algo, bool digest,
   uintptr_t in_pa;
   uintptr_t out_pa;
   size_t in_span;
-  size_t out_span;
 
-  if (in == NULL || out == NULL || inlen == 0 || outlen == 0)
+  if (in == NULL || out == NULL || inlen == 0 || outlen == 0 ||
+      outlen > ELE_SIG_SIZE)
     {
       return -EINVAL;
     }
 
-  /* A signature is never a whole number of cache lines. */
-
-  if (!IS_ALIGNED((uintptr_t)in, ARMV8A_DCACHE_LINESIZE) ||
-      !IS_ALIGNED((uintptr_t)out, ARMV8A_DCACHE_LINESIZE))
+  if (!IS_ALIGNED((uintptr_t)in, ARMV8A_DCACHE_LINESIZE))
     {
       return -EINVAL;
     }
 
   in_span = ALIGN_UP(inlen, ARMV8A_DCACHE_LINESIZE);
-  out_span = ALIGN_UP(outlen, ARMV8A_DCACHE_LINESIZE);
 
   in_pa = imx9_ele_buffer_pa(in);
-  out_pa = imx9_ele_buffer_pa(out);
+  out_pa = imx9_ele_buffer_pa(g_ele_sig);
   if (in_pa == 0 || out_pa == 0 ||
       in_pa > UINT32_MAX - inlen || out_pa > UINT32_MAX - outlen)
     {
@@ -1526,8 +1525,9 @@ int imx9_ele_sign(uint32_t svc, uint32_t key_id, uint32_t algo, bool digest,
                      : ELE_SIG_FLAG_INPUT_MESSAGE;
   cmd.scheme_id = algo;
 
-  up_flush_dcache((uintptr_t)in, (uintptr_t)in + in_span);
-  up_flush_dcache((uintptr_t)out, (uintptr_t)out + out_span);
+  up_clean_dcache((uintptr_t)in, (uintptr_t)in + in_span);
+  up_invalidate_dcache((uintptr_t)g_ele_sig,
+                       (uintptr_t)g_ele_sig + ELE_SIG_SIZE);
 
   msg.header.version = ELE_VERSION_FW;
   msg.header.tag = ELE_CMD_TAG;
@@ -1549,7 +1549,9 @@ int imx9_ele_sign(uint32_t svc, uint32_t key_id, uint32_t algo, bool digest,
       return -EIO;
     }
 
-  up_invalidate_dcache((uintptr_t)out, (uintptr_t)out + out_span);
+  up_invalidate_dcache((uintptr_t)g_ele_sig,
+                       (uintptr_t)g_ele_sig + ELE_SIG_SIZE);
+  memcpy(out, g_ele_sig, outlen);
 
   return 0;
 }
@@ -1780,7 +1782,7 @@ int imx9_ele_storage_master_import(uint32_t storage, uint32_t *rsp)
       return -EFAULT;
     }
 
-  up_flush_dcache((uintptr_t)g_ele_blob_data[slot],
+  up_clean_dcache((uintptr_t)g_ele_blob_data[slot],
                   (uintptr_t)g_ele_blob_data[slot] + ELE_BLOB_SIZE);
 
   memset(&cmd, 0, sizeof(cmd));
