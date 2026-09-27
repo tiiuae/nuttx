@@ -25,6 +25,7 @@
  ****************************************************************************/
 
 #include <nuttx/arch.h>
+#include <nuttx/mutex.h>
 #include <debug.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -76,6 +77,10 @@
  ****************************************************************************/
 
 struct ele_msg msg;
+
+/* One mailbox and one msg: two threads' commands must never interleave. */
+
+static rmutex_t g_ele_lock = NXRMUTEX_INITIALIZER;
 
 /* Arrives mid-command, so it cannot be allocated at the point of need. */
 
@@ -562,6 +567,16 @@ static void imx9_ele_service_request(struct ele_msg *req)
  * Public Functions
  ****************************************************************************/
 
+void imx9_ele_lock(void)
+{
+  nxrmutex_lock(&g_ele_lock);
+}
+
+void imx9_ele_unlock(void)
+{
+  nxrmutex_unlock(&g_ele_lock);
+}
+
 void imx9_ele_init(void)
 {
   putreg32(0, ELE_MU_TCR);
@@ -868,7 +883,7 @@ int imx9_ele_get_trng_state(void)
   return -EIO;
 }
 
-int imx9_ele_get_random(void *buf, size_t len)
+static int imx9_ele_get_random_locked(void *buf, size_t len)
 {
   uint16_t counter = 0;
   uint16_t max_tries = ELE_RNG_TIMEOUT_US / ELE_RNG_SLEEP_US;
@@ -937,6 +952,16 @@ int imx9_ele_get_random(void *buf, size_t len)
     }
 
   return -EIO;
+}
+
+int imx9_ele_get_random(void *buf, size_t len)
+{
+  int ret;
+
+  imx9_ele_lock();
+  ret = imx9_ele_get_random_locked(buf, len);
+  imx9_ele_unlock();
+  return ret;
 }
 
 int imx9_ele_commit(uint32_t info, uint32_t *response)

@@ -237,6 +237,19 @@ int imx9_ele_verify_image(uint32_t img_id, uint32_t *response);
 int imx9_ele_start_rng(void);
 
 /****************************************************************************
+ * Name: imx9_ele_lock / imx9_ele_unlock
+ *
+ * Description:
+ *   Serialise use of the ELE mailbox, which every command shares. Recursive.
+ *   imx9_ele_get_random() takes it itself; any other caller holds it across
+ *   each command, or across a whole session that must not be interleaved.
+ *
+ ****************************************************************************/
+
+void imx9_ele_lock(void);
+void imx9_ele_unlock(void);
+
+/****************************************************************************
  * Name: imx9_ele_get_trng_state
  *
  * Description:
