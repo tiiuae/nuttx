@@ -6,7 +6,7 @@
 > | Carried here                                | Upstream                                                   |
 > | ------------------------------------------- | ---------------------------------------------------------- |
 > | ELE-backed `/dev/random`                    | <https://github.com/apache/nuttx/pull/20191>, in review    |
-> | ELE key store, signing, persistence         | <https://github.com/apache/nuttx/pull/20343>, in review    |
+> | ELE key store, signing, persistence, mailbox lock | <https://github.com/apache/nuttx/pull/20343>, in review |
 > | ELE physical and virtual addresses          | <https://github.com/apache/nuttx/pull/20196>, merged       |
 > | RT1176 CAAM `/dev/random`                   | <https://github.com/apache/nuttx/pull/20205>, merged       |
 >
