@@ -40,6 +40,7 @@
 #if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
 #include <arch/irq.h>
 #include "nvic.h"
+#include "dwt.h"
 #include "stm32_rcc.h"
 #include "stm32_tim.h"
 #endif
@@ -119,6 +120,8 @@ static void systick_delay_10ms(void)
 void stm32_timer_clocktest(void)
 {
   uint32_t reg, reg2;
+  uint32_t cycles_before;
+  uint32_t cycles_after;
 
   /* 1. Read and log RCC CFGR2 register value */
   reg = getreg32(STM32_RCC_CFGR2);
@@ -152,6 +155,11 @@ void stm32_timer_clocktest(void)
 
   /* Start both timers */
   syslog(LOG_INFO, "Start timers");
+
+  // start DWT
+  modifyreg32(NVIC_DEMCR, 0, NVIC_DEMCR_TRCENA);
+  modifyreg32(DWT_CTRL, 0, DWT_CTRL_CYCCNTENA_MASK);
+
   reg = getreg16(STM32_TIM1_CR1);
   reg2 = getreg16(STM32_TIM5_CR1);
   putreg16(reg | ATIM_CR1_CEN, STM32_TIM1_CR1);
@@ -160,13 +168,17 @@ void stm32_timer_clocktest(void)
   /* TODO: 5. Read and log CNT, delay with usleep and log CNT again */
 
   // 10ms delay using SYSTICK cnt
+  cycles_before = getreg32(DWT_CYCCNT);
   systick_delay_10ms();
+  cycles_after = getreg32(DWT_CYCCNT);
 
   reg = getreg32(STM32_TIM1_CNT);
   reg2 = getreg32(STM32_TIM5_CNT);
-  syslog(LOG_INFO, "After 10ms:");
+  syslog(LOG_INFO, "After 3s:");
   syslog(LOG_INFO, "TIM1 CNT: %lu", reg);
   syslog(LOG_INFO, "TIM5 CNT: %lu", reg2);
+  syslog(LOG_INFO, "DWT cycles: %lu",
+         (uint32_t)(cycles_after - cycles_before));
 
   syslog(LOG_INFO, "CFGR1:      %08lx",
          getreg32(STM32_RCC_CFGR1));
