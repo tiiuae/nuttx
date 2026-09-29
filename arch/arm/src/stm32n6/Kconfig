@@ -35,6 +35,85 @@ config STM32_STM32N6XXXX
 	bool
 	default y
 
+menu "STM32N6 DMA Configuration"
+
+config STM32_GPDMA1
+	bool "Enable GPDMA1"
+	depends on ARCH_CHIP_STM32N6
+	select STM32_DMA
+	select ARCH_DMA
+	default n
+	---help---
+		Enable the 16-channel GPDMA1 controller.
+
+config STM32_GPDMA1_NCHANNELS
+	int "GPDMA1 channel pool size"
+	depends on STM32_GPDMA1
+	range 1 16
+	default 16
+	---help---
+		Number of low-numbered GPDMA1 channels made available to the DMA
+		driver.
+
+config STM32_GPDMA1_RESERVED_CHANNELS
+	int "GPDMA1 channels reserved from allocation"
+	depends on STM32_GPDMA1
+	range 0 16
+	default 0
+	---help---
+		Number of low-numbered GPDMA1 channels withheld from general
+		allocation for board or peripheral reservations.
+
+config STM32_HPDMA1
+	bool "Enable HPDMA1"
+	depends on ARCH_CHIP_STM32N6
+	select STM32_DMA
+	select ARCH_DMA
+	default n
+	---help---
+		Enable the 16-channel HPDMA1 controller.
+
+config STM32_HPDMA1_NCHANNELS
+	int "HPDMA1 channel pool size"
+	depends on STM32_HPDMA1
+	range 1 16
+	default 16
+	---help---
+		Number of low-numbered HPDMA1 channels made available to the DMA
+		driver.
+
+config STM32_HPDMA1_RESERVED_CHANNELS
+	int "HPDMA1 channels reserved from allocation"
+	depends on STM32_HPDMA1
+	range 0 16
+	default 0
+	---help---
+		Number of low-numbered HPDMA1 channels withheld from general
+		allocation for board or peripheral reservations.
+
+config STM32_DMA_DIAGNOSTICS
+	bool "DMA diagnostics"
+	depends on STM32_DMA
+	default n
+	---help---
+		Enable additional diagnostics in the STM32N6 DMA driver.
+
+config STM32_DMA_LINKEDLIST
+	bool "DMA linked-list support"
+	depends on STM32_DMA
+	default n
+	---help---
+		Enable linked-list DMA operations.
+
+config STM32_DMA_CIRCULAR
+	bool "DMA circular operation support"
+	depends on STM32_DMA_LINKEDLIST
+	default n
+	---help---
+		Enable circular and ping-pong linked-list DMA operations.
+
+endmenu
+
 choice
 	prompt "STM32 N6 Chip Selection"
 	default ARCH_CHIP_STM32N657X0

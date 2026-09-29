@@ -50,8 +50,14 @@
 #define STM32_RCC_IC6CFGR_OFFSET      0x00d8  /* IC6 configuration register */
 #define STM32_RCC_IC11CFGR_OFFSET     0x00ec  /* IC11 configuration register */
 #define STM32_RCC_CCIPR13_OFFSET      0x0174  /* Peripheral kernel clock select register 13 */
+#define STM32_RCC_AHB1RSTR_OFFSET     0x0210  /* AHB1 peripheral reset register */
+#define STM32_RCC_AHB5RSTR_OFFSET     0x0220  /* AHB5 peripheral reset register */
 #define STM32_RCC_APB1LRSTR_OFFSET    0x0224  /* APB1L peripheral reset register */
 #define STM32_RCC_APB2RSTR_OFFSET     0x022c  /* APB2 peripheral reset register */
+#define STM32_RCC_AHB1ENSR_OFFSET     0x0a50  /* AHB1 peripheral clock enable set register */
+#define STM32_RCC_AHB5ENSR_OFFSET     0x0a60  /* AHB5 peripheral clock enable set register */
+#define STM32_RCC_AHB1RSTSR_OFFSET    0x0a10  /* AHB1 peripheral reset set register */
+#define STM32_RCC_AHB5RSTSR_OFFSET    0x0a20  /* AHB5 peripheral reset set register */
 
 /* Peripheral clock enable / set / clear register offsets.  Each enable
  * register (xxxENR) has a paired set register (xxxENSR) that performs an
@@ -84,6 +90,8 @@
 #define STM32_RCC_APB2LPENSR_OFFSET   0x0aac  /* APB2 LP clock enable set register */
 
 #define STM32_RCC_CCR_OFFSET          0x1000  /* Clock control clear register */
+#define STM32_RCC_AHB1RSTCR_OFFSET    0x1210  /* AHB1 peripheral reset clear register */
+#define STM32_RCC_AHB5RSTCR_OFFSET    0x1220  /* AHB5 peripheral reset clear register */
 #define STM32_RCC_APB2ENCR_OFFSET     0x126c  /* APB2 clock enable clear register */
 
 #define STM32_RCC_CSR_OFFSET          0x0800  /* Clock status (set) register */
@@ -102,8 +110,16 @@
 #define STM32_RCC_IC6CFGR             (STM32_RCC_BASE + STM32_RCC_IC6CFGR_OFFSET)
 #define STM32_RCC_IC11CFGR            (STM32_RCC_BASE + STM32_RCC_IC11CFGR_OFFSET)
 #define STM32_RCC_CCIPR13             (STM32_RCC_BASE + STM32_RCC_CCIPR13_OFFSET)
+#define STM32_RCC_AHB1RSTR            (STM32_RCC_BASE + STM32_RCC_AHB1RSTR_OFFSET)
+#define STM32_RCC_AHB5RSTR            (STM32_RCC_BASE + STM32_RCC_AHB5RSTR_OFFSET)
 #define STM32_RCC_APB1LRSTR            (STM32_RCC_BASE + STM32_RCC_APB1LRSTR_OFFSET)
 #define STM32_RCC_APB2RSTR             (STM32_RCC_BASE + STM32_RCC_APB2RSTR_OFFSET)
+#define STM32_RCC_AHB1ENSR            (STM32_RCC_BASE + STM32_RCC_AHB1ENSR_OFFSET)
+#define STM32_RCC_AHB5ENSR            (STM32_RCC_BASE + STM32_RCC_AHB5ENSR_OFFSET)
+#define STM32_RCC_AHB1RSTSR           (STM32_RCC_BASE + STM32_RCC_AHB1RSTSR_OFFSET)
+#define STM32_RCC_AHB5RSTSR           (STM32_RCC_BASE + STM32_RCC_AHB5RSTSR_OFFSET)
+#define STM32_RCC_AHB1RSTCR           (STM32_RCC_BASE + STM32_RCC_AHB1RSTCR_OFFSET)
+#define STM32_RCC_AHB5RSTCR           (STM32_RCC_BASE + STM32_RCC_AHB5RSTCR_OFFSET)
 
 #define STM32_RCC_DIVENR              (STM32_RCC_BASE + STM32_RCC_DIVENR_OFFSET)
 #define STM32_RCC_DIVENSR             (STM32_RCC_BASE + STM32_RCC_DIVENSR_OFFSET)
@@ -331,6 +347,15 @@
 
 #define RCC_APB4HENR_BSECEN           (1 << 1)   /* Bit 1:  BSEC enable */
 #define RCC_APB4HENR_SYSCFGEN         (1 << 0)   /* Bit 0:  SYSCFG enable */
+
+/* AHB1/AHB5 DMA reset and clock controls */
+
+#define RCC_AHB1RSTSR_GPDMA1RSTS      (1 << 4)   /* Bit 4:  GPDMA1 reset set */
+#define RCC_AHB5RSTSR_HPDMA1RSTS      (1 << 0)   /* Bit 0:  HPDMA1 reset set */
+#define RCC_AHB1RSTCR_GPDMA1RSTC      (1 << 4)   /* Bit 4:  GPDMA1 reset clear */
+#define RCC_AHB5RSTCR_HPDMA1RSTC      (1 << 0)   /* Bit 0:  HPDMA1 reset clear */
+#define RCC_AHB1ENSR_GPDMA1ENS        (1 << 4)   /* Bit 4:  GPDMA1 clock enable set */
+#define RCC_AHB5ENSR_HPDMA1ENS        (1 << 0)   /* Bit 0:  HPDMA1 clock enable set */
 
 /* Bus clock enable in Sleep mode */
 

@@ -34,6 +34,9 @@
 
 #include "stm32_rcc.h"
 #include "stm32_pwr.h"
+#ifdef CONFIG_STM32_DMA
+#  include "stm32_dma.h"
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -106,6 +109,31 @@ static inline void rcc_enableapb2(void)
 }
 
 /****************************************************************************
+ * Name: rcc_enabledma
+ *
+ * Description:
+ *   Enable and reset only the DMA controllers selected by Kconfig.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_STM32_DMA
+static inline void rcc_enabledma(void)
+{
+#ifdef CONFIG_STM32_GPDMA1
+  putreg32(RCC_AHB1ENSR_GPDMA1ENS, STM32_RCC_AHB1ENSR);
+  putreg32(RCC_AHB1RSTSR_GPDMA1RSTS, STM32_RCC_AHB1RSTSR);
+  putreg32(RCC_AHB1RSTCR_GPDMA1RSTC, STM32_RCC_AHB1RSTCR);
+#endif
+
+#ifdef CONFIG_STM32_HPDMA1
+  putreg32(RCC_AHB5ENSR_HPDMA1ENS, STM32_RCC_AHB5ENSR);
+  putreg32(RCC_AHB5RSTSR_HPDMA1RSTS, STM32_RCC_AHB5RSTSR);
+  putreg32(RCC_AHB5RSTCR_HPDMA1RSTC, STM32_RCC_AHB5RSTCR);
+#endif
+}
+#endif
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -127,6 +155,11 @@ void stm32_rcc_enableperipherals(void)
 
   rcc_enableahb4();
   rcc_enableapb2();
+
+#ifdef CONFIG_STM32_DMA
+  rcc_enabledma();
+  stm32_dma_initialize();
+#endif
 }
 
 /****************************************************************************

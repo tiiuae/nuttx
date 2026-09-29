@@ -47,6 +47,10 @@ if(CONFIG_STM32_TIM)
   list(APPEND SRCS stm32_tim.c)
 endif()
 
+if(CONFIG_STM32_DMA)
+  list(APPEND SRCS stm32_dma.c stm32_dma_access.c)
+endif()
+
 # Chip-specific RCC
 
 if(CONFIG_STM32_STM32N6XXXX)

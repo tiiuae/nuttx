@@ -46,6 +46,10 @@ ifeq ($(CONFIG_STM32_TIM),y)
 CHIP_CSRCS += stm32_tim.c
 endif
 
+ifeq ($(CONFIG_STM32_DMA),y)
+CHIP_CSRCS += stm32_dma.c stm32_dma_access.c
+endif
+
 # Chip-specific RCC
 
 CHIP_CSRCS += stm32n6xx_rcc.c
