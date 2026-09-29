@@ -243,5 +243,13 @@ int stm32_bringup(void)
 #if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
   stm32_timer_clocktest();
 #endif
+
+#if defined(CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST)
+  if (stm32_dma_policy_test() < 0)
+    {
+      syslog(LOG_ERR, "ERROR: DMA access policy test failed\n");
+    }
+#endif
+
   return OK;
 }

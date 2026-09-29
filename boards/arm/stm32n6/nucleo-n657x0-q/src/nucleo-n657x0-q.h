@@ -86,5 +86,9 @@
 
 int stm32_bringup(void);
 
+#ifdef CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST
+int stm32_dma_policy_test(void);
+#endif
+
 #endif /* __ASSEMBLY__ */
 #endif /* __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H */
