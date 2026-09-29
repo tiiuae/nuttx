@@ -43,7 +43,11 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define STM32_DMA_TEST_NWORDS       16
+#define STM32_DMA_TEST_NWORDS       64
+#define STM32_DMA_TEST_LLI_COUNT    3
+#define STM32_DMA_TEST_LLI_NWORDS   4096
+#define STM32_DMA_TEST_LLI_NBYTES   \
+  (STM32_DMA_TEST_LLI_NWORDS * sizeof(uint32_t))
 #define STM32_DMA_TEST_WAIT_LOOPS   100000
 
 /****************************************************************************
@@ -53,6 +57,7 @@
 struct stm32_dma_test_callback_s
 {
   volatile uint32_t count;
+  volatile uint32_t tcf_count;
   volatile uint8_t status;
 };
 
@@ -61,9 +66,18 @@ struct stm32_dma_test_callback_s
  ****************************************************************************/
 
 static uint32_t g_dma_test_source[STM32_DMA_TEST_NWORDS]
-  __attribute__((aligned(32)));
+  __attribute__((aligned(256)));
 static uint32_t g_dma_test_destination[STM32_DMA_TEST_NWORDS]
-  __attribute__((aligned(32)));
+  __attribute__((aligned(256)));
+static uint32_t
+  g_dma_test_lli_source[STM32_DMA_TEST_LLI_COUNT][STM32_DMA_TEST_LLI_NWORDS]
+  __attribute__((aligned(256)));
+static uint32_t
+  g_dma_test_lli_destination[STM32_DMA_TEST_LLI_COUNT]
+                            [STM32_DMA_TEST_LLI_NWORDS]
+  __attribute__((aligned(256)));
+static struct stm32_dma_lli_s g_dma_test_lli_descriptors
+  [STM32_DMA_TEST_LLI_COUNT] __attribute__((aligned(256)));
 
 /****************************************************************************
  * Private Functions
@@ -77,6 +91,10 @@ static void stm32_dma_test_callback(DMA_HANDLE handle, uint8_t status,
   UNUSED(handle);
   callback->status |= status;
   callback->count++;
+  if ((status & DMA_STATUS_TCF) != 0)
+    {
+      callback->tcf_count++;
+    }
 }
 
 static int stm32_dma_test_copy(enum stm32_dma_controller_e controller,
@@ -85,6 +103,7 @@ static int stm32_dma_test_copy(enum stm32_dma_controller_e controller,
   struct stm32_dma_test_callback_s callback =
   {
     .count = 0,
+    .tcf_count = 0,
     .status = 0
   };
   struct stm32_dma_request_s request =
@@ -116,13 +135,6 @@ static int stm32_dma_test_copy(enum stm32_dma_controller_e controller,
       g_dma_test_source[i] = 0x13570000 | (i * 0x101);
       g_dma_test_destination[i] = 0;
     }
-
-  up_clean_dcache((uintptr_t)g_dma_test_source,
-                  (uintptr_t)(g_dma_test_source +
-                              STM32_DMA_TEST_NWORDS));
-  up_clean_dcache((uintptr_t)g_dma_test_destination,
-                  (uintptr_t)(g_dma_test_destination +
-                              STM32_DMA_TEST_NWORDS));
 
   handle = stm32_dmachannel(&request);
   if (handle == NULL)
@@ -187,6 +199,30 @@ static int stm32_dma_test_copy(enum stm32_dma_controller_e controller,
       config.width = sizeof(uint32_t);
     }
 
+  if (up_get_dcache_linesize() > config.width)
+    {
+      ret = stm32_dmasetup(handle, &config);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      config.destination_address += config.width;
+      ret = stm32_dmasetup(handle, &config);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      if (stm32_dmastart(handle) != -EINVAL)
+        {
+          ret = -EIO;
+          goto out;
+        }
+
+      config.destination_address -= config.width;
+    }
+
   ret = stm32_dmacallback(handle, stm32_dma_test_callback, &callback);
   if (ret < 0)
     {
@@ -228,10 +264,6 @@ static int stm32_dma_test_copy(enum stm32_dma_controller_e controller,
       goto out;
     }
 
-  up_invalidate_dcache((uintptr_t)g_dma_test_destination,
-                       (uintptr_t)(g_dma_test_destination +
-                                   STM32_DMA_TEST_NWORDS));
-
   for (mismatch = 0; mismatch < STM32_DMA_TEST_NWORDS; mismatch++)
     {
       if (g_dma_test_source[mismatch] !=
@@ -245,6 +277,7 @@ static int stm32_dma_test_copy(enum stm32_dma_controller_e controller,
         (DMA_STATUS_HTF | DMA_STATUS_TCF) ||
       status.remaining != 0 || status.error != 0 ||
       callback.count == 0 ||
+      callback.tcf_count != 1 ||
       (callback.status & (DMA_STATUS_HTF | DMA_STATUS_TCF)) !=
         (DMA_STATUS_HTF | DMA_STATUS_TCF) ||
       mismatch != STM32_DMA_TEST_NWORDS)
@@ -298,6 +331,302 @@ out:
       syslog(LOG_INFO,
              "DMA core: controller %d width %u copy, callback, status and "
              "validation OK\n", controller, width);
+    }
+
+  return ret;
+}
+
+static int stm32_dma_test_linked_list(
+  enum stm32_dma_controller_e controller,
+  enum stm32_dma_list_mode_e mode, size_t count, bool extended,
+  unsigned int nchannels, unsigned int reserved)
+{
+  struct stm32_dma_test_callback_s callback =
+  {
+    .count = 0,
+    .tcf_count = 0,
+    .status = 0
+  };
+  struct stm32_dma_request_s request =
+  {
+    .controller = controller,
+    .direction = STM32_DMA_MEMORY_TO_MEMORY,
+    .request = STM32_DMA_REQUEST_NONE,
+    .peripheral_address = 0
+  };
+  struct stm32_dma_config_s configs[STM32_DMA_TEST_LLI_COUNT];
+  struct stm32_dma_status_s status;
+  DMA_HANDLE handles[16] = { NULL };
+  DMA_HANDLE handle;
+  unsigned int target;
+  size_t nhandles;
+  size_t i;
+  size_t j;
+  size_t nallocated = 0;
+  int ret = 0;
+  bool started = false;
+
+  if (count == 0 || count > STM32_DMA_TEST_LLI_COUNT ||
+      nchannels > 16 || reserved > nchannels)
+    {
+      return -EINVAL;
+    }
+
+  if (extended)
+    {
+      target = reserved < STM32_GPDMA1_2D_FIRST_CHANNEL ?
+               STM32_GPDMA1_2D_FIRST_CHANNEL : reserved;
+      if (target >= nchannels)
+        {
+          return -ENOSPC;
+        }
+
+      nhandles = target - reserved + 1;
+    }
+  else
+    {
+      nhandles = 1;
+    }
+
+  if (nhandles > nchannels - reserved)
+    {
+      return -ENOSPC;
+    }
+
+  for (i = 0; i < count; i++)
+    {
+      configs[i].source_address =
+        (uintptr_t)g_dma_test_lli_source[i];
+      configs[i].destination_address =
+        (uintptr_t)g_dma_test_lli_destination[i];
+      configs[i].nbytes = STM32_DMA_TEST_LLI_NBYTES;
+      configs[i].width = sizeof(uint32_t);
+      configs[i].priority = 1;
+      configs[i].source_increment = true;
+      configs[i].destination_increment = true;
+
+      for (j = 0; j < STM32_DMA_TEST_LLI_NWORDS; j++)
+        {
+          g_dma_test_lli_source[i][j] =
+            ((i + 1) << 24) ^ (j * 0x10201);
+          g_dma_test_lli_destination[i][j] = 0;
+        }
+    }
+
+  for (i = 0; i < nhandles; i++)
+    {
+      handles[i] = stm32_dmachannel(&request);
+      if (handles[i] == NULL)
+        {
+          ret = -EBUSY;
+          goto out;
+        }
+
+      nallocated++;
+    }
+
+  handle = handles[nhandles - 1];
+
+  ret = stm32_dmacallback(handle, stm32_dma_test_callback, &callback);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  if (mode == STM32_DMA_LIST_TERMINAL &&
+      stm32_dmallibuild(handle, configs, count, g_dma_test_lli_descriptors,
+                        count - 1, mode) != -EINVAL)
+    {
+      ret = -EIO;
+      goto out;
+    }
+
+  ret = stm32_dmallibuild(handle, configs, count,
+                          g_dma_test_lli_descriptors,
+                          STM32_DMA_TEST_LLI_COUNT, mode);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  syslog(LOG_INFO,
+         "DMA core: controller %d list mode %d starting %u descriptors\n",
+         controller, mode, (unsigned int)count);
+
+  ret = stm32_dmastart(handle);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  started = true;
+  for (i = 0; i < STM32_DMA_TEST_WAIT_LOOPS; i++)
+    {
+      ret = stm32_dmastatus(handle, &status);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      if ((mode == STM32_DMA_LIST_TERMINAL && !status.in_flight) ||
+          (mode != STM32_DMA_LIST_TERMINAL && callback.tcf_count >= 2))
+        {
+          break;
+        }
+
+      up_udelay(1);
+    }
+
+  if (i == STM32_DMA_TEST_WAIT_LOOPS)
+    {
+      ret = -ETIMEDOUT;
+      goto out;
+    }
+
+  if (mode == STM32_DMA_LIST_TERMINAL)
+    {
+      if (status.in_flight || status.remaining != 0 || status.error != 0 ||
+          (status.flags & DMA_STATUS_TCF) == 0 ||
+          callback.tcf_count != count)
+        {
+          ret = -EIO;
+          goto out;
+        }
+    }
+  else
+    {
+      if (!status.in_flight || callback.tcf_count < 2 ||
+          (callback.status & DMA_STATUS_TCF) == 0)
+        {
+          ret = -EIO;
+          goto out;
+        }
+
+      syslog(LOG_INFO,
+             "DMA core: controller %d list mode %d completed a ring; "
+             "requesting suspend\n", controller, mode);
+
+      ret = stm32_dmastop(handle);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      syslog(LOG_INFO,
+             "DMA core: controller %d list mode %d suspended\n",
+             controller, mode);
+
+      started = false;
+      ret = stm32_dmastatus(handle, &status);
+      if (ret < 0 || status.in_flight ||
+          (status.flags & DMA_STATUS_SUSPF) == 0 || status.error != 0)
+        {
+          ret = ret < 0 ? ret : -EIO;
+          goto out;
+        }
+    }
+
+  for (i = 0; i < count; i++)
+    {
+      for (j = 0; j < STM32_DMA_TEST_LLI_NWORDS; j++)
+        {
+          if (g_dma_test_lli_source[i][j] !=
+              g_dma_test_lli_destination[i][j])
+            {
+              syslog(LOG_ERR,
+                     "DMA core: controller %d list mode %d descriptor "
+                     "%u word %u mismatch\n",
+                     controller, mode, (unsigned int)i, (unsigned int)j);
+              ret = -EIO;
+              goto out;
+            }
+        }
+    }
+
+  syslog(LOG_INFO,
+         "DMA core: controller %d list mode %d %s-channel test OK "
+         "(TCF=%lu)\n",
+         controller, mode,
+         (extended || reserved >= STM32_GPDMA1_2D_FIRST_CHANNEL) ?
+           "extended" : "standard",
+         (unsigned long)callback.tcf_count);
+
+out:
+  if (started)
+    {
+      int stopret = stm32_dmastop(handle);
+
+      if (ret == 0 && stopret < 0)
+        {
+          ret = stopret;
+        }
+    }
+
+  while (nallocated > 0)
+    {
+      int freeret;
+
+      nallocated--;
+      freeret = stm32_dmafree(handles[nallocated]);
+      if (ret == 0 && freeret < 0)
+        {
+          ret = freeret;
+        }
+    }
+
+  if (ret < 0)
+    {
+      syslog(LOG_ERR,
+             "DMA core: controller %d list mode %d test failed: %d\n",
+             controller, mode, ret);
+    }
+
+  return ret;
+}
+
+static int stm32_dma_test_linked_lists(
+  enum stm32_dma_controller_e controller, unsigned int nchannels,
+  unsigned int reserved)
+{
+  unsigned int extended_channel;
+  int ret = 0;
+
+  if (stm32_dma_test_linked_list(controller, STM32_DMA_LIST_TERMINAL,
+                                 STM32_DMA_TEST_LLI_COUNT, false,
+                                 nchannels, reserved) < 0)
+    {
+      ret = -EIO;
+    }
+
+  if (stm32_dma_test_linked_list(controller, STM32_DMA_LIST_CIRCULAR,
+                                 2, false, nchannels, reserved) < 0)
+    {
+      ret = -EIO;
+    }
+
+  if (stm32_dma_test_linked_list(controller, STM32_DMA_LIST_PINGPONG,
+                                 2, false, nchannels, reserved) < 0)
+    {
+      ret = -EIO;
+    }
+
+  extended_channel = reserved < STM32_GPDMA1_2D_FIRST_CHANNEL ?
+                     STM32_GPDMA1_2D_FIRST_CHANNEL : reserved;
+  if (reserved < STM32_GPDMA1_2D_FIRST_CHANNEL &&
+      extended_channel < nchannels)
+    {
+      if (stm32_dma_test_linked_list(controller, STM32_DMA_LIST_TERMINAL,
+                                     STM32_DMA_TEST_LLI_COUNT, true,
+                                     nchannels, reserved) < 0)
+        {
+          ret = -EIO;
+        }
+    }
+  else if (reserved < STM32_GPDMA1_2D_FIRST_CHANNEL)
+    {
+      syslog(LOG_WARNING,
+             "DMA core: controller %d extended-list test skipped; "
+             "no channel 12+ available\n", controller);
     }
 
   return ret;
@@ -477,6 +806,11 @@ int stm32_dma_policy_test(void)
     .peripheral_address = STM32_USART1_TDR
   };
 
+#ifndef CONFIG_ARCH_DCACHE
+  syslog(LOG_WARNING,
+         "DMA core: D-cache is disabled; cache-coherency checks are skipped\n");
+#endif
+
   if (stm32_dmachannel(&invalid_request) != NULL)
     {
       syslog(LOG_ERR, "DMA core: accepted an incompatible request direction\n");
@@ -565,6 +899,13 @@ int stm32_dma_policy_test(void)
     {
       ret = -EIO;
     }
+
+  if (stm32_dma_test_linked_lists(STM32_DMA_CONTROLLER_GPDMA1,
+                                  CONFIG_STM32_GPDMA1_NCHANNELS,
+                                  CONFIG_STM32_GPDMA1_RESERVED_CHANNELS) < 0)
+    {
+      ret = -EIO;
+    }
 #  else
   syslog(LOG_WARNING, "DMA core: GPDMA1 test skipped; no channels available\n");
 #  endif
@@ -579,6 +920,13 @@ int stm32_dma_policy_test(void)
     }
 
   if (stm32_dma_test_copy(STM32_DMA_CONTROLLER_HPDMA1, 8) < 0)
+    {
+      ret = -EIO;
+    }
+
+  if (stm32_dma_test_linked_lists(STM32_DMA_CONTROLLER_HPDMA1,
+                                  CONFIG_STM32_HPDMA1_NCHANNELS,
+                                  CONFIG_STM32_HPDMA1_RESERVED_CHANNELS) < 0)
     {
       ret = -EIO;
     }
