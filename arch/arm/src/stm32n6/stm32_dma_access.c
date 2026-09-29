@@ -30,8 +30,9 @@
  *   RM0486 defines RIF-aware DMA security locally in each controller. The
  *   non-RIF-aware peripheral clients reset nonsecure and unprivileged, which
  *   permits secure DMA masters to access them; their RIFSC permissions do
- *   not need to be weakened or changed for this initial policy. HPDMA CID
- *   filtering and semaphores also remain disabled at their reset values.
+ *   not need to be weakened or changed for this initial policy. HPDMA
+ *   channel CIDs are set to CID 1 and CID filtering is enabled by the core
+ *   driver to match the default RISAF region; semaphores remain disabled.
  *
  ****************************************************************************/
 

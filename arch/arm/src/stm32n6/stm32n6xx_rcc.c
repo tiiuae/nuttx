@@ -35,7 +35,7 @@
 #include "stm32_rcc.h"
 #include "stm32_pwr.h"
 #ifdef CONFIG_STM32_DMA
-#  include "stm32_dma.h"
+#  include "stm32_dma_access.h"
 #endif
 
 /****************************************************************************
@@ -126,6 +126,13 @@ static inline void rcc_enabledma(void)
 #endif
 
 #ifdef CONFIG_STM32_HPDMA1
+  /* HPDMA requires the AXI infrastructure clocks in addition to its own
+   * peripheral clock.  Without ACLKN and ACLKNC, transfers can complete
+   * without moving data.
+   */
+
+  putreg32(RCC_BUSENSR_ACLKNENS | RCC_BUSENSR_ACLKNCENS,
+           STM32_RCC_BUSENSR);
   putreg32(RCC_AHB5ENSR_HPDMA1ENS, STM32_RCC_AHB5ENSR);
   putreg32(RCC_AHB5RSTSR_HPDMA1RSTS, STM32_RCC_AHB5RSTSR);
   putreg32(RCC_AHB5RSTCR_HPDMA1RSTC, STM32_RCC_AHB5RSTCR);
@@ -143,10 +150,6 @@ static inline void rcc_enabledma(void)
 
 void stm32_rcc_enableperipherals(void)
 {
-#ifdef CONFIG_STM32_DMA
-  int ret;
-#endif
-
   /* Enable all AXISRAM bank clocks.  The boot ROM only enables AXISRAM1/2
    * which is sufficient for code execution, but the NuttX heap extends
    * across all SRAM banks (up to AXISRAM5 at 0x34400000+).  Without these
@@ -162,12 +165,7 @@ void stm32_rcc_enableperipherals(void)
 
 #ifdef CONFIG_STM32_DMA
   rcc_enabledma();
-  ret = stm32_dma_initialize();
-  if (ret < 0)
-    {
-      _err("ERROR: DMA initialization failed: %d\n", ret);
-      PANIC();
-    }
+  stm32_dma_access_initialize();
 #endif
 }
 

@@ -54,10 +54,12 @@
 #define STM32_RCC_AHB5RSTR_OFFSET     0x0220  /* AHB5 peripheral reset register */
 #define STM32_RCC_APB1LRSTR_OFFSET    0x0224  /* APB1L peripheral reset register */
 #define STM32_RCC_APB2RSTR_OFFSET     0x022c  /* APB2 peripheral reset register */
+#define STM32_RCC_BUSENR_OFFSET       0x0244  /* Embedded bus clock enable register */
 #define STM32_RCC_AHB1ENSR_OFFSET     0x0a50  /* AHB1 peripheral clock enable set register */
 #define STM32_RCC_AHB5ENSR_OFFSET     0x0a60  /* AHB5 peripheral clock enable set register */
 #define STM32_RCC_AHB1RSTSR_OFFSET    0x0a10  /* AHB1 peripheral reset set register */
 #define STM32_RCC_AHB5RSTSR_OFFSET    0x0a20  /* AHB5 peripheral reset set register */
+#define STM32_RCC_BUSENSR_OFFSET      0x0a44  /* Embedded bus clock enable set register */
 
 /* Peripheral clock enable / set / clear register offsets.  Each enable
  * register (xxxENR) has a paired set register (xxxENSR) that performs an
@@ -114,12 +116,14 @@
 #define STM32_RCC_AHB5RSTR            (STM32_RCC_BASE + STM32_RCC_AHB5RSTR_OFFSET)
 #define STM32_RCC_APB1LRSTR            (STM32_RCC_BASE + STM32_RCC_APB1LRSTR_OFFSET)
 #define STM32_RCC_APB2RSTR             (STM32_RCC_BASE + STM32_RCC_APB2RSTR_OFFSET)
+#define STM32_RCC_BUSENR               (STM32_RCC_BASE + STM32_RCC_BUSENR_OFFSET)
 #define STM32_RCC_AHB1ENSR            (STM32_RCC_BASE + STM32_RCC_AHB1ENSR_OFFSET)
 #define STM32_RCC_AHB5ENSR            (STM32_RCC_BASE + STM32_RCC_AHB5ENSR_OFFSET)
 #define STM32_RCC_AHB1RSTSR           (STM32_RCC_BASE + STM32_RCC_AHB1RSTSR_OFFSET)
 #define STM32_RCC_AHB5RSTSR           (STM32_RCC_BASE + STM32_RCC_AHB5RSTSR_OFFSET)
 #define STM32_RCC_AHB1RSTCR           (STM32_RCC_BASE + STM32_RCC_AHB1RSTCR_OFFSET)
 #define STM32_RCC_AHB5RSTCR           (STM32_RCC_BASE + STM32_RCC_AHB5RSTCR_OFFSET)
+#define STM32_RCC_BUSENSR             (STM32_RCC_BASE + STM32_RCC_BUSENSR_OFFSET)
 
 #define STM32_RCC_DIVENR              (STM32_RCC_BASE + STM32_RCC_DIVENR_OFFSET)
 #define STM32_RCC_DIVENSR             (STM32_RCC_BASE + STM32_RCC_DIVENSR_OFFSET)
@@ -356,6 +360,11 @@
 #define RCC_AHB5RSTCR_HPDMA1RSTC      (1 << 0)   /* Bit 0:  HPDMA1 reset clear */
 #define RCC_AHB1ENSR_GPDMA1ENS        (1 << 4)   /* Bit 4:  GPDMA1 clock enable set */
 #define RCC_AHB5ENSR_HPDMA1ENS        (1 << 0)   /* Bit 0:  HPDMA1 clock enable set */
+
+/* Embedded bus clocks required by HPDMA1 */
+
+#define RCC_BUSENSR_ACLKNENS          (1 << 0)   /* Bit 0:  ACLKN clock enable set */
+#define RCC_BUSENSR_ACLKNCENS         (1 << 1)   /* Bit 1:  ACLKNC clock enable set */
 
 /* Bus clock enable in Sleep mode */
 

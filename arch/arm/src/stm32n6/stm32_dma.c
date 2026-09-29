@@ -27,7 +27,6 @@
 #include "hardware/stm32n6xxx_gpdma.h"
 #include "hardware/stm32n6xxx_hpdma.h"
 #include "stm32_dma.h"
-#include "stm32_dma_access.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -293,8 +292,13 @@ static int stm32_dma_check_config(
       return -EINVAL;
     }
 
+  /* The STM32N6 access policy configures the DMA channel pools as secure.
+   * Keep the transfer's source and destination attributes secure as well.
+   */
+
   *tr1 = (width << STM32_DMA_TR1_SDW_SHIFT) |
-         (width << STM32_DMA_TR1_DDW_SHIFT);
+         (width << STM32_DMA_TR1_DDW_SHIFT) |
+         STM32_DMA_TR1_SSEC | STM32_DMA_TR1_DSEC;
 
   *tr2 = 0;
   switch (channel->request.direction)
@@ -340,6 +344,14 @@ static int stm32_dma_check_config(
 
         *tr1 |= STM32_DMA_TR1_SINC | STM32_DMA_TR1_DINC;
         *tr2 = STM32_DMA_TR2_SWREQ;
+
+        if (channel->controller == STM32_DMA_CONTROLLER_HPDMA1 &&
+            config->width <= STM32_HPDMA1_MAX_WIDTH_AHB)
+          {
+            source_port = 1;
+            destination_port = 1;
+          }
+
         break;
 
       default:
@@ -348,8 +360,9 @@ static int stm32_dma_check_config(
 
   /* HPDMA port 0 is AXI and port 1 is AHB. Peripheral transfers use its AHB
    * port for the peripheral endpoint and AXI for the memory endpoint. For
-   * memory-to-memory, AXI is used at both ends so 8-byte widths are valid.
-   * GPDMA port selections are both AHB and remain at their reset selection.
+   * memory-to-memory, select AHB up to 4-byte widths and AXI for 8-byte
+   * widths. GPDMA port selections are both AHB and remain at their reset
+   * selection.
    */
 
   if (channel->controller == STM32_DMA_CONTROLLER_HPDMA1)
@@ -496,6 +509,18 @@ static int stm32_dma_initialize_controller(
       channel->initialized = false;
 
       stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(i), 0);
+
+      if (controller == STM32_DMA_CONTROLLER_HPDMA1)
+        {
+          /* Allocate the channel to secure OS CID 1.  Enable CID filtering
+           * so only that CID can configure or use this channel.
+           */
+
+          putreg32(STM32_HPDMA_CIDCFGR_CFEN |
+                   STM32_HPDMA_CIDCFGR_SCID(1),
+                   STM32_HPDMA1_CXCIDCFGR(i));
+        }
+
       stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(i),
                        STM32_DMA_FLAG_CLEAR_MASK);
 
@@ -541,8 +566,6 @@ int stm32_dma_initialize(void)
       return 0;
     }
 
-  stm32_dma_access_initialize();
-
 #ifdef CONFIG_STM32_HPDMA1
   ret = stm32_dma_initialize_controller(STM32_DMA_CONTROLLER_HPDMA1,
                                         STM32_HPDMA1_BASE, 0,
@@ -574,6 +597,21 @@ int stm32_dma_initialize(void)
 
   g_dma_initialized = true;
   return 0;
+}
+
+/* NuttX calls this after irq_initialize(), so the attached DMA handlers
+ * remain installed when the NVIC starts dispatching interrupts.
+ */
+
+void weak_function arm_dma_initialize(void)
+{
+  int ret = stm32_dma_initialize();
+
+  if (ret < 0)
+    {
+      _err("ERROR: DMA initialization failed: %d\n", ret);
+      PANIC();
+    }
 }
 
 DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
