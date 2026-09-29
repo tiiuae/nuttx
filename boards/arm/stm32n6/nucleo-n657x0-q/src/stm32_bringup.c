@@ -125,7 +125,6 @@ void stm32_timer_clocktest(void)
 
   /* 1. Read and log RCC CFGR2 register value */
   reg = getreg32(STM32_RCC_CFGR2);
-  syslog(LOG_INFO, "TIMER TEST START");
   syslog(LOG_INFO, "RCC CFGR2: 0x%lx", reg);
 
   /* TODO: 2. Configure RIFSC access for TIM1 and TIM5 */
@@ -203,7 +202,6 @@ void stm32_timer_clocktest(void)
   reg2 = getreg16(STM32_TIM5_CR1);
   putreg16(reg & ~ATIM_CR1_CEN, STM32_TIM1_CR1);
   putreg16(reg2 & ~GTIM_CR1_CEN, STM32_TIM5_CR1);
-  syslog(LOG_INFO, "TIMER TEST END");
 }
 
 #endif
