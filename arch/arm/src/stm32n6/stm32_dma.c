@@ -13,6 +13,7 @@
 
 #include <arch/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/cache.h>
 #include <nuttx/debug.h>
 #include <nuttx/irq.h>
 
@@ -20,6 +21,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "arm_internal.h"
 #include "hardware/stm32n6xxx_dma.h"
@@ -59,8 +61,14 @@ struct stm32_dma_channel_s
   bool allocated;
   bool configured;
   bool in_flight;
+  bool starting;
   struct stm32_dma_request_s request;
   struct stm32_dma_config_s config;
+  uint32_t tr1;
+  struct stm32_dma_lli_s *descriptors;
+  size_t descriptor_count;
+  size_t descriptor_index;
+  enum stm32_dma_list_mode_e list_mode;
   dma_callback_t callback;
   void *callback_arg;
   uint32_t status;
@@ -78,6 +86,12 @@ static bool stm32_dma_request_valid(
 static int stm32_dma_check_config(
   const struct stm32_dma_channel_s *channel,
   const struct stm32_dma_config_s *config, uint32_t *tr1, uint32_t *tr2);
+static bool stm32_dma_cache_valid(struct stm32_dma_channel_s *channel);
+static void stm32_dma_cache_prepare(struct stm32_dma_channel_s *channel);
+static void stm32_dma_cache_complete(struct stm32_dma_channel_s *channel,
+                                     size_t index);
+static void stm32_dma_cache_invalidate_current(
+  struct stm32_dma_channel_s *channel);
 static int stm32_dma_initialize_controller(
   enum stm32_dma_controller_e controller, uint32_t base, int offset,
   const int *irqs, unsigned int nchannels, unsigned int reserved);
@@ -279,15 +293,15 @@ static int stm32_dma_check_config(
     }
 
   if ((config->source_increment &&
-       config->nbytes - 1 >
+       config->nbytes >
          UINT32_MAX - config->source_address) ||
       (!config->source_increment &&
-       config->width - 1 > UINT32_MAX - config->source_address) ||
+       config->width > UINT32_MAX - config->source_address) ||
       (config->destination_increment &&
-       config->nbytes - 1 >
+       config->nbytes >
          UINT32_MAX - config->destination_address) ||
       (!config->destination_increment &&
-       config->width - 1 > UINT32_MAX - config->destination_address))
+       config->width > UINT32_MAX - config->destination_address))
     {
       return -EINVAL;
     }
@@ -387,6 +401,190 @@ static int stm32_dma_check_config(
   return 0;
 }
 
+static bool stm32_dma_cache_range_valid(uintptr_t address, size_t length)
+{
+  size_t linesize = up_get_dcache_linesize();
+
+  if (length == 0 || address > UINTPTR_MAX - length)
+    {
+      return false;
+    }
+
+  if (linesize == 0)
+    {
+      return true;
+    }
+
+  return address % linesize == 0 && length % linesize == 0;
+}
+
+static void stm32_dma_cache_clean(uintptr_t address, size_t length)
+{
+  if (length != 0)
+    {
+      up_clean_dcache(address, address + length);
+    }
+}
+
+static void stm32_dma_cache_invalidate(uintptr_t address, size_t length)
+{
+  if (length != 0)
+    {
+      up_invalidate_dcache(address, address + length);
+    }
+}
+
+static void stm32_dma_cache_transfer(
+  struct stm32_dma_channel_s *channel, uintptr_t source,
+  uintptr_t destination, size_t nbytes, uint32_t tr1, bool complete)
+{
+  size_t source_length = nbytes;
+  size_t destination_length = nbytes;
+  size_t source_width =
+    1u << ((tr1 & STM32_DMA_TR1_SDW_MASK) >>
+           STM32_DMA_TR1_SDW_SHIFT);
+  size_t destination_width =
+    1u << ((tr1 & STM32_DMA_TR1_DDW_MASK) >>
+           STM32_DMA_TR1_DDW_SHIFT);
+
+  if ((tr1 & STM32_DMA_TR1_SINC) == 0)
+    {
+      source_length = source_width;
+    }
+
+  if ((tr1 & STM32_DMA_TR1_DINC) == 0)
+    {
+      destination_length = destination_width;
+    }
+
+  if (!complete &&
+      (channel->request.direction == STM32_DMA_MEMORY_TO_PERIPHERAL ||
+       channel->request.direction == STM32_DMA_MEMORY_TO_MEMORY))
+    {
+      stm32_dma_cache_clean(source, source_length);
+    }
+
+  if (channel->request.direction == STM32_DMA_PERIPHERAL_TO_MEMORY ||
+      channel->request.direction == STM32_DMA_MEMORY_TO_MEMORY)
+    {
+      if (complete)
+        {
+          stm32_dma_cache_invalidate(destination, destination_length);
+        }
+      else
+        {
+          /* Flush old dirty lines before the DMA writes memory. */
+
+          stm32_dma_cache_clean(destination, destination_length);
+        }
+    }
+}
+
+static bool stm32_dma_cache_valid(struct stm32_dma_channel_s *channel)
+{
+  const struct stm32_dma_config_s *config;
+  uintptr_t destination;
+  size_t length;
+  size_t width;
+  size_t i;
+
+  if (channel->request.direction != STM32_DMA_PERIPHERAL_TO_MEMORY &&
+      channel->request.direction != STM32_DMA_MEMORY_TO_MEMORY)
+    {
+      return true;
+    }
+
+  if (channel->descriptor_count == 0)
+    {
+      config = &channel->config;
+      destination = config->destination_address;
+      length = config->destination_increment ? config->nbytes :
+                                               config->width;
+      return stm32_dma_cache_range_valid(destination, length);
+    }
+
+  for (i = 0; i < channel->descriptor_count; i++)
+    {
+      struct stm32_dma_lli_s *descriptor = &channel->descriptors[i];
+      uint32_t tr1 = descriptor->tr1;
+      uint32_t bytes = descriptor->br1 & STM32_DMA_BR1_BNDT_MASK;
+
+      width = 1u << ((tr1 & STM32_DMA_TR1_DDW_MASK) >>
+                     STM32_DMA_TR1_DDW_SHIFT);
+      destination = descriptor->dar;
+      length = (tr1 & STM32_DMA_TR1_DINC) != 0 ? bytes : width;
+      if (!stm32_dma_cache_range_valid(destination, length))
+        {
+          return false;
+        }
+    }
+
+  return true;
+}
+
+static void stm32_dma_cache_prepare(struct stm32_dma_channel_s *channel)
+{
+  size_t i;
+
+  if (channel->descriptor_count == 0)
+    {
+      stm32_dma_cache_transfer(channel,
+                               channel->config.source_address,
+                               channel->config.destination_address,
+                               channel->config.nbytes,
+                               channel->tr1,
+                               false);
+      return;
+    }
+
+  stm32_dma_cache_clean((uintptr_t)channel->descriptors,
+                        channel->descriptor_count *
+                        sizeof(*channel->descriptors));
+
+  for (i = 0; i < channel->descriptor_count; i++)
+    {
+      struct stm32_dma_lli_s *descriptor = &channel->descriptors[i];
+      stm32_dma_cache_transfer(channel, descriptor->sar, descriptor->dar,
+                               descriptor->br1 & STM32_DMA_BR1_BNDT_MASK,
+                               descriptor->tr1, false);
+    }
+}
+
+static void stm32_dma_cache_complete(struct stm32_dma_channel_s *channel,
+                                    size_t index)
+{
+  uint32_t tr1;
+  uint32_t nbytes;
+  uintptr_t source;
+  uintptr_t destination;
+
+  if (channel->descriptor_count == 0)
+    {
+      tr1 = channel->tr1;
+      stm32_dma_cache_transfer(channel, channel->config.source_address,
+                               channel->config.destination_address,
+                               channel->config.nbytes, tr1, true);
+      return;
+    }
+
+  if (index >= channel->descriptor_count)
+    {
+      return;
+    }
+
+  tr1 = channel->descriptors[index].tr1;
+  nbytes = channel->descriptors[index].br1 & STM32_DMA_BR1_BNDT_MASK;
+  source = channel->descriptors[index].sar;
+  destination = channel->descriptors[index].dar;
+  stm32_dma_cache_transfer(channel, source, destination, nbytes, tr1, true);
+}
+
+static void stm32_dma_cache_invalidate_current(
+  struct stm32_dma_channel_s *channel)
+{
+  stm32_dma_cache_complete(channel, channel->descriptor_index);
+}
+
 static uint8_t stm32_dma_status(uint32_t status)
 {
   uint8_t result = 0;
@@ -460,6 +658,11 @@ static int stm32_dma_interrupt(int irq, void *context, void *arg)
                    raw_status);
   status = stm32_dma_status(raw_status);
 
+  if ((status & (DMA_STATUS_TCF | DMA_STATUS_FATAL)) != 0)
+    {
+      stm32_dma_cache_invalidate_current(channel);
+    }
+
   flags = enter_critical_section();
   channel->status |= status;
   if ((status & DMA_STATUS_FATAL) != 0)
@@ -469,7 +672,24 @@ static int stm32_dma_interrupt(int irq, void *context, void *arg)
     }
   else if ((status & DMA_STATUS_TCF) != 0)
     {
-      channel->in_flight = false;
+      if (channel->descriptor_count == 0)
+        {
+          channel->in_flight = false;
+        }
+      else if (channel->list_mode == STM32_DMA_LIST_CIRCULAR ||
+               channel->list_mode == STM32_DMA_LIST_PINGPONG)
+        {
+          channel->descriptor_index =
+            (channel->descriptor_index + 1) % channel->descriptor_count;
+        }
+      else if (channel->descriptor_index + 1 < channel->descriptor_count)
+        {
+          channel->descriptor_index++;
+        }
+      else
+        {
+          channel->in_flight = false;
+        }
     }
 
   callback = channel->allocated ? channel->callback : NULL;
@@ -536,6 +756,11 @@ static int stm32_dma_initialize_controller(
       channel->allocated = false;
       channel->configured = false;
       channel->in_flight = false;
+      channel->starting = false;
+      channel->descriptors = NULL;
+      channel->descriptor_count = 0;
+      channel->descriptor_index = 0;
+      channel->list_mode = STM32_DMA_LIST_TERMINAL;
       channel->callback = NULL;
       channel->callback_arg = NULL;
       channel->status = 0;
@@ -661,6 +886,11 @@ DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
           channel->request = *request;
           channel->configured = false;
           channel->in_flight = false;
+          channel->starting = false;
+          channel->descriptors = NULL;
+          channel->descriptor_count = 0;
+          channel->descriptor_index = 0;
+          channel->list_mode = STM32_DMA_LIST_TERMINAL;
           channel->callback = NULL;
           channel->callback_arg = NULL;
           channel->status = 0;
@@ -690,6 +920,10 @@ int stm32_dmafree(DMA_HANDLE handle)
     {
       ret = -EINVAL;
     }
+  else if (channel->starting)
+    {
+      ret = -EBUSY;
+    }
   else if (channel->in_flight ||
            (stm32_dma_getreg(channel,
                              STM32_DMA_CXCR_OFFSET(channel->channel)) &
@@ -704,6 +938,9 @@ int stm32_dmafree(DMA_HANDLE handle)
                        STM32_DMA_FLAG_CLEAR_MASK);
       channel->allocated = false;
       channel->configured = false;
+      channel->descriptors = NULL;
+      channel->descriptor_count = 0;
+      channel->descriptor_index = 0;
       channel->callback = NULL;
       channel->callback_arg = NULL;
     }
@@ -757,15 +994,194 @@ int stm32_dmasetup(DMA_HANDLE handle,
                    config->destination_address);
   stm32_dma_putreg(channel, STM32_DMA_CXTR1_OFFSET(channel->channel), tr1);
   stm32_dma_putreg(channel, STM32_DMA_CXTR2_OFFSET(channel->channel), tr2);
+  if (channel->channel >= STM32_GPDMA1_2D_FIRST_CHANNEL)
+    {
+      stm32_dma_putreg(channel, STM32_DMA_CXTR3_OFFSET(channel->channel), 0);
+      stm32_dma_putreg(channel, STM32_DMA_CXBR2_OFFSET(channel->channel), 0);
+    }
+
   stm32_dma_putreg(channel, STM32_DMA_CXBR1_OFFSET(channel->channel),
                    config->nbytes);
   stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
                    STM32_DMA_FLAG_CLEAR_MASK);
 
   channel->config = *config;
+  channel->tr1 = tr1;
+  channel->descriptors = NULL;
+  channel->descriptor_count = 0;
+  channel->descriptor_index = 0;
+  channel->list_mode = STM32_DMA_LIST_TERMINAL;
   channel->configured = true;
   channel->status = 0;
   channel->error = 0;
+
+out:
+  leave_critical_section(flags);
+  return ret;
+}
+
+int stm32_dmallibuild(DMA_HANDLE handle,
+                      const struct stm32_dma_config_s *configs,
+                      size_t count, struct stm32_dma_lli_s *descriptors,
+                      size_t capacity, enum stm32_dma_list_mode_e mode)
+{
+  struct stm32_dma_channel_s *channel = stm32_dma_getchannel(handle);
+  uintptr_t address;
+  uintptr_t last;
+  uint32_t tr1;
+  uint32_t tr2;
+  uint32_t link;
+  uint32_t update_mask;
+  bool extended;
+  size_t i;
+  irqstate_t flags;
+  int ret = 0;
+
+  if (channel == NULL || configs == NULL || descriptors == NULL ||
+      count == 0 || count > capacity ||
+      count > 0x10000u / sizeof(*descriptors) ||
+      (mode != STM32_DMA_LIST_TERMINAL &&
+       mode != STM32_DMA_LIST_CIRCULAR &&
+       mode != STM32_DMA_LIST_PINGPONG) ||
+      (mode == STM32_DMA_LIST_PINGPONG && count != 2))
+    {
+      return -EINVAL;
+    }
+
+  address = (uintptr_t)descriptors;
+  if ((address & (STM32_DMA_LLI_ALIGNMENT - 1)) != 0 ||
+      address > UINT32_MAX ||
+      count * sizeof(*descriptors) > UINT32_MAX - address)
+    {
+      return -EINVAL;
+    }
+
+  last = address + count * sizeof(*descriptors) - 1;
+  if ((address & STM32_DMA_LBAR_MASK) != (last & STM32_DMA_LBAR_MASK))
+    {
+      return -EINVAL;
+    }
+
+  flags = enter_critical_section();
+  if (!channel->allocated)
+    {
+      ret = -EINVAL;
+      goto out;
+    }
+
+  if (channel->in_flight ||
+      (stm32_dma_getreg(channel,
+                        STM32_DMA_CXCR_OFFSET(channel->channel)) &
+       STM32_DMA_CR_EN) != 0)
+    {
+      ret = -EBUSY;
+      goto out;
+    }
+
+  extended = channel->channel >= STM32_GPDMA1_2D_FIRST_CHANNEL;
+  update_mask = extended ? STM32_DMA_LLR_UPDATE_MASK_2D :
+                           STM32_DMA_LLR_UPDATE_MASK;
+
+  for (i = 0; i < count; i++)
+    {
+      if (configs[i].priority != configs[0].priority)
+        {
+          ret = -EINVAL;
+          goto out;
+        }
+
+      ret = stm32_dma_check_config(channel, &configs[i], &tr1, &tr2);
+      if (ret < 0)
+        {
+          goto out;
+        }
+    }
+
+  for (i = 0; i < count; i++)
+    {
+      struct stm32_dma_lli_s *descriptor = &descriptors[i];
+
+      ret = stm32_dma_check_config(channel, &configs[i], &tr1, &tr2);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      memset(descriptor, 0, sizeof(*descriptor));
+      descriptor->tr1 = tr1;
+      descriptor->tr2 = tr2 | STM32_DMA_TR2_TCEM_LLI;
+      descriptor->br1 = configs[i].nbytes;
+      descriptor->sar = configs[i].source_address;
+      descriptor->dar = configs[i].destination_address;
+
+      if (i + 1 < count)
+        {
+          link = (uint32_t)(address +
+                            (i + 1) * sizeof(*descriptors));
+        }
+      else if (mode == STM32_DMA_LIST_CIRCULAR ||
+               mode == STM32_DMA_LIST_PINGPONG)
+        {
+          link = (uint32_t)address;
+        }
+      else
+        {
+          link = 0;
+        }
+
+      if (link != 0)
+        {
+          link = update_mask |
+                 ((link - (address & STM32_DMA_LBAR_MASK)) &
+                  STM32_DMA_LLR_LA_MASK);
+        }
+
+      if (extended)
+        {
+          descriptor->tail.extended.tr3 = 0;
+          descriptor->tail.extended.br2 = 0;
+          descriptor->tail.extended.llr = link;
+        }
+      else
+        {
+          descriptor->tail.llr = link;
+        }
+    }
+
+  channel->config = configs[0];
+  channel->tr1 = descriptors[0].tr1;
+  channel->descriptors = descriptors;
+  channel->descriptor_count = count;
+  channel->descriptor_index = 0;
+  channel->list_mode = mode;
+  channel->configured = true;
+  channel->status = 0;
+  channel->error = 0;
+
+  stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel), 0);
+  stm32_dma_putreg(channel, STM32_DMA_CXLBAR_OFFSET(channel->channel),
+                   address & STM32_DMA_LBAR_MASK);
+  stm32_dma_putreg(channel, STM32_DMA_CXSAR_OFFSET(channel->channel),
+                   descriptors[0].sar);
+  stm32_dma_putreg(channel, STM32_DMA_CXDAR_OFFSET(channel->channel),
+                   descriptors[0].dar);
+  stm32_dma_putreg(channel, STM32_DMA_CXTR1_OFFSET(channel->channel),
+                   descriptors[0].tr1);
+  stm32_dma_putreg(channel, STM32_DMA_CXTR2_OFFSET(channel->channel),
+                   descriptors[0].tr2);
+  if (extended)
+    {
+      stm32_dma_putreg(channel, STM32_DMA_CXTR3_OFFSET(channel->channel), 0);
+      stm32_dma_putreg(channel, STM32_DMA_CXBR2_OFFSET(channel->channel), 0);
+    }
+
+  stm32_dma_putreg(channel, STM32_DMA_CXBR1_OFFSET(channel->channel),
+                   descriptors[0].br1);
+  stm32_dma_putreg(channel, STM32_DMA_CXLLR_OFFSET(channel->channel),
+                   extended ? descriptors[0].tail.extended.llr :
+                              descriptors[0].tail.llr);
+  stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
+                   STM32_DMA_FLAG_CLEAR_MASK);
 
 out:
   leave_critical_section(flags);
@@ -848,11 +1264,25 @@ int stm32_dmastart(DMA_HANDLE handle)
         }
     }
 
+  if (!stm32_dma_cache_valid(channel))
+    {
+      ret = -EINVAL;
+      goto out;
+    }
+
+  channel->starting = true;
+  channel->in_flight = true;
+  leave_critical_section(flags);
+
+  stm32_dma_cache_prepare(channel);
+
+  flags = enter_critical_section();
+  channel->starting = false;
   stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
                    STM32_DMA_FLAG_CLEAR_MASK);
   channel->status = 0;
   channel->error = 0;
-  channel->in_flight = true;
+  channel->descriptor_index = 0;
   control = (channel->config.priority << STM32_DMA_CR_PRIO_SHIFT) |
             STM32_DMA_INTERRUPT_MASK | STM32_DMA_CR_EN;
   stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel), control);
@@ -869,6 +1299,7 @@ int stm32_dmastop(DMA_HANDLE handle)
   uint32_t control;
   volatile unsigned int timeout;
   bool was_enabled;
+  bool was_active;
   int ret = 0;
 
   if (channel == NULL)
@@ -883,8 +1314,15 @@ int stm32_dmastop(DMA_HANDLE handle)
       return -EINVAL;
     }
 
+  if (channel->starting)
+    {
+      leave_critical_section(flags);
+      return -EBUSY;
+    }
+
   control = stm32_dma_getreg(channel,
                              STM32_DMA_CXCR_OFFSET(channel->channel));
+  was_active = channel->in_flight;
   was_enabled = (control & STM32_DMA_CR_EN) != 0;
   if (was_enabled)
     {
@@ -944,6 +1382,11 @@ int stm32_dmastop(DMA_HANDLE handle)
   stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
                    STM32_DMA_FLAG_CLEAR_MASK);
   stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel), 0);
+
+  if (was_active)
+    {
+      stm32_dma_cache_invalidate_current(channel);
+    }
 
   if (was_enabled)
     {

@@ -118,6 +118,7 @@
 
 #define STM32_DMA_TR2_TCEM_SHIFT       30
 #define STM32_DMA_TR2_TCEM_MASK        (3u << STM32_DMA_TR2_TCEM_SHIFT)
+#define STM32_DMA_TR2_TCEM_LLI         (2u << STM32_DMA_TR2_TCEM_SHIFT)
 #define STM32_DMA_TR2_TRIGPOL_SHIFT    24
 #define STM32_DMA_TR2_TRIGPOL_MASK     (3u << STM32_DMA_TR2_TRIGPOL_SHIFT)
 #define STM32_DMA_TR2_TRIGSEL_SHIFT    16
@@ -162,5 +163,14 @@
 #define STM32_DMA_LLR_ULL              (1u << 16)
 #define STM32_DMA_LLR_LA_MASK          0x0000fffcu
 #define STM32_DMA_LLR_ALIGN            4
+#define STM32_DMA_LLR_UPDATE_MASK      (STM32_DMA_LLR_UT1 | \
+                                        STM32_DMA_LLR_UT2 | \
+                                        STM32_DMA_LLR_UB1 | \
+                                        STM32_DMA_LLR_USA | \
+                                        STM32_DMA_LLR_UDA | \
+                                        STM32_DMA_LLR_ULL)
+#define STM32_DMA_LLR_UPDATE_MASK_2D   (STM32_DMA_LLR_UPDATE_MASK | \
+                                        STM32_DMA_LLR_UT3 | \
+                                        STM32_DMA_LLR_UB2)
 
 #endif /* __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_DMA_H */

@@ -39,6 +39,8 @@
 
 #define STM32_DMA_REQUEST_NONE 0xffff
 
+#define STM32_DMA_LLI_ALIGNMENT 32
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -88,6 +90,37 @@ struct stm32_dma_status_s
   bool in_flight;
 };
 
+enum stm32_dma_list_mode_e
+{
+  STM32_DMA_LIST_TERMINAL = 0, /* Stop after the last descriptor */
+  STM32_DMA_LIST_CIRCULAR,     /* Repeat the complete descriptor ring */
+  STM32_DMA_LIST_PINGPONG      /* Two alternating descriptors */
+};
+
+/* A fixed-size, 32-byte aligned descriptor supports both hardware layouts.
+ * Channels 0-11 consume the first six words; channels 12-15 consume the
+ * extended TR3/BR2/LLR layout in the union.
+ */
+
+struct stm32_dma_lli_s
+{
+  uint32_t tr1;
+  uint32_t tr2;
+  uint32_t br1;
+  uint32_t sar;
+  uint32_t dar;
+  union
+  {
+    uint32_t llr;
+    struct
+    {
+      uint32_t tr3;
+      uint32_t br2;
+      uint32_t llr;
+    } extended;
+  } tail;
+} __attribute__((aligned(STM32_DMA_LLI_ALIGNMENT)));
+
 typedef void *DMA_HANDLE;
 typedef void (*dma_callback_t)(DMA_HANDLE handle, uint8_t status, void *arg);
 
@@ -109,6 +142,26 @@ DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request);
 int stm32_dmafree(DMA_HANDLE handle);
 int stm32_dmasetup(DMA_HANDLE handle,
                    const struct stm32_dma_config_s *config);
+/* Build and install a static linked-list.  Descriptor storage and all DMA
+ * buffers must remain DMA-accessible until completion or explicit abort;
+ * descriptors and memory-to-DMA buffers must not be modified while active.
+ * The list array must be 32-byte aligned and fit wholly in one 64-Kbyte
+ * address window.
+ *
+ * The DMA core cleans descriptors and memory sources before starting,
+ * cleans RX destinations before DMA writes, and invalidates RX destinations
+ * after each completed LLI (or after a successful abort).  With D-cache
+ * enabled, RX ranges must cover complete cache lines and must not share
+ * cache lines with unrelated writable data.  Do not access a DMA buffer
+ * while its transfer is in flight; an HTF callback alone does not make RX
+ * data cache-coherent.  TCF is reported for each LLI, and the final TCF in a
+ * terminal list marks the end of descriptor ownership by the DMA core.
+ */
+
+int stm32_dmallibuild(DMA_HANDLE handle,
+                      const struct stm32_dma_config_s *configs,
+                      size_t count, struct stm32_dma_lli_s *descriptors,
+                      size_t capacity, enum stm32_dma_list_mode_e mode);
 int stm32_dmacallback(DMA_HANDLE handle, dma_callback_t callback, void *arg);
 int stm32_dmastart(DMA_HANDLE handle);
 
