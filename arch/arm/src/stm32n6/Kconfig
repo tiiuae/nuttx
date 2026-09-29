@@ -34,6 +34,7 @@ config STM32_N6_PERIPHERALS
 config STM32_STM32N6XXXX
 	bool
 	default y
+	select ARMV8M_HAVE_DCACHE
 
 menu "STM32N6 DMA Configuration"
 
