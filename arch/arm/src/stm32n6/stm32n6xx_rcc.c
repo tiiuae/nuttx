@@ -143,6 +143,10 @@ static inline void rcc_enabledma(void)
 
 void stm32_rcc_enableperipherals(void)
 {
+#ifdef CONFIG_STM32_DMA
+  int ret;
+#endif
+
   /* Enable all AXISRAM bank clocks.  The boot ROM only enables AXISRAM1/2
    * which is sufficient for code execution, but the NuttX heap extends
    * across all SRAM banks (up to AXISRAM5 at 0x34400000+).  Without these
@@ -158,7 +162,12 @@ void stm32_rcc_enableperipherals(void)
 
 #ifdef CONFIG_STM32_DMA
   rcc_enabledma();
-  stm32_dma_initialize();
+  ret = stm32_dma_initialize();
+  if (ret < 0)
+    {
+      _err("ERROR: DMA initialization failed: %d\n", ret);
+      PANIC();
+    }
 #endif
 }
 
