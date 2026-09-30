@@ -473,6 +473,9 @@ static void idle_group_initialize(void)
 
       group_postinitialize((FAR struct task_tcb_s *)tcb);
       tcb->group->tg_flags = GROUP_FLAG_NOCLDWAIT | GROUP_FLAG_PRIVILEGED;
+#ifdef CONFIG_BUILD_KERNEL
+      tcb->group->tg_caps  = PR_CAP_ALL;
+#endif
     }
 }
 

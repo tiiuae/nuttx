@@ -131,6 +131,9 @@ int group_initialize(FAR struct task_tcb_s *tcb, uint8_t ttype)
     {
       group = &g_kthread_group;
       tcb->cmn.group = group;
+#ifdef CONFIG_BUILD_KERNEL
+      group->tg_caps = PR_CAP_ALL;
+#endif
       if (group->tg_info)
         {
           return OK;
@@ -165,6 +168,11 @@ int group_initialize(FAR struct task_tcb_s *tcb, uint8_t ttype)
   /* Inherit the user identity from the parent task group */
 
   group_inherit_identity(group);
+
+#ifdef CONFIG_BUILD_KERNEL
+  group->tg_caps = this_task()->group != NULL ?
+                   this_task()->group->tg_caps : PR_CAP_ALL;
+#endif
 
   /* Initialize file descriptors for the TCB */
 
