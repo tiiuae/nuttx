@@ -31,6 +31,7 @@
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
+#include <errno.h>
 #include <syscall.h>
 
 #include <nuttx/arch.h>
@@ -171,6 +172,15 @@ uint64_t *arm64_syscall(uint64_t *regs)
   /* The SYSCALL command is in x0 on entry.  Parameters follow in x1..x7 */
 
   cmd = regs[REG_X0];
+
+#ifdef CONFIG_BUILD_KERNEL
+  if ((regs[REG_SPSR] & SPSR_MODE_MASK) == SPSR_MODE_EL0T &&
+      (cmd != SYS_signal_handler_return || tcb->xcp.sigreturn == 0))
+    {
+      regs[REG_X0] = -ENOSYS;
+      return regs;
+    }
+#endif
 
   /* if cmd == SYS_restore_context (*running_task)->xcp.regs is valid
    * should not be overwritten
