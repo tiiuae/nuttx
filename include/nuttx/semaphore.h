@@ -122,6 +122,15 @@ extern "C"
  * Public Function Prototypes
  ****************************************************************************/
 
+#if defined(CONFIG_BUILD_KERNEL) && defined(__KERNEL__)
+bool nxsem_shadowed(FAR const sem_t *sem);
+void nxsem_release_shadows(uintptr_t paddr, size_t size);
+#elif defined(CONFIG_BUILD_KERNEL)
+#  define nxsem_shadowed(sem) true
+#else
+#  define nxsem_shadowed(sem) false
+#endif
+
 /****************************************************************************
  * Name: nxsem_init
  *

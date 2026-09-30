@@ -51,6 +51,17 @@ extern "C"
 #define EXTERN extern
 #endif
 
+/* Semaphores in user-writable memory keep their state in the kernel */
+
+#ifdef CONFIG_BUILD_KERNEL
+FAR sem_t *nxsem_resolve(FAR sem_t *sem);
+void nxsem_unresolve(FAR sem_t *usem, FAR sem_t *sem);
+void nxsem_drop(FAR sem_t *sem);
+#else
+#  define nxsem_resolve(sem) (sem)
+#  define nxsem_unresolve(usem, sem)
+#endif
+
 /* Common semaphore logic */
 
 #ifdef CONFIG_PRIORITY_INHERITANCE
