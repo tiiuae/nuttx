@@ -468,10 +468,7 @@ static int part_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
 
           FAR struct mtd_erase_s *erase = (FAR struct mtd_erase_s *)arg;
 
-          ret = priv->parent->erase(priv->parent,
-                                    priv->firstblock / priv->blkpererase +
-                                    erase->startblock,
-                                    erase->nblocks);
+          ret = part_erase(dev, erase->startblock, erase->nblocks);
         }
         break;
 
