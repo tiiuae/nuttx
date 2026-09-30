@@ -356,11 +356,15 @@ SYSCALL_LOOKUP(munmap,                     2)
 
 #ifndef CONFIG_DISABLE_ENVIRON
   SYSCALL_LOOKUP(get_environ_ptr,          0)
+#  ifdef CONFIG_BUILD_KERNEL
+  SYSCALL_LOOKUP(set_environ_ptr,          1)
+#  else
   SYSCALL_LOOKUP(clearenv,                 0)
   SYSCALL_LOOKUP(getenv,                   1)
   SYSCALL_LOOKUP(putenv,                   1)
   SYSCALL_LOOKUP(setenv,                   3)
   SYSCALL_LOOKUP(unsetenv,                 1)
+#  endif
 #endif
 
 /* The following are defined only if networking AND sockets are supported */

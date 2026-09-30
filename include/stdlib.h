@@ -158,6 +158,9 @@ uint32_t  arc4random(void);
 /* Environment variable support */
 
 FAR char **get_environ_ptr(void);
+#ifdef CONFIG_BUILD_KERNEL
+void       set_environ_ptr(FAR char **envp);
+#endif
 FAR char *getenv(FAR const char *name);
 int       putenv(FAR const char *string);
 int       clearenv(void);
