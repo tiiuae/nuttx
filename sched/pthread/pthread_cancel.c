@@ -76,8 +76,11 @@ int pthread_cancel(pthread_t thread)
 
   /* Only pthreads should use this interface */
 
-  DEBUGASSERT((tcb->flags & TCB_FLAG_TTYPE_MASK) ==
-               TCB_FLAG_TTYPE_PTHREAD);
+  if ((tcb->flags & TCB_FLAG_TTYPE_MASK) != TCB_FLAG_TTYPE_PTHREAD ||
+      tcb->group != this_task()->group)
+    {
+      return ESRCH;
+    }
 
   /* Notify the target if the non-cancelable or deferred cancellation set */
 
@@ -97,9 +100,11 @@ int pthread_cancel(pthread_t thread)
       pthread_exit(PTHREAD_CANCELED);
     }
 
+#ifndef CONFIG_BUILD_KERNEL
   /* Refer to tls_get_info() */
 
   tls_cleanup_popall(tcb->stack_alloc_ptr);
+#endif
 
   /* Complete pending join operations */
 
