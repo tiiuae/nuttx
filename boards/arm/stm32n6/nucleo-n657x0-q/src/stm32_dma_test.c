@@ -336,6 +336,97 @@ out:
   return ret;
 }
 
+static int stm32_dma_test_allocation(enum stm32_dma_controller_e controller,
+                                     unsigned int nchannels,
+                                     unsigned int reserved)
+{
+  struct stm32_dma_request_s request =
+  {
+    .controller = controller,
+    .direction = STM32_DMA_MEMORY_TO_MEMORY,
+    .request = STM32_DMA_REQUEST_NONE,
+    .peripheral_address = 0
+  };
+  DMA_HANDLE handles[16] = { NULL };
+  DMA_HANDLE handle;
+  DMA_HANDLE unexpected;
+  size_t nallocated = 0;
+  size_t i;
+  int ret = 0;
+
+  if (nchannels > 16 || reserved > nchannels)
+    {
+      return -EINVAL;
+    }
+
+  while (nallocated < nchannels - reserved)
+    {
+      handle = stm32_dmachannel(&request);
+      if (handle == NULL)
+        {
+          break;
+        }
+
+      handles[nallocated++] = handle;
+    }
+
+  unexpected = stm32_dmachannel(&request);
+  if (nallocated == 0 || unexpected != NULL)
+    {
+      ret = -EIO;
+    }
+
+  if (unexpected != NULL)
+    {
+      int freeret = stm32_dmafree(unexpected);
+
+      if (ret == 0 && freeret < 0)
+        {
+          ret = freeret;
+        }
+    }
+
+  for (i = 0; i < nallocated; i++)
+    {
+      int freeret = stm32_dmafree(handles[i]);
+
+      if (ret == 0 && freeret < 0)
+        {
+          ret = freeret;
+        }
+    }
+
+  handle = stm32_dmachannel(&request);
+  if (handle == NULL)
+    {
+      ret = ret == 0 ? -EIO : ret;
+    }
+  else
+    {
+      int freeret = stm32_dmafree(handle);
+
+      if (ret == 0 && freeret < 0)
+        {
+          ret = freeret;
+        }
+    }
+
+  if (ret < 0)
+    {
+      syslog(LOG_ERR,
+             "DMA core: controller %d allocation exhaustion test failed: "
+             "%d\n", controller, ret);
+    }
+  else
+    {
+      syslog(LOG_INFO,
+             "DMA core: controller %d allocation exhaustion/release OK\n",
+             controller);
+    }
+
+  return ret;
+}
+
 static int stm32_dma_test_linked_list(
   enum stm32_dma_controller_e controller,
   enum stm32_dma_list_mode_e mode, size_t count, bool extended,
@@ -363,6 +454,7 @@ static int stm32_dma_test_linked_list(
   size_t i;
   size_t j;
   size_t nallocated = 0;
+  bool descriptor_extended;
   int ret = 0;
   bool started = false;
 
@@ -441,12 +533,84 @@ static int stm32_dma_test_linked_list(
       goto out;
     }
 
+  if (mode == STM32_DMA_LIST_PINGPONG &&
+      stm32_dmallibuild(handle, configs, 1, g_dma_test_lli_descriptors,
+                        STM32_DMA_TEST_LLI_COUNT, mode) != -EINVAL)
+    {
+      ret = -EIO;
+      goto out;
+    }
+
   ret = stm32_dmallibuild(handle, configs, count,
                           g_dma_test_lli_descriptors,
                           STM32_DMA_TEST_LLI_COUNT, mode);
   if (ret < 0)
     {
       goto out;
+    }
+
+  descriptor_extended =
+    g_dma_test_lli_descriptors[0].tail.extended.llr != 0;
+  if ((extended || reserved >= STM32_GPDMA1_2D_FIRST_CHANNEL) &&
+      !descriptor_extended)
+    {
+      ret = -EIO;
+      goto out;
+    }
+
+  for (i = 0; i < count; i++)
+    {
+      const struct stm32_dma_lli_s *descriptor =
+        &g_dma_test_lli_descriptors[i];
+      uintptr_t next;
+      uint32_t expected_link;
+      uint32_t update_mask = descriptor_extended ?
+                             STM32_DMA_LLR_UPDATE_MASK_2D :
+                             STM32_DMA_LLR_UPDATE_MASK;
+      uint32_t actual_link = descriptor_extended ?
+                             descriptor->tail.extended.llr :
+                             descriptor->tail.llr;
+
+      if (i + 1 < count)
+        {
+          next = (uintptr_t)g_dma_test_lli_descriptors +
+                 (i + 1) * sizeof(*descriptor);
+        }
+      else if (mode == STM32_DMA_LIST_CIRCULAR ||
+               mode == STM32_DMA_LIST_PINGPONG)
+        {
+          next = (uintptr_t)g_dma_test_lli_descriptors;
+        }
+      else
+        {
+          next = 0;
+        }
+
+      expected_link = next == 0 ? 0 :
+        update_mask |
+        ((next - ((uintptr_t)g_dma_test_lli_descriptors &
+                  STM32_DMA_LBAR_MASK)) & STM32_DMA_LLR_LA_MASK);
+
+      if (descriptor->sar != configs[i].source_address ||
+          descriptor->dar != configs[i].destination_address ||
+          descriptor->br1 != configs[i].nbytes ||
+          (descriptor->tr1 & (STM32_DMA_TR1_SINC |
+                              STM32_DMA_TR1_DINC |
+                              STM32_DMA_TR1_SSEC |
+                              STM32_DMA_TR1_DSEC)) !=
+            (STM32_DMA_TR1_SINC | STM32_DMA_TR1_DINC |
+             STM32_DMA_TR1_SSEC | STM32_DMA_TR1_DSEC) ||
+          (descriptor->tr2 & STM32_DMA_TR2_TCEM_MASK) !=
+            STM32_DMA_TR2_TCEM_LLI ||
+          (descriptor->tr2 & STM32_DMA_TR2_SWREQ) == 0 ||
+          actual_link != expected_link)
+        {
+          syslog(LOG_ERR,
+                 "DMA core: controller %d list descriptor %u encoding "
+                 "failed\n", controller, (unsigned int)i);
+          ret = -EIO;
+          goto out;
+        }
     }
 
   syslog(LOG_INFO,
@@ -894,6 +1058,13 @@ int stm32_dma_policy_test(void)
 
 #ifdef CONFIG_STM32_GPDMA1
 #  if CONFIG_STM32_GPDMA1_NCHANNELS > CONFIG_STM32_GPDMA1_RESERVED_CHANNELS
+  if (stm32_dma_test_allocation(STM32_DMA_CONTROLLER_GPDMA1,
+                                CONFIG_STM32_GPDMA1_NCHANNELS,
+                                CONFIG_STM32_GPDMA1_RESERVED_CHANNELS) < 0)
+    {
+      ret = -EIO;
+    }
+
   if (stm32_dma_test_copy(STM32_DMA_CONTROLLER_GPDMA1,
                           sizeof(uint32_t)) < 0)
     {
@@ -913,6 +1084,13 @@ int stm32_dma_policy_test(void)
 
 #ifdef CONFIG_STM32_HPDMA1
 #  if CONFIG_STM32_HPDMA1_NCHANNELS > CONFIG_STM32_HPDMA1_RESERVED_CHANNELS
+  if (stm32_dma_test_allocation(STM32_DMA_CONTROLLER_HPDMA1,
+                                CONFIG_STM32_HPDMA1_NCHANNELS,
+                                CONFIG_STM32_HPDMA1_RESERVED_CHANNELS) < 0)
+    {
+      ret = -EIO;
+    }
+
   if (stm32_dma_test_copy(STM32_DMA_CONTROLLER_HPDMA1,
                           sizeof(uint32_t)) < 0)
     {
