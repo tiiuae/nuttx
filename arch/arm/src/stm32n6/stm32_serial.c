@@ -56,6 +56,13 @@
 #include "stm32_rcc.h"
 #include "arm_internal.h"
 
+#ifdef CONFIG_SERIAL_TXDMA
+#  include "stm32_dma.h"
+#  if defined(CONFIG_STM32_GPDMA1) && defined(CONFIG_USART1_TXDMA)
+#    include "hardware/stm32n6xxx_dmasigmap.h"
+#  endif
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -148,6 +155,14 @@ struct stm32_serial_s
 
   const uint8_t     unconfigure; /* Unconfigure pins on close */
   spinlock_t        lock;
+
+#ifdef CONFIG_SERIAL_TXDMA
+  DMA_HANDLE        txdma;
+  uintptr_t         txdma_buffer;
+  size_t            txdma_length;
+  volatile bool     txdma_active;
+  volatile bool     txdma_fallback;
+#endif
 };
 
 /****************************************************************************
@@ -175,6 +190,16 @@ static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
 static void stm32serial_send(struct uart_dev_s *dev, int ch);
 static void stm32serial_txint(struct uart_dev_s *dev, bool enable);
 static bool stm32serial_txready(struct uart_dev_s *dev);
+static bool stm32serial_txempty(struct uart_dev_s *dev);
+
+#ifdef CONFIG_SERIAL_TXDMA
+static void stm32serial_dmainitialize(struct stm32_serial_s *priv);
+static void stm32serial_dmasend(struct uart_dev_s *dev);
+static void stm32serial_dmatxavail(struct uart_dev_s *dev);
+static void stm32serial_dmatxcallback(DMA_HANDLE handle, uint8_t status,
+                                      void *arg);
+static void stm32serial_dmafallback(struct stm32_serial_s *priv, int error);
+#endif
 
 #ifdef CONFIG_PM
 static void stm32serial_setsuspend(struct uart_dev_s *dev, bool suspend);
@@ -202,10 +227,14 @@ static const struct uart_ops_s g_uart_ops =
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
   .rxflowcontrol  = stm32serial_rxflowcontrol,
 #endif
+#ifdef CONFIG_SERIAL_TXDMA
+  .dmasend        = stm32serial_dmasend,
+  .dmatxavail     = stm32serial_dmatxavail,
+#endif
   .send           = stm32serial_send,
   .txint          = stm32serial_txint,
   .txready        = stm32serial_txready,
-  .txempty        = stm32serial_txready,
+  .txempty        = stm32serial_txempty,
 };
 
 /* I/O buffers */
@@ -847,6 +876,37 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
 
   stm32serial_disableusartint(priv, NULL);
 
+#ifdef CONFIG_SERIAL_TXDMA
+  if (priv->txdma != NULL)
+    {
+      uint32_t cr3;
+      int ret;
+
+      cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+      stm32serial_putreg(priv, STM32_USART_CR3_OFFSET,
+                         cr3 & ~USART_CR3_DMAT);
+
+      ret = stm32_dmastop(priv->txdma);
+      if (ret < 0)
+        {
+          _err("ERROR: USART TX DMA stop failed: %d\n", ret);
+          return;
+        }
+
+      priv->txdma_active = false;
+
+      ret = stm32_dmafree(priv->txdma);
+      if (ret < 0)
+        {
+          _err("ERROR: USART TX DMA release failed: %d\n", ret);
+        }
+      else
+        {
+          priv->txdma = NULL;
+        }
+    }
+#endif
+
   /* Disable USART APB1/2 clock */
 
   stm32serial_setapbclock(dev, false);
@@ -911,6 +971,15 @@ static int stm32serial_attach(struct uart_dev_s *dev)
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
   int ret;
+
+#ifdef CONFIG_SERIAL_TXDMA
+  /* Early serial setup runs before arm_dma_initialize(). */
+
+  if (priv->txdma == NULL)
+    {
+      stm32serial_dmainitialize(priv);
+    }
+#endif
 
   /* Attach and enable the IRQ */
 
@@ -1402,6 +1471,224 @@ static void stm32serial_send(struct uart_dev_s *dev, int ch)
   stm32serial_putreg(priv, STM32_USART_TDR_OFFSET, (uint32_t)ch);
 }
 
+#ifdef CONFIG_SERIAL_TXDMA
+/****************************************************************************
+ * Name: stm32serial_dmainitialize
+ *
+ * Description:
+ *   Allocate the GPDMA1 USART1 TX request. If unavailable, retain the
+ *   interrupt-driven transmit path.
+ *
+ ****************************************************************************/
+
+static void stm32serial_dmainitialize(struct stm32_serial_s *priv)
+{
+  priv->txdma = NULL;
+  priv->txdma_active = false;
+  priv->txdma_fallback = true;
+
+#if defined(CONFIG_STM32_GPDMA1) && defined(CONFIG_USART1_TXDMA)
+  {
+    struct stm32_dma_request_s request =
+    {
+      .controller = STM32_DMA_CONTROLLER_GPDMA1,
+      .direction = STM32_DMA_MEMORY_TO_PERIPHERAL,
+      .request = STM32_DMA_REQ_USART1_TX,
+      .peripheral_address = priv->usartbase + STM32_USART_TDR_OFFSET
+    };
+    int ret;
+
+    priv->txdma = stm32_dmachannel(&request);
+    if (priv->txdma == NULL)
+      {
+        _warn("WARNING: USART TX DMA channel unavailable; using interrupts\n");
+        return;
+      }
+
+    ret = stm32_dmacallback(priv->txdma, stm32serial_dmatxcallback, priv);
+    if (ret < 0)
+      {
+        _err("ERROR: USART TX DMA callback setup failed: %d\n", ret);
+        stm32_dmafree(priv->txdma);
+        priv->txdma = NULL;
+        return;
+      }
+
+    priv->txdma_fallback = false;
+  }
+#endif
+}
+
+/****************************************************************************
+ * Name: stm32serial_dmasend
+ *
+ * Description:
+ *   Program one contiguous USART TX buffer segment and start DMA.
+ *
+ ****************************************************************************/
+
+static void stm32serial_dmasend(struct uart_dev_s *dev)
+{
+  struct stm32_serial_s *priv = (struct stm32_serial_s *)dev->priv;
+  struct stm32_dma_config_s config;
+  uint32_t cr3;
+  int ret;
+
+  if (priv->txdma == NULL || priv->txdma_fallback)
+    {
+      stm32serial_dmafallback(priv, -ENODEV);
+      return;
+    }
+
+  if (priv->txdma_length == 0)
+    {
+      priv->txdma_buffer = (uintptr_t)dev->dmatx.buffer;
+      priv->txdma_length = dev->dmatx.length;
+    }
+
+  config.source_address = priv->txdma_buffer;
+  config.destination_address =
+    priv->usartbase + STM32_USART_TDR_OFFSET;
+  config.nbytes = priv->txdma_length;
+  config.width = 1;
+  config.priority = 1;
+  config.source_increment = true;
+  config.destination_increment = false;
+
+  ret = stm32_dmasetup(priv->txdma, &config);
+  if (ret < 0)
+    {
+      stm32serial_dmafallback(priv, ret);
+      return;
+    }
+
+  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 | USART_CR3_DMAT);
+
+  ret = stm32_dmastart(priv->txdma);
+  if (ret < 0)
+    {
+      stm32serial_dmafallback(priv, ret);
+    }
+}
+
+/****************************************************************************
+ * Name: stm32serial_dmatxavail
+ *
+ * Description:
+ *   Start DMA when queued TX data is available, or use UART interrupts when
+ *   DMA is not available.
+ *
+ ****************************************************************************/
+
+static void stm32serial_dmatxavail(struct uart_dev_s *dev)
+{
+  struct stm32_serial_s *priv = (struct stm32_serial_s *)dev->priv;
+  irqstate_t flags;
+
+  if (priv->txdma == NULL || priv->txdma_fallback)
+    {
+      stm32serial_txint(dev, true);
+      return;
+    }
+
+  flags = enter_critical_section();
+  if (!priv->txdma_active && dev->xmit.head != dev->xmit.tail)
+    {
+      priv->txdma_active = true;
+      priv->txdma_buffer = 0;
+      priv->txdma_length = 0;
+      dev->dmatx.nbytes = 0;
+      uart_xmitchars_dma(dev);
+    }
+
+  leave_critical_section(flags);
+}
+
+/****************************************************************************
+ * Name: stm32serial_dmafallback
+ *
+ * Description:
+ *   Disable the failed DMA path and retry queued bytes using UART
+ *   interrupts. Resetting nbytes keeps the TX buffer intact for retry.
+ *
+ ****************************************************************************/
+
+static void stm32serial_dmafallback(struct stm32_serial_s *priv, int error)
+{
+  uint32_t cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+  int ret;
+
+  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 & ~USART_CR3_DMAT);
+
+  if (priv->txdma != NULL)
+    {
+      ret = stm32_dmastop(priv->txdma);
+      if (ret < 0)
+        {
+          _err("ERROR: USART TX DMA abort failed: %d\n", ret);
+          return;
+        }
+    }
+
+  priv->txdma_active = false;
+  priv->txdma_fallback = true;
+  priv->txdma_buffer = 0;
+  priv->txdma_length = 0;
+  priv->dev.dmatx.nbytes = 0;
+  _err("ERROR: USART TX DMA failed (%d); using interrupts\n", error);
+  uart_xmitchars_done(&priv->dev);
+  stm32serial_txint(&priv->dev, true);
+}
+
+/****************************************************************************
+ * Name: stm32serial_dmatxcallback
+ *
+ * Description:
+ *   Account for a completed segment, submit a wrapped segment if present,
+ *   then release the UART TX buffer for reuse.
+ *
+ ****************************************************************************/
+
+static void stm32serial_dmatxcallback(DMA_HANDLE handle, uint8_t status,
+                                      void *arg)
+{
+  struct stm32_serial_s *priv = (struct stm32_serial_s *)arg;
+  uint32_t cr3;
+
+  UNUSED(handle);
+
+  if ((status & (DMA_STATUS_FATAL | DMA_STATUS_TOF | DMA_STATUS_SUSPF)) != 0)
+    {
+      stm32serial_dmafallback(priv, -EIO);
+      return;
+    }
+
+  if ((status & DMA_STATUS_TCF) == 0)
+    {
+      return;
+    }
+
+  priv->dev.dmatx.nbytes += priv->txdma_length;
+
+  if (priv->dev.dmatx.nlength > 0)
+    {
+      priv->txdma_buffer = (uintptr_t)priv->dev.dmatx.nbuffer;
+      priv->txdma_length = priv->dev.dmatx.nlength;
+      stm32serial_dmasend(&priv->dev);
+      return;
+    }
+
+  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 & ~USART_CR3_DMAT);
+  priv->txdma_active = false;
+  priv->txdma_buffer = 0;
+  priv->txdma_length = 0;
+  uart_xmitchars_done(&priv->dev);
+  uart_dmatxavail(&priv->dev);
+}
+#endif
+
 /****************************************************************************
  * Name: stm32serial_txint
  *
@@ -1415,6 +1702,18 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable)
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
   irqstate_t flags;
+
+#ifdef CONFIG_SERIAL_TXDMA
+  if (priv->txdma != NULL && !priv->txdma_fallback)
+    {
+      if (enable)
+        {
+          stm32serial_dmatxavail(dev);
+        }
+
+      return;
+    }
+#endif
 
   /* USART transmit interrupts:
    *
@@ -1475,6 +1774,30 @@ static bool stm32serial_txready(struct uart_dev_s *dev)
 
   return ((stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) &
            USART_ISR_TXE) != 0);
+}
+
+/****************************************************************************
+ * Name: stm32serial_txempty
+ *
+ * Description:
+ *   Return true only when the final byte has left the USART shift register.
+ *
+ ****************************************************************************/
+
+static bool stm32serial_txempty(struct uart_dev_s *dev)
+{
+  struct stm32_serial_s *priv =
+    (struct stm32_serial_s *)dev->priv;
+
+#ifdef CONFIG_SERIAL_TXDMA
+  if (priv->txdma_active)
+    {
+      return false;
+    }
+#endif
+
+  return ((stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) &
+           USART_ISR_TC) != 0);
 }
 
 /****************************************************************************
