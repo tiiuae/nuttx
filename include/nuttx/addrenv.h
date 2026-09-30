@@ -316,6 +316,11 @@ struct addrenv_reserve_s
  * Public Function Prototypes
  ****************************************************************************/
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 /****************************************************************************
  * Name: addrenv_allocate
  *
@@ -506,6 +511,10 @@ bool uaccess_ok(FAR const void *ptr, size_t len);
 bool uaccess_nested(FAR const void *parent, FAR const void *ptr);
 void uaccess_check(FAR const void *ptr, size_t len);
 void uaccess_fault(FAR const void *ptr) noreturn_function;
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 /****************************************************************************
