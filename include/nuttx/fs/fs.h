@@ -145,6 +145,11 @@
 #define INODE_IS_PIPE(i)       INODE_IS_TYPE(i,FSNODEFLAG_TYPE_PIPE)
 #define INODE_IS_NAMEDEVENT(i) INODE_IS_TYPE(i,FSNODEFLAG_TYPE_NAMEDEVENT)
 
+#define FSNODEFLAG_RAWIO             0x00000010 /* Raw storage access       */
+#define INODE_IS_RAWIO(i) \
+  (INODE_IS_BLOCK(i) || INODE_IS_MTD(i) || \
+   ((i)->i_flags & FSNODEFLAG_RAWIO) != 0)
+
 #define INODE_GET_TYPE(i)     ((i)->i_flags & FSNODEFLAG_TYPE_MASK)
 #define INODE_SET_TYPE(i,t) \
   do \
@@ -624,6 +629,9 @@ void fs_initialize(void);
 int register_driver(FAR const char *path,
                     FAR const struct file_operations *fops, mode_t mode,
                     FAR void *priv);
+int register_rawdriver(FAR const char *path,
+                       FAR const struct file_operations *fops, mode_t mode,
+                       FAR void *priv);
 
 /****************************************************************************
  * Name: register_blockdriver

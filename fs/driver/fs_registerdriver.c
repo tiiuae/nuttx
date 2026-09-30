@@ -62,9 +62,10 @@
  *
  ****************************************************************************/
 
-int register_driver(FAR const char *path,
-                    FAR const struct file_operations *fops,
-                    mode_t mode, FAR void *priv)
+static int register_driver_flags(FAR const char *path,
+                                 FAR const struct file_operations *fops,
+                                 mode_t mode, FAR void *priv,
+                                 uint16_t flags)
 {
   FAR struct inode *node;
   int ret;
@@ -84,6 +85,7 @@ int register_driver(FAR const char *path,
        */
 
       INODE_SET_DRIVER(node);
+      node->i_flags  |= flags;
 
       node->u.i_ops   = fops;
       node->i_private = priv;
@@ -96,4 +98,18 @@ int register_driver(FAR const char *path,
 
   inode_unlock();
   return ret;
+}
+
+int register_driver(FAR const char *path,
+                    FAR const struct file_operations *fops,
+                    mode_t mode, FAR void *priv)
+{
+  return register_driver_flags(path, fops, mode, priv, 0);
+}
+
+int register_rawdriver(FAR const char *path,
+                       FAR const struct file_operations *fops,
+                       mode_t mode, FAR void *priv)
+{
+  return register_driver_flags(path, fops, mode, priv, FSNODEFLAG_RAWIO);
 }
