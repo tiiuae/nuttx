@@ -191,6 +191,9 @@ void nxsem_unresolve(FAR sem_t *usem, FAR sem_t *sem)
     {
       usem->val.semcount = sem->val.semcount;
       usem->flags        = sem->flags;
+#ifdef CONFIG_PRIORITY_PROTECT
+      usem->ceiling      = sem->ceiling;
+#endif
     }
 
   last = --shadow->refs == 0 && shadow->paddr == 0;

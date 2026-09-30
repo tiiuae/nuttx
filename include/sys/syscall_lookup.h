@@ -84,9 +84,8 @@ SYSCALL_LOOKUP(nxsem_timedwait,            2)
 SYSCALL_LOOKUP(nxsem_trywait_slow,         1)
 SYSCALL_LOOKUP(nxsem_wait_slow,            1)
 
-#ifdef CONFIG_PRIORITY_INHERITANCE
   SYSCALL_LOOKUP(nxsem_set_protocol,       2)
-#endif
+  SYSCALL_LOOKUP(nxsem_get_value,          2)
 
 #ifdef CONFIG_PRIORITY_PROTECT
   SYSCALL_LOOKUP(nxsem_setprioceiling,     3)
