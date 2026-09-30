@@ -35,9 +35,9 @@ RCC         Yes      PLL1 clock tree.
 USART       Yes      USART1 only.
 
 ADC         No
-DCACHE      No
+DCACHE      Partial  Cache maintenance through ARMv8-M primitives
 DCMIPP      No
-DMA         No
+DMA         Partial  GPDMA1/HPDMA1 core; initial USART1 TX
 ETH         No
 I2C         No
 ICACHE      No

@@ -47,6 +47,54 @@ Features
    Raising it to the standard 600 / 800 MHz operating points is deferred
    to a follow-up change.
 
+DMA Support
+===========
+
+The NuttX STM32N6 DMA core supports both 16-channel controllers:
+
+* GPDMA1 for direct transfers and static linked lists.
+* HPDMA1 for direct transfers and static linked lists, including 8-byte
+  memory-to-memory transfers.
+* USART1 console TX can use GPDMA1 request 108. The serial driver retains
+  the interrupt-driven TX fallback and the early polled console.
+
+The initial ``nsh-xspi`` configuration enables both controllers and
+``CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST``. At boot, that test checks channel
+security policy, direct memory copies, callback/status results, invalid
+transfer parameters, linked-list modes, and bounded abort behavior. Host-side
+tests for concurrent channel selection, status-flag translation, descriptor
+link encoding, and cache-range validation can be run from the NuttX source
+root:
+
+.. code:: console
+
+   $ make -C arch/arm/src/stm32n6/tests/host check
+
+Configure ``CONFIG_STM32_DMA`` and enable ``CONFIG_STM32_GPDMA1`` and/or
+``CONFIG_STM32_HPDMA1`` to select controllers. The
+``CONFIG_STM32_*DMA_NCHANNELS`` settings define each low-numbered channel
+pool; ``CONFIG_STM32_*DMA_RESERVED_CHANNELS`` withholds its lowest-numbered
+channels from general allocation. ``CONFIG_STM32_DMA_LINKEDLIST`` enables
+linked-list support, and ``CONFIG_STM32_DMA_CIRCULAR`` enables circular and
+ping-pong lists.
+
+The board's initial policy configures enabled DMA channels as secure and
+privileged. HPDMA1 channels are assigned secure OS CID 1. DMA peripheral
+access still requires the corresponding RIFSC resource grants; the DMA core
+does not grant arbitrary peripheral access.
+
+With D-cache enabled, source buffers and descriptors are cleaned before DMA
+reads them. RX destination ranges must cover complete cache lines and must
+not share cache lines with unrelated writable data. Do not access DMA-owned
+buffers until the transfer completes or an abort has completed; circular
+buffers require an explicit ownership protocol between the CPU and DMA.
+
+Peripheral RX/TX on both controllers, error injection, denied-RIFSC
+diagnostics, cache coherency under active D-cache, reset/restart, and
+memory/security boundary behavior still require target-level validation.
+This support is not yet sufficient to enable additional PX4 SPI, I2C, ADC,
+or timer/DShot clients.
+
 Buttons and LEDs
 ================
 
