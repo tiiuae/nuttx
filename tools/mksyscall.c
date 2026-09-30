@@ -46,8 +46,9 @@ static FILE *g_stubstream;
 
 static const char * const g_uwrapped[] =
 {
-  "boardctl", "fcntl", "ioctl", "nx_pthread_create", "nx_vsyslog", "prctl",
-  "readv", "recvmsg", "sendmsg", "writev", NULL
+  "boardctl", "execve", "fcntl", "ioctl", "mount", "nx_pthread_create",
+  "nx_vsyslog", "posix_spawn", "prctl", "readv", "recvmsg", "sendmsg",
+  "umount2", "writev", NULL
 };
 
 static const struct uvalue_s g_uvalues[] =

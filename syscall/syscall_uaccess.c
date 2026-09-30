@@ -31,17 +31,21 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <string.h>
+#include <spawn.h>
 #include <sys/boardctl.h>
+#include <sys/mount.h>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include <nuttx/addrenv.h>
 #include <nuttx/arch.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/pthread.h>
+#include <nuttx/sched.h>
 #include <nuttx/syslog/syslog.h>
 
 #ifdef CONFIG_CDCACM
@@ -202,6 +206,20 @@ int uaccess_boardctl(unsigned int cmd, uintptr_t arg)
 
   switch (cmd)
     {
+#ifdef CONFIG_BOARDCTL_RESET
+      case BOARDIOC_RESET:
+#endif
+#ifdef CONFIG_BOARDCTL_POWEROFF
+      case BOARDIOC_POWEROFF:
+#endif
+        if (!nxsched_capable(PR_CAP_ADMIN))
+          {
+            set_errno(EPERM);
+            return ERROR;
+          }
+
+        return boardctl(cmd, arg);
+
 #ifdef CONFIG_BOARDCTL_ROMDISK
       case BOARDIOC_ROMDISK:
         set_errno(EPERM);
@@ -234,6 +252,59 @@ int uaccess_boardctl(unsigned int cmd, uintptr_t arg)
       default:
         return boardctl(cmd, arg);
     }
+}
+#endif
+
+#if !defined(CONFIG_BINFMT_DISABLE) && defined(CONFIG_LIBC_EXECFUNCS)
+int uaccess_execve(FAR const char *path, FAR char * const argv[],
+                   FAR char * const envp[])
+{
+  if (!nxsched_capable(PR_CAP_SPAWN))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return execve(path, argv, envp);
+}
+
+int uaccess_posix_spawn(FAR pid_t *pid, FAR const char *path,
+                        FAR const posix_spawn_file_actions_t *file_actions,
+                        FAR const posix_spawnattr_t *attr,
+                        FAR char * const argv[], FAR char * const envp[])
+{
+  if (!nxsched_capable(PR_CAP_SPAWN))
+    {
+      return EPERM;
+    }
+
+  return posix_spawn(pid, path, file_actions, attr, argv, envp);
+}
+#endif
+
+#ifndef CONFIG_DISABLE_MOUNTPOINT
+int uaccess_mount(FAR const char *source, FAR const char *target,
+                  FAR const char *filesystemtype, unsigned long mountflags,
+                  FAR const void *data)
+{
+  if (!nxsched_capable(PR_CAP_RAWIO))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return mount(source, target, filesystemtype, mountflags, data);
+}
+
+int uaccess_umount2(FAR const char *target, unsigned int flags)
+{
+  if (!nxsched_capable(PR_CAP_RAWIO))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return umount2(target, flags);
 }
 #endif
 
