@@ -439,7 +439,7 @@ static int pwm_update_duty(struct imx9_pwmtimer_s *priv, int pwm_ch,
   uint32_t edge = (duty * priv->period + 0x8000) >> 16;
   int timer = pwm_ch - 1;
 
-  if (pwm_ch == 0 || timer > priv->n_channels)
+  if (pwm_ch < 1 || pwm_ch > priv->n_channels)
     {
       pwmerr("ERROR: PWM%d has no such channel: %d\n", priv->id, timer);
       return -EINVAL;
