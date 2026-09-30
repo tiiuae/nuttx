@@ -25,6 +25,10 @@
 ASRCS =
 CSRCS = stm32_boot.c stm32_bringup.c
 
+ifeq ($(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST),y)
+CSRCS += stm32_timer_test.c
+endif
+
 ifeq ($(CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST),y)
 CSRCS += stm32_dma_test.c
 endif

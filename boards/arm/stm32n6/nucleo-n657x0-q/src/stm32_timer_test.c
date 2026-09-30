@@ -1,0 +1,201 @@
+/****************************************************************************
+ * boards/arm/stm32n6/nucleo-n657x0-q/src/stm32_timer_test.c
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include <nuttx/config.h>
+
+#include <arch/irq.h>
+#include <nuttx/arch.h>
+#include <stdint.h>
+#include <syslog.h>
+#include <debug.h>
+
+#include "nvic.h"
+#include "dwt.h"
+#include "stm32_rcc.h"
+#include "stm32_tim.h"
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: systick_delay_10ms
+ *
+ * Description:
+ *   Poll NVIC SYSTICK count for 10ms wait
+ ****************************************************************************/
+
+static void systick_delay_10ms(void)
+{
+  const uint32_t mask = NVIC_SYSTICK_CURRENT_MASK;
+  uint32_t period;
+  uint32_t previous;
+  uint32_t current;
+  uint32_t elapsed = 0;
+  irqstate_t flags;
+
+  /* NuttX configures SysTick for a 10 ms period:
+   *
+   *   CPU clock = 200 MHz
+   *   RELOAD    = 1,999,999
+   *   period    = 2,000,000 counts
+   */
+
+  DEBUGASSERT((getreg32(NVIC_SYSTICK_CTRL) &
+               (NVIC_SYSTICK_CTRL_ENABLE |
+                NVIC_SYSTICK_CTRL_CLKSOURCE)) ==
+              (NVIC_SYSTICK_CTRL_ENABLE |
+               NVIC_SYSTICK_CTRL_CLKSOURCE));
+
+  period = (getreg32(NVIC_SYSTICK_RELOAD) & mask) + 1;
+
+  /* Prevent a context switch from lasting one or more complete SysTick
+   * periods, since CURRENT alone cannot tell how many wraps were missed.
+   * Acceptable for this temporary diagnostic.
+   */
+
+  flags = up_irq_save();
+
+  previous = getreg32(NVIC_SYSTICK_CURRENT) & mask;
+
+  while (elapsed < period)
+    {
+      current = getreg32(NVIC_SYSTICK_CURRENT) & mask;
+
+      if (previous >= current)
+        {
+          elapsed += previous - current;
+        }
+      else
+        {
+          /* Counter wrapped from zero back to RELOAD. */
+
+          elapsed += previous + period - current;
+        }
+
+      previous = current;
+    }
+
+  up_irq_restore(flags);
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: stm32_timer_clocktest
+ *
+ * Description:
+ *   Test TIM1 and TIM5 counter clocks.
+ ****************************************************************************/
+
+void stm32_timer_clocktest(void)
+{
+  uint32_t reg, reg2;
+  uint32_t cycles_before;
+  uint32_t cycles_after;
+
+  /* 1. Read and log RCC CFGR2 register value */
+  reg = getreg32(STM32_RCC_CFGR2);
+  syslog(LOG_INFO, "RCC CFGR2: 0x%lx", reg);
+
+  /* TODO: 2. Configure RIFSC access for TIM1 and TIM5 */
+
+  /* 3. Enable APB clocks for TIM1 and TIM5 */
+  putreg32(RCC_APB2ENR_TIM1EN, STM32_RCC_APB2ENSR);
+  putreg32(RCC_APB1LENR_TIM5EN, STM32_RCC_APB1LENSR);
+
+  /* TODO: 4. Set PSC=99, a maximal ARR, issue EGR.UG,
+   * and set CR1.CEN
+   */
+
+  /* TIM1 is 16-bit AC timer */
+  putreg16(99, STM32_TIM1_PSC);
+  putreg16(0xffff, STM32_TIM1_ARR);
+  putreg16(ATIM_EGR_UG, STM32_TIM1_EGR);
+
+  /* TIM5 is 32-bit GP timer */
+  putreg16(99, STM32_TIM5_PSC);
+  putreg32(0xffffffff, STM32_TIM5_ARR);
+  putreg16(GTIM_EGR_UG, STM32_TIM5_EGR);
+
+  reg = getreg32(STM32_TIM1_CNT);
+  reg2 = getreg32(STM32_TIM5_CNT);
+  syslog(LOG_INFO, "TIM1 CNT: %lu", reg);
+  syslog(LOG_INFO, "TIM5 CNT: %lu", reg2);
+
+  /* Start both timers */
+  syslog(LOG_INFO, "Start timers");
+
+  // start DWT
+  modifyreg32(NVIC_DEMCR, 0, NVIC_DEMCR_TRCENA);
+  modifyreg32(DWT_CTRL, 0, DWT_CTRL_CYCCNTENA_MASK);
+
+  reg = getreg16(STM32_TIM1_CR1);
+  reg2 = getreg16(STM32_TIM5_CR1);
+  putreg16(reg | ATIM_CR1_CEN, STM32_TIM1_CR1);
+  putreg16(reg2 | GTIM_CR1_CEN, STM32_TIM5_CR1);
+
+  /* TODO: 5. Read and log CNT, delay with usleep and log CNT again */
+
+  // 10ms delay using SYSTICK cnt
+  cycles_before = getreg32(DWT_CYCCNT);
+  systick_delay_10ms();
+  cycles_after = getreg32(DWT_CYCCNT);
+
+  reg = getreg32(STM32_TIM1_CNT);
+  reg2 = getreg32(STM32_TIM5_CNT);
+  syslog(LOG_INFO, "After 3s:");
+  syslog(LOG_INFO, "TIM1 CNT: %lu", reg);
+  syslog(LOG_INFO, "TIM5 CNT: %lu", reg2);
+  syslog(LOG_INFO, "DWT cycles: %lu",
+         (uint32_t)(cycles_after - cycles_before));
+
+  syslog(LOG_INFO, "CFGR1:      %08lx",
+         getreg32(STM32_RCC_CFGR1));
+  syslog(LOG_INFO, "PLL1CFGR1:  %08lx",
+         getreg32(STM32_RCC_PLL1CFGR1));
+  syslog(LOG_INFO, "PLL1CFGR3:  %08lx",
+         getreg32(STM32_RCC_PLL1CFGR3));
+  syslog(LOG_INFO, "IC1CFGR:    %08lx",
+         getreg32(STM32_RCC_IC1CFGR));
+  syslog(LOG_INFO, "IC2CFGR:    %08lx",
+         getreg32(STM32_RCC_IC2CFGR));
+  syslog(LOG_INFO, "IC6CFGR:    %08lx",
+         getreg32(STM32_RCC_IC6CFGR));
+  syslog(LOG_INFO, "IC11CFGR:   %08lx",
+         getreg32(STM32_RCC_IC11CFGR));
+  syslog(LOG_INFO, "SYSTICK: ctrl=%08lx reload=%08lx",
+         getreg32(NVIC_SYSTICK_CTRL),
+         getreg32(NVIC_SYSTICK_RELOAD));
+
+  /* TODO: 6. Stop both timers */
+  reg = getreg16(STM32_TIM1_CR1);
+  reg2 = getreg16(STM32_TIM5_CR1);
+  putreg16(reg & ~ATIM_CR1_CEN, STM32_TIM1_CR1);
+  putreg16(reg2 & ~GTIM_CR1_CEN, STM32_TIM5_CR1);
+}

@@ -67,7 +67,7 @@ config NUCLEO_N657X0_Q_BOOTLOADER
 config NUCLEO_N657X0_Q_TIMER_CLOCKTEST
 	bool "Test timer functionality"
 	---help---
-		Run short test for TIM1 and TIM2 in stm32_bringup
+		Run a short TIM1 and TIM5 clock test during board bringup.
 
 config NUCLEO_N657X0_Q_DMA_POLICYTEST
 	bool "Test DMA core and access policy"

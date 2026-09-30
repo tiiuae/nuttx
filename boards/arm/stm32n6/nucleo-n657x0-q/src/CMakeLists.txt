@@ -22,6 +22,10 @@
 
 set(SRCS stm32_boot.c stm32_bringup.c)
 
+if(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
+  list(APPEND SRCS stm32_timer_test.c)
+endif()
+
 if(CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST)
   list(APPEND SRCS stm32_dma_test.c)
 endif()

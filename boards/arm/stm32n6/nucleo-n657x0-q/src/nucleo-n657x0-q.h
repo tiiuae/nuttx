@@ -86,6 +86,10 @@
 
 int stm32_bringup(void);
 
+#ifdef CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST
+void stm32_timer_clocktest(void);
+#endif
+
 #ifdef CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST
 int stm32_dma_policy_test(void);
 #endif
