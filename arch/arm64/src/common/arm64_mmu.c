@@ -39,6 +39,10 @@
 #include "arm64_fatal.h"
 #include "arm64_mmu.h"
 
+#ifdef CONFIG_BUILD_KERNEL
+#  include "addrenv.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -467,6 +471,13 @@ static void init_xlat_tables(const struct arm_mmu_region *region)
 
 #ifdef CONFIG_MMU_DEBUG
   sinfo("mmap: virt %lux phys %lux size %lux\n", virt, phys, size);
+#endif
+
+#ifdef CONFIG_BUILD_KERNEL
+  if (size > 0 && virt + size - 1 >= ARCH_ADDRENV_VBASE)
+    {
+      PANIC();
+    }
 #endif
 
   /* check minimum alignment requirement for given mmap region */
