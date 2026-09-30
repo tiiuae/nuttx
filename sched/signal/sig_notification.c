@@ -134,10 +134,23 @@ int nxsig_notification(pid_t pid, FAR struct sigevent *event,
 
       memcpy(&info.si_value, &event->sigev_value, sizeof(union sigval));
 
-      /* SIGEV_THREAD_ID currently used only by POSIX timer. */
+      if (!GOOD_SIGNO(event->sigev_signo))
+        {
+          return -EINVAL;
+        }
 
       if (event->sigev_notify & SIGEV_THREAD_ID)
         {
+          FAR struct tcb_s *owner = nxsched_get_tcb(pid);
+          FAR struct tcb_s *target =
+            nxsched_get_tcb(event->sigev_notify_thread_id);
+
+          if (owner == NULL || target == NULL ||
+              owner->group != target->group)
+            {
+              return -EINVAL;
+            }
+
           thread = true;
           pid = event->sigev_notify_thread_id;
         }

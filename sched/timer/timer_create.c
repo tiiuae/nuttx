@@ -103,6 +103,13 @@ static FAR struct posix_timer_s *timer_allocate(void)
   return ret;
 }
 
+static bool timer_own_thread(FAR struct tcb_s *tcb, pid_t tid)
+{
+  FAR struct tcb_s *target = nxsched_get_tcb(tid);
+
+  return target != NULL && target->group == tcb->group;
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -165,8 +172,10 @@ int timer_create(clockid_t clockid, FAR struct sigevent *evp,
 
   if (timerid == NULL || (clockid != CLOCK_REALTIME &&
       clockid != CLOCK_MONOTONIC && clockid != CLOCK_BOOTTIME) ||
-      (evp != NULL && evp->sigev_notify == SIGEV_SIGNAL &&
-       !GOOD_SIGNO(evp->sigev_signo)))
+      (evp != NULL && (evp->sigev_notify & SIGEV_SIGNAL) != 0 &&
+       !GOOD_SIGNO(evp->sigev_signo)) ||
+      (evp != NULL && (evp->sigev_notify & SIGEV_THREAD_ID) != 0 &&
+       !timer_own_thread(tcb, evp->sigev_notify_thread_id)))
     {
       set_errno(EINVAL);
       return ERROR;
