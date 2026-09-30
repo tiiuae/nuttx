@@ -46,8 +46,11 @@ static FILE *g_stubstream;
 
 static const char * const g_uwrapped[] =
 {
-  "boardctl", "execve", "fcntl", "ioctl", "mount", "nx_pthread_create",
-  "nx_vsyslog", "posix_spawn", "prctl", "readv", "recvmsg", "sendmsg",
+  "boardctl", "execve", "fcntl", "ioctl", "kill", "mount",
+  "nx_pthread_create", "nx_vsyslog", "posix_spawn", "prctl",
+  "pthread_cancel", "pthread_setaffinity_np", "pthread_setschedparam",
+  "pthread_setschedprio", "readv", "recvmsg", "sched_setaffinity",
+  "sched_setparam", "sched_setscheduler", "sendmsg", "sigqueue", "tgkill",
   "umount2", "writev", NULL
 };
 

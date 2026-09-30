@@ -29,6 +29,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pthread.h>
+#include <sched.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -534,6 +537,120 @@ int uaccess_umount2(FAR const char *target, unsigned int flags)
 }
 #endif
 
+static bool uaccess_owns(pid_t tid)
+{
+  FAR struct tcb_s *tcb;
+
+  if (tid == 0 || nxsched_capable(PR_CAP_ADMIN))
+    {
+      return true;
+    }
+
+  tcb = nxsched_get_tcb(tid);
+  return tcb == NULL || tcb->group == nxsched_self()->group;
+}
+
+int uaccess_kill(pid_t pid, int sig)
+{
+  if (sig != 0 && !uaccess_owns(pid))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return kill(pid, sig);
+}
+
+int uaccess_tgkill(pid_t pid, pid_t tid, int sig)
+{
+  if (sig != 0 && !uaccess_owns(tid))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return tgkill(pid, tid, sig);
+}
+
+#ifndef CONFIG_DISABLE_ALL_SIGNALS
+int uaccess_sigqueue(int pid, int sig, union sigval value)
+{
+  if (sig != 0 && !uaccess_owns(pid))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return sigqueue(pid, sig, value);
+}
+#endif
+
+int uaccess_sched_setparam(pid_t pid, FAR const struct sched_param *param)
+{
+  if (!uaccess_owns(pid))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return sched_setparam(pid, param);
+}
+
+int uaccess_sched_setscheduler(pid_t pid, int policy,
+                               FAR const struct sched_param *param)
+{
+  if (!uaccess_owns(pid))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return sched_setscheduler(pid, policy, param);
+}
+
+#ifdef CONFIG_SMP
+int uaccess_sched_setaffinity(pid_t pid, size_t cpusetsize,
+                              FAR const cpu_set_t *mask)
+{
+  if (!uaccess_owns(pid))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
+
+  return sched_setaffinity(pid, cpusetsize, mask);
+}
+#endif
+
+#ifndef CONFIG_DISABLE_PTHREAD
+int uaccess_pthread_cancel(pthread_t thread)
+{
+  return uaccess_owns((pid_t)thread) ? pthread_cancel(thread) : EPERM;
+}
+
+int uaccess_pthread_setschedparam(pthread_t thread, int policy,
+                                  FAR const struct sched_param *param)
+{
+  return uaccess_owns((pid_t)thread) ?
+         pthread_setschedparam(thread, policy, param) : EPERM;
+}
+
+int uaccess_pthread_setschedprio(pthread_t thread, int prio)
+{
+  return uaccess_owns((pid_t)thread) ?
+         pthread_setschedprio(thread, prio) : EPERM;
+}
+
+#ifdef CONFIG_SMP
+int uaccess_pthread_setaffinity_np(pthread_t thread, size_t cpusetsize,
+                                   FAR const cpu_set_t *cpuset)
+{
+  return uaccess_owns((pid_t)thread) ?
+         pthread_setaffinity_np(thread, cpusetsize, cpuset) : EPERM;
+}
+#endif
+#endif
+
 int uaccess_fcntl(int fd, int cmd, ...)
 {
   uintptr_t arg;
@@ -661,6 +778,12 @@ int uaccess_prctl(int option, ...)
   arg1 = va_arg(ap, uintptr_t);
   arg2 = va_arg(ap, uintptr_t);
   va_end(ap);
+
+  if (option == PR_SET_NAME_EXT && !uaccess_owns((pid_t)arg2))
+    {
+      set_errno(EPERM);
+      return ERROR;
+    }
 
   switch (option)
     {
