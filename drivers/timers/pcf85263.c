@@ -318,6 +318,12 @@ int up_rtc_getdatetime(FAR struct tm *tp)
   while ((buffer[0] & PCF85263_RTC_SECONDS_MASK) >
          (seconds & PCF85263_RTC_SECONDS_MASK));
 
+  if (buffer[0] & PCF85263_RTC_SECONDS_OS)
+    {
+      rtcwarn("WARNING: oscillator stopped, time lost\n");
+      return -EAGAIN;
+    }
+
   /* Format the return time */
 
   /* Return seconds (0-61) */
