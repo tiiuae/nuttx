@@ -33,6 +33,10 @@
 #include "riscv_internal.h"
 #include "riscv_mmu.h"
 
+#ifdef CONFIG_BUILD_KERNEL
+#  include "addrenv.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -68,6 +72,16 @@ void mmu_ln_setentry(uint32_t ptlevel, uintptr_t lnvaddr, uintptr_t paddr,
   uint32_t   index;
 
   DEBUGASSERT(ptlevel > 0 && ptlevel <= RV_MMU_PT_LEVELS);
+
+#ifdef CONFIG_BUILD_KERNEL
+  if ((mmuflags & PTE_LEAF_MASK) != 0 &&
+      (mmuflags & (PTE_G | PTE_U)) == PTE_G &&
+      vaddr + (RV_MMU_L1_PAGE_SIZE >> (RV_MMU_VPN_WIDTH * (ptlevel - 1))) >
+      ARCH_ADDRENV_VBASE)
+    {
+      PANIC();
+    }
+#endif
 
   /* Test if this is a leaf PTE, if it is, set A+D even if they are not used
    * by the implementation.
