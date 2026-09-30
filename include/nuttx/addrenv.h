@@ -36,6 +36,7 @@
 #endif
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <nuttx/wqueue.h>
@@ -499,6 +500,11 @@ int addrenv_give(FAR struct addrenv_s *addrenv);
  ****************************************************************************/
 
 void addrenv_drop(FAR struct addrenv_s *addrenv, bool deferred);
+
+#ifdef CONFIG_BUILD_KERNEL
+bool uaccess_ok(FAR const void *ptr, size_t len);
+void uaccess_check(FAR const void *ptr, size_t len);
+#endif
 
 /****************************************************************************
  * Address Environment Interfaces
