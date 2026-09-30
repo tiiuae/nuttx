@@ -32,6 +32,7 @@
 #include <debug.h>
 #include <errno.h>
 
+#include <nuttx/addrenv.h>
 #include <nuttx/sched.h>
 #include <nuttx/kthread.h>
 #include <nuttx/binfmt/binfmt.h>
@@ -220,7 +221,18 @@ int posix_spawn(FAR pid_t *pid, FAR const char *path,
                 FAR const posix_spawnattr_t *attr,
                 FAR char * const argv[], FAR char * const envp[])
 {
-  return nxposix_spawn_exec(pid, path,
-                            file_actions != NULL ?
-                            *file_actions : NULL, attr, argv, envp);
+  posix_spawn_file_actions_t actions = NULL;
+
+  if (file_actions != NULL)
+    {
+      actions = *file_actions;
+#ifdef CONFIG_BUILD_KERNEL
+      if (actions != NULL && !uaccess_nested(file_actions, actions))
+        {
+          return EFAULT;
+        }
+#endif
+    }
+
+  return nxposix_spawn_exec(pid, path, actions, attr, argv, envp);
 }
