@@ -31,6 +31,7 @@
 #include <assert.h>
 #include <errno.h>
 
+#include <nuttx/addrenv.h>
 #include <nuttx/irq.h>
 #include <nuttx/sched.h>
 #include <nuttx/semaphore.h>
@@ -55,6 +56,21 @@
  *   None
  *
  ****************************************************************************/
+
+static FAR struct pthread_mutex_s *
+pthread_mutex_next(FAR struct pthread_mutex_s *mutex)
+{
+  FAR struct pthread_mutex_s *next = mutex->flink;
+
+#ifdef CONFIG_BUILD_KERNEL
+  if (next != NULL && !uaccess_nested(mutex, next))
+    {
+      return NULL;
+    }
+#endif
+
+  return next;
+}
 
 static void pthread_mutex_add(FAR struct pthread_mutex_s *mutex)
 {
@@ -98,11 +114,15 @@ static void pthread_mutex_remove(FAR struct pthread_mutex_s *mutex)
 
   for (prev = NULL, curr = rtcb->mhead;
        curr != NULL && curr != mutex;
-       prev = curr, curr = curr->flink)
+       prev = curr, curr = pthread_mutex_next(curr))
     {
     }
 
-  DEBUGASSERT(curr == mutex);
+  if (curr == NULL)
+    {
+      spin_unlock_irqrestore(&rtcb->mutex_lock, flags);
+      return;
+    }
 
   /* Remove the mutex from the list.  prev == NULL means that the mutex
    * to be removed is at the head of the list.
@@ -110,11 +130,11 @@ static void pthread_mutex_remove(FAR struct pthread_mutex_s *mutex)
 
   if (prev == NULL)
     {
-      rtcb->mhead = mutex->flink;
+      rtcb->mhead = pthread_mutex_next(mutex);
     }
   else
     {
-      prev->flink = mutex->flink;
+      prev->flink = pthread_mutex_next(mutex);
     }
 
   mutex->flink = NULL;
@@ -381,7 +401,7 @@ void pthread_mutex_inconsistent(FAR struct tcb_s *tcb)
       /* Remove the mutex from the TCB list */
 
       mutex        = tcb->mhead;
-      tcb->mhead   = mutex->flink;
+      tcb->mhead   = pthread_mutex_next(mutex);
       mutex->flink = NULL;
 
       /* Mark the mutex as INCONSISTENT and wake up any waiting thread */
