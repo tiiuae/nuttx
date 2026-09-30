@@ -473,6 +473,11 @@ bool uaccess_ok(FAR const void *ptr, size_t len)
          (len == 0 || (end >= start && up_addrenv_user_vaddr(end)));
 }
 
+bool uaccess_nested(FAR const void *parent, FAR const void *ptr)
+{
+  return !up_addrenv_user_vaddr((uintptr_t)parent) || uaccess_ok(ptr, 1);
+}
+
 void uaccess_check(FAR const void *ptr, size_t len)
 {
   if (!uaccess_ok(ptr, len))
