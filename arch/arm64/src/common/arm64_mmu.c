@@ -456,6 +456,27 @@ static void split_pte_block_desc(uint64_t *pte, int level)
   set_pte_table_desc(pte, new_table, level);
 }
 
+#ifdef CONFIG_BUILD_KERNEL
+static bool arm64_overlaps_user(uintptr_t virt, size_t size)
+{
+  uintptr_t last = virt + size - 1;
+
+  if (virt <= ARCH_ADDRENV_VEND && last >= ARCH_ADDRENV_VBASE)
+    {
+      return true;
+    }
+
+#ifdef CONFIG_ARCH_VMA_MAPPING
+  if (virt <= ARCH_SHM_VEND && last >= CONFIG_ARCH_SHM_VBASE)
+    {
+      return true;
+    }
+#endif
+
+  return false;
+}
+#endif
+
 /* Create/Populate translation table(s) for given region */
 
 static void init_xlat_tables(const struct arm_mmu_region *region)
@@ -474,7 +495,7 @@ static void init_xlat_tables(const struct arm_mmu_region *region)
 #endif
 
 #ifdef CONFIG_BUILD_KERNEL
-  if (size > 0 && virt + size - 1 >= ARCH_ADDRENV_VBASE)
+  if (size > 0 && arm64_overlaps_user(virt, size))
     {
       PANIC();
     }

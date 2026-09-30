@@ -45,6 +45,27 @@
  * Private Functions
  ****************************************************************************/
 
+#ifdef CONFIG_BUILD_KERNEL
+static bool riscv_overlaps_user(uintptr_t vaddr, size_t size)
+{
+  uintptr_t last = vaddr + size - 1;
+
+  if (vaddr <= ARCH_ADDRENV_VEND && last >= ARCH_ADDRENV_VBASE)
+    {
+      return true;
+    }
+
+#ifdef CONFIG_ARCH_VMA_MAPPING
+  if (vaddr <= ARCH_SHM_VEND && last >= CONFIG_ARCH_SHM_VBASE)
+    {
+      return true;
+    }
+#endif
+
+  return false;
+}
+#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -76,8 +97,8 @@ void mmu_ln_setentry(uint32_t ptlevel, uintptr_t lnvaddr, uintptr_t paddr,
 #ifdef CONFIG_BUILD_KERNEL
   if ((mmuflags & PTE_LEAF_MASK) != 0 &&
       (mmuflags & (PTE_G | PTE_U)) == PTE_G &&
-      vaddr + (RV_MMU_L1_PAGE_SIZE >> (RV_MMU_VPN_WIDTH * (ptlevel - 1))) >
-      ARCH_ADDRENV_VBASE)
+      riscv_overlaps_user(vaddr, RV_MMU_L1_PAGE_SIZE >>
+                                 (RV_MMU_VPN_WIDTH * (ptlevel - 1))))
     {
       PANIC();
     }
