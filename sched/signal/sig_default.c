@@ -225,7 +225,9 @@ static void nxsig_abnormal_termination(int signo)
   group_kill_children(rtcb);
 #endif
 
+#ifndef CONFIG_BUILD_KERNEL
   tls_cleanup_popall(tls_get_info());
+#endif
 
 #ifndef CONFIG_DISABLE_PTHREAD
   /* Check if the currently running task is actually a pthread */
