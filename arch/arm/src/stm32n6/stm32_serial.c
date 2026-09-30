@@ -56,7 +56,12 @@
 #include "stm32_rcc.h"
 #include "arm_internal.h"
 
-#ifdef CONFIG_SERIAL_TXDMA
+#if defined(CONFIG_SERIAL_TXDMA) && defined(CONFIG_STM32_GPDMA1) && \
+    defined(CONFIG_USART1_TXDMA)
+#  define STM32_USART1_TXDMA
+#endif
+
+#ifdef STM32_USART1_TXDMA
 #  include "stm32_dma.h"
 #  if defined(CONFIG_STM32_GPDMA1) && defined(CONFIG_USART1_TXDMA)
 #    include "hardware/stm32n6xxx_dmasigmap.h"
@@ -156,7 +161,7 @@ struct stm32_serial_s
   const uint8_t     unconfigure; /* Unconfigure pins on close */
   spinlock_t        lock;
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
   DMA_HANDLE        txdma;
   uintptr_t         txdma_buffer;
   size_t            txdma_length;
@@ -192,7 +197,7 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable);
 static bool stm32serial_txready(struct uart_dev_s *dev);
 static bool stm32serial_txempty(struct uart_dev_s *dev);
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
 static void stm32serial_dmainitialize(struct stm32_serial_s *priv);
 static void stm32serial_dmasend(struct uart_dev_s *dev);
 static void stm32serial_dmatxavail(struct uart_dev_s *dev);
@@ -227,7 +232,7 @@ static const struct uart_ops_s g_uart_ops =
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
   .rxflowcontrol  = stm32serial_rxflowcontrol,
 #endif
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
   .dmasend        = stm32serial_dmasend,
   .dmatxavail     = stm32serial_dmatxavail,
 #endif
@@ -876,7 +881,7 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
 
   stm32serial_disableusartint(priv, NULL);
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
   if (priv->txdma != NULL)
     {
       uint32_t cr3;
@@ -972,7 +977,7 @@ static int stm32serial_attach(struct uart_dev_s *dev)
     (struct stm32_serial_s *)dev->priv;
   int ret;
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
   /* Early serial setup runs before arm_dma_initialize(). */
 
   if (priv->txdma == NULL)
@@ -1471,7 +1476,7 @@ static void stm32serial_send(struct uart_dev_s *dev, int ch)
   stm32serial_putreg(priv, STM32_USART_TDR_OFFSET, (uint32_t)ch);
 }
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
 /****************************************************************************
  * Name: stm32serial_dmainitialize
  *
@@ -1703,7 +1708,7 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable)
     (struct stm32_serial_s *)dev->priv;
   irqstate_t flags;
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
   if (priv->txdma != NULL && !priv->txdma_fallback)
     {
       if (enable)
@@ -1789,7 +1794,7 @@ static bool stm32serial_txempty(struct uart_dev_s *dev)
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
 
-#ifdef CONFIG_SERIAL_TXDMA
+#ifdef STM32_USART1_TXDMA
   if (priv->txdma_active)
     {
       return false;

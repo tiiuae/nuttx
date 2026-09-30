@@ -29,6 +29,7 @@
 #include "hardware/stm32n6xxx_gpdma.h"
 #include "hardware/stm32n6xxx_hpdma.h"
 #include "stm32_dma.h"
+#include "stm32_dma_internal.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -401,23 +402,6 @@ static int stm32_dma_check_config(
   return 0;
 }
 
-static bool stm32_dma_cache_range_valid(uintptr_t address, size_t length)
-{
-  size_t linesize = up_get_dcache_linesize();
-
-  if (length == 0 || address > UINTPTR_MAX - length)
-    {
-      return false;
-    }
-
-  if (linesize == 0)
-    {
-      return true;
-    }
-
-  return address % linesize == 0 && length % linesize == 0;
-}
-
 static void stm32_dma_cache_clean(uintptr_t address, size_t length)
 {
   if (length != 0)
@@ -500,7 +484,8 @@ static bool stm32_dma_cache_valid(struct stm32_dma_channel_s *channel)
       destination = config->destination_address;
       length = config->destination_increment ? config->nbytes :
                                                config->width;
-      return stm32_dma_cache_range_valid(destination, length);
+      return stm32_dma_cache_range_valid(destination, length,
+                                         up_get_dcache_linesize());
     }
 
   for (i = 0; i < channel->descriptor_count; i++)
@@ -513,7 +498,8 @@ static bool stm32_dma_cache_valid(struct stm32_dma_channel_s *channel)
                      STM32_DMA_TR1_DDW_SHIFT);
       destination = descriptor->dar;
       length = (tr1 & STM32_DMA_TR1_DINC) != 0 ? bytes : width;
-      if (!stm32_dma_cache_range_valid(destination, length))
+      if (!stm32_dma_cache_range_valid(destination, length,
+                                       up_get_dcache_linesize()))
         {
           return false;
         }
@@ -585,48 +571,6 @@ static void stm32_dma_cache_invalidate_current(
   stm32_dma_cache_complete(channel, channel->descriptor_index);
 }
 
-static uint8_t stm32_dma_status(uint32_t status)
-{
-  uint8_t result = 0;
-
-  if ((status & STM32_DMA_FLAG_TCF) != 0)
-    {
-      result |= DMA_STATUS_TCF;
-    }
-
-  if ((status & STM32_DMA_FLAG_HTF) != 0)
-    {
-      result |= DMA_STATUS_HTF;
-    }
-
-  if ((status & STM32_DMA_FLAG_DTEF) != 0)
-    {
-      result |= DMA_STATUS_DTEF;
-    }
-
-  if ((status & STM32_DMA_FLAG_ULEF) != 0)
-    {
-      result |= DMA_STATUS_ULEF;
-    }
-
-  if ((status & STM32_DMA_FLAG_USEF) != 0)
-    {
-      result |= DMA_STATUS_USEF;
-    }
-
-  if ((status & STM32_DMA_FLAG_SUSPF) != 0)
-    {
-      result |= DMA_STATUS_SUSPF;
-    }
-
-  if ((status & STM32_DMA_FLAG_TOF) != 0)
-    {
-      result |= DMA_STATUS_TOF;
-    }
-
-  return result;
-}
-
 static int stm32_dma_interrupt(int irq, void *context, void *arg)
 {
   struct stm32_dma_channel_s *channel =
@@ -656,7 +600,7 @@ static int stm32_dma_interrupt(int irq, void *context, void *arg)
 
   stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
                    raw_status);
-  status = stm32_dma_status(raw_status);
+  status = stm32_dma_status_from_register(raw_status);
 
   if ((status & (DMA_STATUS_TCF | DMA_STATUS_FATAL)) != 0)
     {
@@ -847,6 +791,7 @@ DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
   unsigned int count;
   unsigned int reserved;
   unsigned int i;
+  uint32_t used_mask = 0;
   DMA_HANDLE handle = NULL;
 
   if (!g_dma_initialized || !stm32_dma_request_valid(request) ||
@@ -877,27 +822,34 @@ DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
     }
 
   flags = enter_critical_section();
-  for (i = reserved; i < count; i++)
+  for (i = 0; i < count; i++)
     {
       channel = &g_dma_channels[first + i];
-      if (channel->initialized && !channel->allocated)
+
+      if (!channel->initialized || channel->allocated)
         {
-          channel->allocated = true;
-          channel->request = *request;
-          channel->configured = false;
-          channel->in_flight = false;
-          channel->starting = false;
-          channel->descriptors = NULL;
-          channel->descriptor_count = 0;
-          channel->descriptor_index = 0;
-          channel->list_mode = STM32_DMA_LIST_TERMINAL;
-          channel->callback = NULL;
-          channel->callback_arg = NULL;
-          channel->status = 0;
-          channel->error = 0;
-          handle = (DMA_HANDLE)channel;
-          break;
+          used_mask |= 1u << i;
         }
+    }
+
+  i = stm32_dma_find_free_channel(used_mask, count, reserved);
+  if (i < count)
+    {
+      channel = &g_dma_channels[first + i];
+      channel->allocated = true;
+      channel->request = *request;
+      channel->configured = false;
+      channel->in_flight = false;
+      channel->starting = false;
+      channel->descriptors = NULL;
+      channel->descriptor_count = 0;
+      channel->descriptor_index = 0;
+      channel->list_mode = STM32_DMA_LIST_TERMINAL;
+      channel->callback = NULL;
+      channel->callback_arg = NULL;
+      channel->status = 0;
+      channel->error = 0;
+      handle = (DMA_HANDLE)channel;
     }
 
   leave_critical_section(flags);
@@ -1114,27 +1066,7 @@ int stm32_dmallibuild(DMA_HANDLE handle,
       descriptor->sar = configs[i].source_address;
       descriptor->dar = configs[i].destination_address;
 
-      if (i + 1 < count)
-        {
-          link = (uint32_t)(address +
-                            (i + 1) * sizeof(*descriptors));
-        }
-      else if (mode == STM32_DMA_LIST_CIRCULAR ||
-               mode == STM32_DMA_LIST_PINGPONG)
-        {
-          link = (uint32_t)address;
-        }
-      else
-        {
-          link = 0;
-        }
-
-      if (link != 0)
-        {
-          link = update_mask |
-                 ((link - (address & STM32_DMA_LBAR_MASK)) &
-                  STM32_DMA_LLR_LA_MASK);
-        }
+      link = stm32_dma_lli_link(address, i, count, mode, update_mask);
 
       if (extended)
         {
