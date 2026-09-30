@@ -27,6 +27,7 @@
 #include <nuttx/config.h>
 
 #include <sched.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -34,6 +35,19 @@
 #include <nuttx/tls.h>
 
 #include "sched/sched.h"
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+static bool argvstr_ok(FAR struct tcb_s *tcb, FAR const void *ptr)
+{
+#ifdef CONFIG_BUILD_KERNEL
+  return tcb->addrenv_own == NULL || uaccess_ok(ptr, sizeof(FAR char *));
+#else
+  return true;
+#endif
+}
 
 /****************************************************************************
  * Public Functions
@@ -90,7 +104,8 @@ size_t nxtask_argvstr(FAR struct tcb_s *tcb, FAR char *args, size_t size)
     {
       FAR char **argv = nxsched_get_stackargs(tcb) + 1;
 
-      while (*argv != NULL && n < size)
+      while (n < size && argvstr_ok(tcb, argv) && *argv != NULL &&
+             argvstr_ok(tcb, *argv))
         {
           n += snprintf(args + n, size - n, " %s", *argv++);
         }
