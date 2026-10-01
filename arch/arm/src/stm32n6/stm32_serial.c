@@ -1680,6 +1680,8 @@ static void stm32serial_dmatxcallback(DMA_HANDLE handle, uint8_t status,
     {
       priv->txdma_buffer = (uintptr_t)priv->dev.dmatx.nbuffer;
       priv->txdma_length = priv->dev.dmatx.nlength;
+      priv->dev.dmatx.length = priv->dev.dmatx.nlength;
+      priv->dev.dmatx.nlength = 0;
       stm32serial_dmasend(&priv->dev);
       return;
     }
