@@ -29,7 +29,7 @@ The following list indicates peripherals supported in NuttX:
 ==========  =======  ============================================================
 Peripheral  Support  Notes
 ==========  =======  ============================================================
-GPIO        Yes
+GPIO        Yes      GPIO-backed EXTI lines 0-15 via ``stm32_gpiosetevent()``
 PWR         Yes      Partial.
 RCC         Yes      PLL1 clock tree.
 USART       Yes      USART1 only.

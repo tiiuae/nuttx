@@ -147,8 +147,15 @@ The LEDs are supported via two mutually-exclusive paths:
   configuration bundles this with ``apps/examples/leds`` so the
   ``leds`` NSH command can cycle the LEDs as a quick smoke test.
 
-The user pushbutton is not yet wired up; a polled or EXTI-based
-driver is deferred to a follow-up change.
+The user pushbutton is not yet wired up to a board-level button driver.
+GPIO-backed EXTI support is available through ``stm32_gpiosetevent()`` for
+applications that need edge-triggered input callbacks or events.
+
+GPIO EXTI lines 0-15 are shared across ports by pin number: for example, PA3
+and PB3 both use EXTI3. The first port configured for a line owns it until
+reboot; configuring that line from another port returns ``-EBUSY``. This
+ownership constraint also applies after the line's callback or event is
+unregistered.
 
 Pin Mapping
 ===========
