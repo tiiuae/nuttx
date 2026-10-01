@@ -167,6 +167,22 @@ EXTI3, so only one port can own a given line. The first GPIO port configured
 for an EXTI line retains that line until reboot; a request for the same line
 from another port fails with `-EBUSY`.
 
+### PE12-to-blue-LED hardware test
+
+Build the `gpio-exti` configuration and load it in DEV boot mode:
+
+```sh
+./tools/configure.sh nucleo-n657x0-q:gpio-exti
+make -j$(nproc)
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh
+```
+
+The test configures PE12 as an active-low input with an internal pull-up.
+Connect PE12 to a board GND pin: the blue user LED (LD7) turns on; disconnect
+it and the LED turns off. This configuration uses the user-LED lower half
+instead of `CONFIG_ARCH_LEDS`, and the test starts automatically during board
+bring-up.
+
 ## Troubleshooting
 
 **`STM32_PRG_PATH is not set`** — export it as shown above; without it the

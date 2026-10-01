@@ -94,5 +94,9 @@ void stm32_timer_clocktest(void);
 int stm32_dma_policy_test(void);
 #endif
 
+#ifdef CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST
+int stm32_gpio_exti_test_initialize(void);
+#endif
+
 #endif /* __ASSEMBLY__ */
 #endif /* __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H */

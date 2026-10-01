@@ -30,6 +30,10 @@ if(CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST)
   list(APPEND SRCS stm32_dma_test.c)
 endif()
 
+if(CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST)
+  list(APPEND SRCS stm32_gpio_exti_test.c)
+endif()
+
 if(CONFIG_NUCLEO_N657X0_Q_BOOTLOADER)
   list(APPEND SRCS stm32_bootloader.c)
 endif()

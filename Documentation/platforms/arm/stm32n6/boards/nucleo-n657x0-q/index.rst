@@ -157,18 +157,26 @@ reboot; configuring that line from another port returns ``-EBUSY``. This
 ownership constraint also applies after the line's callback or event is
 unregistered.
 
+The ``nucleo-n657x0-q:nsh-test`` config contains a hardware test for this
+API. It configures PE12 as an active-low input with an internal pull-up and
+registers callbacks for both edges. Connect PE12 to a board GND pin to turn on
+the blue user LED (LD7); release it to turn the LED off. The test initializes
+during board bring-up and requires the user-LED lower half
+(``CONFIG_ARCH_LEDS`` unset).
+
 Pin Mapping
 ===========
 
-The shipped configurations map only the pins required for the serial
-console. All other GPIOs retain their reset state and are free for
-application use.
+The regular configurations map only the pins required for the serial
+console. The ``nsh-test`` test configuration additionally assigns PE12.
+Other GPIOs retain their reset state and are free for application use.
 
 ===== ============= ======= =================================
 Pin   Signal        AF      Notes
 ===== ============= ======= =================================
 PE5   USART1_TX     AF7     Routed to ST-LINK VCOM (host RX)
 PE6   USART1_RX     AF7     Routed to ST-LINK VCOM (host TX)
+PE12  GPIO input    --      ``nsh-test`` test input; active low
 ===== ============= ======= =================================
 
 Power Supply

@@ -1,5 +1,5 @@
 /****************************************************************************
- * boards/arm/stm32n6/nucleo-n657x0-q/src/stm32_bringup.c
+ * boards/arm/stm32n6/nucleo-n657x0-q/src/stm32_gpio_exti_test.c
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -26,73 +26,62 @@
 
 #include <nuttx/config.h>
 
-#include <sys/types.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include <syslog.h>
 
 #include <nuttx/board.h>
-#include <nuttx/leds/userled.h>
-
-#include "nucleo-n657x0-q.h"
 
 #include <arch/board/board.h>
+
+#include "stm32_gpio.h"
+#include "nucleo-n657x0-q.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define GPIO_EXTI_TEST_PINSET \
+  (GPIO_INPUT | GPIO_PULLUP | GPIO_PORTE | GPIO_PIN12)
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+static int stm32_gpio_exti_test_isr(int irq, void *context, void *arg)
+{
+  bool active;
+
+  (void)irq;
+  (void)context;
+  (void)arg;
+
+  active = !stm32_gpioread(GPIO_PORTE | GPIO_PIN12);
+  board_userled(BOARD_LED_BLUE, active);
+  return OK;
+}
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
 
-/****************************************************************************
- * Name: stm32_bringup
- *
- * Description:
- *   Perform architecture-specific initialization
- *
- *   CONFIG_BOARD_LATE_INITIALIZE=y :
- *     Called from board_late_initialize().
- *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
- *     Called from the NSH library
- *
- ****************************************************************************/
-
-int stm32_bringup(void)
+int stm32_gpio_exti_test_initialize(void)
 {
-#if !defined(CONFIG_ARCH_LEDS) && defined(CONFIG_USERLED_LOWER)
   int ret;
 
-  /* Register the LED driver */
+  board_userled(BOARD_LED_BLUE, false);
 
-  ret = userled_lower_initialize("/dev/userleds");
+  ret = stm32_gpiosetevent(GPIO_EXTI_TEST_PINSET, true, true, false,
+                           stm32_gpio_exti_test_isr, NULL);
   if (ret < 0)
     {
-      syslog(LOG_ERR, "ERROR: userled_lower_initialize() failed: %d\n", ret);
-    }
-#ifdef CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST
-  else
-    {
-      ret = stm32_gpio_exti_test_initialize();
-      if (ret < 0)
-        {
-          syslog(LOG_ERR, "ERROR: GPIO EXTI test setup failed: %d\n", ret);
-        }
-    }
-#endif
-#endif
-
-#if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
-  syslog(LOG_INFO, "=== TIMER TEST BEGIN ===\n");
-  stm32_timer_clocktest();
-  syslog(LOG_INFO, "=== TIMER TEST END ===\n");
-#endif
-
-#if defined(CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST)
-  syslog(LOG_INFO, "=== DMA POLICY TEST BEGIN ===\n");
-  if (stm32_dma_policy_test() < 0)
-    {
-      syslog(LOG_ERR, "ERROR: DMA access policy test failed\n");
+      return ret;
     }
 
-  syslog(LOG_INFO, "=== DMA POLICY TEST END ===\n");
-#endif
+  board_userled(BOARD_LED_BLUE,
+                !stm32_gpioread(GPIO_PORTE | GPIO_PIN12));
 
+  syslog(LOG_INFO,
+         "GPIO EXTI test active: ground PE12 for blue LED on\n");
   return OK;
 }
