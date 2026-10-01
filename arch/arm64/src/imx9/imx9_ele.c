@@ -1323,7 +1323,8 @@ int imx9_ele_key_mgmt_close(uint32_t mgmt)
  * Input Parameters:
  *   mgmt      - an open key management handle
  *   spec      - what kind of key to make; export usage is masked off
- *   pubkey    - buffer for the public half, cache line aligned and sized
+ *   pubkey    - buffer for the public half, cache line aligned, covering
+ *               its length rounded up to a cache line
  *   pubkey_len- its length
  *
  * Output Parameters:
@@ -1351,8 +1352,7 @@ int imx9_ele_generate_key(uint32_t mgmt,
 
   /* A neighbour sharing an end cache line would lose its contents. */
 
-  if (!IS_ALIGNED((uintptr_t)pubkey, ARMV8A_DCACHE_LINESIZE) ||
-      !IS_ALIGNED(pubkey_len, ARMV8A_DCACHE_LINESIZE))
+  if (!IS_ALIGNED((uintptr_t)pubkey, ARMV8A_DCACHE_LINESIZE))
     {
       return -EINVAL;
     }
@@ -1384,7 +1384,8 @@ int imx9_ele_generate_key(uint32_t mgmt,
   cmd.flags = spec->flags;
   cmd.public_key_addr = (uint32_t)paddr;
 
-  up_flush_dcache((uintptr_t)pubkey, (uintptr_t)pubkey + pubkey_len);
+  up_flush_dcache((uintptr_t)pubkey, (uintptr_t)pubkey +
+                  ALIGN_UP(pubkey_len, ARMV8A_DCACHE_LINESIZE));
 
   msg.header.version = ELE_VERSION_FW;
   msg.header.tag = ELE_CMD_TAG;
@@ -1406,7 +1407,8 @@ int imx9_ele_generate_key(uint32_t mgmt,
       return -EIO;
     }
 
-  up_invalidate_dcache((uintptr_t)pubkey, (uintptr_t)pubkey + pubkey_len);
+  up_invalidate_dcache((uintptr_t)pubkey, (uintptr_t)pubkey +
+                       ALIGN_UP(pubkey_len, ARMV8A_DCACHE_LINESIZE));
 
   *key_id = msg.data[1];
   return 0;
