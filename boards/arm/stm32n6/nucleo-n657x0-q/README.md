@@ -160,6 +160,13 @@ Useful script options (both scripts accept `-h`):
 0x34180400  bootloader image; also stage 2 .data/.bss (511 KiB region)
 ```
 
+## GPIO external interrupts
+
+EXTI lines 0-15 are shared by GPIO port: for example, PA3 and PB3 both use
+EXTI3, so only one port can own a given line. The first GPIO port configured
+for an EXTI line retains that line until reboot; a request for the same line
+from another port fails with `-EBUSY`.
+
 ## Troubleshooting
 
 **`STM32_PRG_PATH is not set`** — export it as shown above; without it the
