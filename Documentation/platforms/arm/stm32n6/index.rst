@@ -26,9 +26,9 @@ Peripheral Support
 
 The following list indicates peripherals supported in NuttX:
 
-==========  =======  ===============================================
+==========  =======  ============================================================
 Peripheral  Support  Notes
-==========  =======  ===============================================
+==========  =======  ============================================================
 GPIO        Yes
 PWR         Yes      Partial.
 RCC         Yes      PLL1 clock tree.
@@ -51,10 +51,10 @@ RTC         No
 SAI         No
 SDMMC       No
 SPI         No
-TIM         No
+TIM         Partial  TIM1-TIM18 driver; no board PWM/DShot client yet
 USB         No
 XSPI        No
-==========  =======  ===============================================
+==========  =======  ============================================================
 
 References
 ==========
