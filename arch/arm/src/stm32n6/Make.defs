@@ -31,7 +31,8 @@ include armv8-m/Make.defs
 
 # Required STM32N6 files
 
-CHIP_CSRCS += stm32_gpio.c stm32_irq.c stm32_lowputc.c stm32_rcc.c
+CHIP_CSRCS += stm32_gpio.c stm32_exti_gpio.c stm32_irq.c stm32_lowputc.c
+CHIP_CSRCS += stm32_rcc.c
 CHIP_CSRCS += stm32_start.c stm32_pwr.c stm32_timerisr.c
 
 ifneq ($(CONFIG_ARCH_IDLE_CUSTOM),y)

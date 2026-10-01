@@ -39,12 +39,19 @@
 #include "arm_internal.h"
 #include "chip.h"
 #include "stm32_gpio.h"
+#include "hardware/stm32n6xxx_exti.h"
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
 static spinlock_t g_configgpio_lock = SP_UNLOCKED;
+
+/* Each EXTI line can be routed to only one GPIO port. Store port + 1 so
+ * zero can represent an unassigned line.
+ */
+
+static uint8_t g_exti_port[16];
 
 /****************************************************************************
  * Public Data
@@ -98,6 +105,7 @@ const uint32_t g_gpiobase[STM32_NPORTS] =
 int stm32_configgpio(uint32_t cfgset)
 {
   uintptr_t base;
+  uintptr_t exticr;
   uint32_t regval;
   uint32_t setting;
   unsigned int regoffset;
@@ -105,6 +113,7 @@ int stm32_configgpio(uint32_t cfgset)
   unsigned int pin;
   unsigned int pos;
   unsigned int pinmode;
+  bool exti;
   irqstate_t flags;
 
   /* Verify that this hardware supports the select GPIO port */
@@ -124,6 +133,8 @@ int stm32_configgpio(uint32_t cfgset)
    */
 
   pin = (cfgset & GPIO_PIN_MASK) >> GPIO_PIN_SHIFT;
+  exti = ((cfgset & GPIO_MODE_MASK) == GPIO_INPUT) &&
+         ((cfgset & GPIO_EXTI) != 0);
 
   /* Set up the mode register (and remember whether the pin mode) */
 
@@ -156,6 +167,28 @@ int stm32_configgpio(uint32_t cfgset)
    */
 
   flags = spin_lock_irqsave(&g_configgpio_lock);
+
+  /* Route GPIO inputs requesting EXTI to their port. EXTI line numbers are
+   * shared across ports, so keep each assigned line on its original port.
+   */
+
+  if (exti)
+    {
+      if (g_exti_port[pin] != 0 && g_exti_port[pin] != port + 1)
+        {
+          spin_unlock_irqrestore(&g_configgpio_lock, flags);
+          return -EBUSY;
+        }
+
+      exticr = STM32_EXTI_EXTICR1 +
+               ((pin >> 2) * sizeof(uint32_t));
+      regval  = getreg32(exticr);
+      regval &= ~STM32_EXTI_EXTICR_MASK(pin);
+      regval |= STM32_EXTI_EXTICR_VALUE(pin, port);
+      putreg32(regval, exticr);
+
+      g_exti_port[pin] = port + 1;
+    }
 
   /* Now apply the configuration to the mode register */
 

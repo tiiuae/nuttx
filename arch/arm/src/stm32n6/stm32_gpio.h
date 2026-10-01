@@ -164,7 +164,9 @@
 #define GPIO_OUTPUT_SET               (1 << 8)                   /* Bit 8: If output, initial value of output */
 #define GPIO_OUTPUT_CLEAR             (0)
 
-/* External interrupt selection (GPIO inputs only):
+/* External interrupt selection (GPIO inputs only). Each EXTI line is shared
+ * across ports; the first port configured for a line owns it, and requests
+ * for that line from another port fail with -EBUSY.
  *
  * 1111 1111 1100 0000 0000
  * 9876 5432 1098 7654 3210
