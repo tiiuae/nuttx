@@ -80,6 +80,7 @@
 
 /* SPI_CFG2, RM0486 Rev 4 section 67.11.4. */
 
+#define SPI_CFG2_AFCNTR             (1u << 31)
 #define SPI_CFG2_SSM               (1u << 26)
 #define SPI_CFG2_CPOL              (1u << 25)
 #define SPI_CFG2_CPHA              (1u << 24)
