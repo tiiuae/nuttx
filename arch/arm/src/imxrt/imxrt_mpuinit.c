@@ -70,6 +70,14 @@
 #  endif
 #endif
 
+#ifdef CONFIG_BUILD_PROTECTED
+#  define IMXRT_MPU_AP_RW MPU_RASR_AP_RWNO
+#  define IMXRT_MPU_AP_RO MPU_RASR_AP_RONO
+#else
+#  define IMXRT_MPU_AP_RW MPU_RASR_AP_RWRW
+#  define IMXRT_MPU_AP_RO MPU_RASR_AP_RORO
+#endif
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -111,22 +119,7 @@ void imxrt_mpu_initialize(void)
 #endif
 #endif
 
-#ifdef CONFIG_BUILD_PROTECTED
-  /* Configure user flash and SRAM space */
-
-  DEBUGASSERT(USERSPACE->us_textend >= USERSPACE->us_textstart);
-
-  mpu_user_flash(USERSPACE->us_textstart,
-                 USERSPACE->us_textend - USERSPACE->us_textstart);
-
-  datastart = MIN(USERSPACE->us_datastart, USERSPACE->us_bssstart);
-  dataend   = MAX(USERSPACE->us_dataend,   USERSPACE->us_bssend);
-
-  DEBUGASSERT(dataend >= datastart);
-
-  mpu_user_intsram(datastart, dataend - datastart);
-#else
-#  if defined(CONFIG_ARCH_FAMILY_IMXRT117x)
+#if defined(CONFIG_ARCH_FAMILY_IMXRT117x)
   uint32_t regval;
   uint32_t region;
 
@@ -153,7 +146,7 @@ void imxrt_mpu_initialize(void)
 
 #ifdef CONFIG_IMXRT_SEMC
   mpu_configure_region(IMXRT_SEMC0_BASE, 512 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -163,7 +156,7 @@ void imxrt_mpu_initialize(void)
 #endif
 
   mpu_configure_region(IMXRT_FLEXSPI2_CIPHER_BASE, 512 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -172,7 +165,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_ITCM_BASE, 1 * 1024 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -181,7 +174,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_ITCM_BASE, 256 * 1024,
-                       MPU_RASR_AP_RORO  | /* P:R0   U:R0                */
+                       IMXRT_MPU_AP_RO   | /* P:RO   U:RO if flat        */
                        MPU_RASR_TEX_NOR    /* Normal
                                             * Not Cacheable
                                             * Not Bufferable
@@ -190,7 +183,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_DTCM_BASE, 256 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_NOR    /* Normal
                                             * Not Cacheable
                                             * Not Bufferable
@@ -199,7 +192,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_OCRAM_M4_BASE, 1 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_SO   | /* Strongly Ordered           */
                        RASR_C_VALUE      | /* Cacheable DCACHE ? 0 : 1   */
                        RASR_B_VALUE        /* Bufferable WB    ? 0 : 1
@@ -208,7 +201,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_OCRAM_M4_BASE + (1 * 1024 * 1024), 512 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_SO   | /* Strongly Ordered           */
                        RASR_C_VALUE      | /* Cacheable DCACHE ? 0 : 1   */
                        RASR_B_VALUE        /* Bufferable WB    ? 0 : 1
@@ -217,7 +210,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_FLEXSPI1_CIPHER_BASE, 16 * 1024 * 1024,
-                       MPU_RASR_AP_RORO  | /* P:R0   U:R0                */
+                       IMXRT_MPU_AP_RO   | /* P:RO   U:RO if flat        */
                        MPU_RASR_TEX_SO   | /* Strongly Ordered           */
                        MPU_RASR_C        | /* Cacheable                  */
                        MPU_RASR_B          /* Bufferable
@@ -226,7 +219,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_AIPS1_BASE, 16 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -235,7 +228,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_SIM_DISP_BASE, 2 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -244,7 +237,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_SIM_M7_BASE, 1 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -253,7 +246,7 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_GPU2D_BASE, 2 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
@@ -262,14 +255,14 @@ void imxrt_mpu_initialize(void)
                        );
 
   mpu_configure_region(IMXRT_AIPS_M7_BASE, 1 * 1024 * 1024,
-                       MPU_RASR_AP_RWRW  | /* P:RW   U:RW                */
+                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
                                             * Not Shareable
                                             * No Subregion disable       */
                        );
-#  else
+#elif !defined(CONFIG_BUILD_PROTECTED)
 
   mpu_reset();
 
@@ -344,14 +337,27 @@ void imxrt_mpu_initialize(void)
                                             * Not Shareable      */
                        MPU_RASR_AP_RWRW);  /* P:RW   U:RW
                                             * Instruction access */
-#endif /* CONFIG_ARCH_FAMILY_IMXRT117x */
-  mpu_control(true, true, true);
-  return;
 #endif
 
-  /* Then enable the MPU */
+#ifdef CONFIG_BUILD_PROTECTED
+  /* Configure user flash and SRAM space */
+
+  DEBUGASSERT(USERSPACE->us_textend >= USERSPACE->us_textstart);
+
+  mpu_user_flash(USERSPACE->us_textstart,
+                 USERSPACE->us_textend - USERSPACE->us_textstart);
+
+  datastart = MIN(USERSPACE->us_datastart, USERSPACE->us_bssstart);
+  dataend   = MAX(USERSPACE->us_dataend,   USERSPACE->us_bssend);
+
+  DEBUGASSERT(dataend >= datastart);
+
+  mpu_user_intsram(datastart, dataend - datastart);
 
   mpu_control(true, false, true);
+#else
+  mpu_control(true, true, true);
+#endif
 }
 
 /****************************************************************************
