@@ -111,14 +111,22 @@
 
 /* I/O voltage domains ******************************************************/
 
-/* GPIO port E (USART1 TX/RX on PE5/PE6) is on the VddIO2 and VddIO3
- * domains; both are wired to the board's 1.8 V rail.  This mask is
- * applied to PWR_SVMCR3 early in boot to mark the supplies valid and
- * select their 1.8 V range.
+/* PORTE GPIOs, including USART1 PE5/PE6, are supplied by the main VDD I/O
+ * segment, not VDDIO2/3. The schematic connects MCU VDD to VDDIO, supplied
+ * at 3.3 V by the LD39020ADTPU33R; PE5/PE6 were measured at 3.3 V. Keep
+ * VDDIOVRSEL clear to select the 3.3 V range (RM0486 section 13.5.8).
+ * OPT124.HSLV_VDD (bit 17) must also match the VDD range; the 3.3 V board
+ * configuration does not use the high-speed low-voltage option.
+ *
+ * VDDIO3 is a separate 1.8 V rail for the port-N GPIO bank used by XSPI2.
+ * Mark the separate VDDIO2 and VDDIO3 supplies valid, clear VDDIO2VRSEL for
+ * its 3.3 V range, and select the 1.8 V range for VDDIO3.
  */
 
 #define BOARD_PWR_VDDIO  (PWR_SVMCR3_VDDIO2SV    | PWR_SVMCR3_VDDIO3SV | \
-                          PWR_SVMCR3_VDDIO2VRSEL | PWR_SVMCR3_VDDIO3VRSEL)
+                          PWR_SVMCR3_VDDIO3VRSEL)
+#define BOARD_PWR_VDDIO_CLEAR (PWR_SVMCR3_VDDIOVRSEL | \
+                               PWR_SVMCR3_VDDIO2VRSEL)
 
 /* LED definitions **********************************************************/
 
