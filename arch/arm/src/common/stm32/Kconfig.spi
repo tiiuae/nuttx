@@ -18,21 +18,21 @@ config STM32_SPI_INTERRUPTS
 config STM32_SPI1_DMA
 	bool "SPI1 DMA"
 	depends on STM32_SPI && STM32_SPI1
-	depends on STM32_HAVE_SPI_DMA_FAMILY_WL5 && !STM32_SPI_INTERRUPT || STM32_COMMON_F0_L0_G0_C0 && !STM32_SPI_INTERRUPTS
+	depends on (STM32_HAVE_SPI_DMA_FAMILY_WL5 && !STM32_SPI_INTERRUPT || STM32_COMMON_F0_L0_G0_C0 && !STM32_SPI_INTERRUPTS || ARCH_CHIP_STM32N6)
 	select STM32_SPI_DMA
 	---help---
 		Use DMA to improve SPI1 transfer performance.  Cannot be used with STM32_SPI_INTERRUPT.
 
 config STM32_SPI1_DMA_BUFFER
 	int "SPI1 DMA buffer size"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32WL5) && STM32_SPI1_DMA
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32WL5 || ARCH_CHIP_STM32N6) && STM32_SPI1_DMA
 	default 0
 	---help---
 		Add a properly aligned DMA buffer for RX and TX DMA for SPI1.
 
 config STM32_SPI_DMATHRESHOLD
 	int "SPI DMA threshold"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32WL5) && STM32_SPI_DMA
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32WL5 || ARCH_CHIP_STM32N6) && STM32_SPI_DMA
 	default 4
 	---help---
 		When SPI DMA is enabled, small DMA transfers will still be performed
@@ -42,14 +42,14 @@ config STM32_SPI_DMATHRESHOLD
 config STM32_SPI2_DMA
 	bool "SPI2 DMA"
 	depends on STM32_SPI && STM32_SPI2
-	depends on STM32_HAVE_SPI_DMA_FAMILY && !STM32_SPI_INTERRUPT || STM32_COMMON_F0_L0_G0_C0 && !STM32_SPI_INTERRUPTS
+	depends on (STM32_HAVE_SPI_DMA_FAMILY && !STM32_SPI_INTERRUPT || STM32_COMMON_F0_L0_G0_C0 && !STM32_SPI_INTERRUPTS || ARCH_CHIP_STM32N6)
 	select STM32_SPI_DMA
 	---help---
 		Use DMA to improve SPI2 transfer performance.  Cannot be used with STM32_SPI_INTERRUPT.
 
 config STM32_SPI2_DMA_BUFFER
 	int "SPI2 DMA buffer size"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI2_DMA
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI2_DMA
 	default 0
 	---help---
 		Add a properly aligned DMA buffer for RX and TX DMA for SPI2.
@@ -57,49 +57,49 @@ config STM32_SPI2_DMA_BUFFER
 config STM32_SPI3_DMA
 	bool "SPI3 DMA"
 	depends on STM32_SPI && STM32_SPI3
-	depends on STM32_HAVE_SPI_DMA_FAMILY && !STM32_SPI_INTERRUPT || STM32_COMMON_F0_L0_G0_C0 && !STM32_SPI_INTERRUPTS
+	depends on (STM32_HAVE_SPI_DMA_FAMILY && !STM32_SPI_INTERRUPT || STM32_COMMON_F0_L0_G0_C0 && !STM32_SPI_INTERRUPTS || ARCH_CHIP_STM32N6)
 	select STM32_SPI_DMA
 	---help---
 		Use DMA to improve SPI3 transfer performance.  Cannot be used with STM32_SPI_INTERRUPT.
 
 config STM32_SPI3_DMA_BUFFER
 	int "SPI3 DMA buffer size"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI3_DMA
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI3_DMA
 	default 0
 	---help---
 		Add a properly aligned DMA buffer for RX and TX DMA for SPI3.
 
 config STM32_SPI4_DMA
 	bool "SPI4 DMA"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI && STM32_SPI4 && !STM32_SPI_INTERRUPT
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI && STM32_SPI4 && !STM32_SPI_INTERRUPT
 	select STM32_SPI_DMA
 	---help---
 		Use DMA to improve SPI4 transfer performance.  Cannot be used with STM32_SPI_INTERRUPT.
 
 config STM32_SPI4_DMA_BUFFER
 	int "SPI4 DMA buffer size"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI4_DMA
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI4_DMA
 	default 0
 	---help---
 		Add a properly aligned DMA buffer for RX and TX DMA for SPI4.
 
 config STM32_SPI5_DMA
 	bool "SPI5 DMA"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI && STM32_SPI5 && !STM32_SPI_INTERRUPT
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI && STM32_SPI5 && !STM32_SPI_INTERRUPT
 	select STM32_SPI_DMA
 	---help---
 		Use DMA to improve SPI5 transfer performance.  Cannot be used with STM32_SPI_INTERRUPT.
 
 config STM32_SPI5_DMA_BUFFER
 	int "SPI5 DMA buffer size"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI5_DMA
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI5_DMA
 	default 0
 	---help---
 		Add a properly aligned DMA buffer for RX and TX DMA for SPI5.
 
 config STM32_SPI6_DMA
 	bool "SPI6 DMA"
-	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5) && STM32_SPI && STM32_SPI6 && !STM32_SPI_INTERRUPT
+	depends on (STM32_COMMON_LEGACY || STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI && STM32_SPI6 && !STM32_SPI_INTERRUPT
 	select STM32_SPI_DMA
 	---help---
 		Use DMA to improve SPI6 transfer performance.  Cannot be used with STM32_SPI_INTERRUPT.
@@ -130,7 +130,7 @@ config STM32_SPI3_COMMTYPE
 
 config STM32_SPI6_DMA_BUFFER
 	int "SPI6 DMA buffer size"
-	depends on (STM32_COMMON_F7_H7_H5) && STM32_SPI6_DMA
+	depends on (STM32_COMMON_F7_H7_H5 || ARCH_CHIP_STM32N6) && STM32_SPI6_DMA
 	default 0
 	---help---
 		Add a properly aligned DMA buffer for RX and TX DMA for SPI6.

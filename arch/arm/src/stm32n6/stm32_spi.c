@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/arm/src/stm32n6/stm32.h
+ * arch/arm/src/stm32n6/stm32_spi.c
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,29 +20,16 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_STM32N6_STM32_H
-#define __ARCH_ARM_SRC_STM32N6_STM32_H
-
-/****************************************************************************
- * Included Files
- ****************************************************************************/
-
 #include <nuttx/config.h>
-#include <sys/types.h>
-#include <stdint.h>
-#include <stdbool.h>
 
-#include "arm_internal.h"
+#include <nuttx/debug.h>
+#include <nuttx/spi/spi.h>
 
-/* Peripherals **************************************************************/
-
-#include "chip.h"
-#include "stm32_gpio.h"
-#include "stm32_lowputc.h"
-#include "stm32_pwr.h"
-#include "stm32_rcc.h"
 #include "stm32_spi.h"
-#include "stm32_tim.h"
-#include "stm32_uart.h"
 
-#endif /* __ARCH_ARM_SRC_STM32N6_STM32_H */
+struct spi_dev_s *stm32_spibus_initialize(int bus)
+{
+  spierr("ERROR: STM32N6 SPI transfer driver is not implemented (bus %d)\n",
+         bus);
+  return NULL;
+}

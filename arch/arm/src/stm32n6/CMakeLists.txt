@@ -44,6 +44,10 @@ if(CONFIG_STM32_USART)
   list(APPEND SRCS stm32_serial.c)
 endif()
 
+if(CONFIG_STM32_SPI)
+  list(APPEND SRCS stm32_spi.c)
+endif()
+
 if(CONFIG_STM32_TIM)
   list(APPEND SRCS stm32_tim.c)
 endif()

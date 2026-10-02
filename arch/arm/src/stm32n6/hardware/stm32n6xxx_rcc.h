@@ -49,16 +49,21 @@
 #define STM32_RCC_IC3CFGR_OFFSET      0x00cc  /* IC3 configuration register */
 #define STM32_RCC_IC6CFGR_OFFSET      0x00d8  /* IC6 configuration register */
 #define STM32_RCC_IC11CFGR_OFFSET     0x00ec  /* IC11 configuration register */
+#define STM32_RCC_CCIPR9_OFFSET       0x0164  /* Peripheral kernel clock select register 9 */
 #define STM32_RCC_CCIPR13_OFFSET      0x0174  /* Peripheral kernel clock select register 13 */
 #define STM32_RCC_AHB1RSTR_OFFSET     0x0210  /* AHB1 peripheral reset register */
 #define STM32_RCC_AHB5RSTR_OFFSET     0x0220  /* AHB5 peripheral reset register */
 #define STM32_RCC_APB1LRSTR_OFFSET    0x0224  /* APB1L peripheral reset register */
 #define STM32_RCC_APB2RSTR_OFFSET     0x022c  /* APB2 peripheral reset register */
+#define STM32_RCC_APB4LRSTR_OFFSET    0x0234  /* APB4L peripheral reset register */
 #define STM32_RCC_BUSENR_OFFSET       0x0244  /* Embedded bus clock enable register */
 #define STM32_RCC_AHB1ENSR_OFFSET     0x0a50  /* AHB1 peripheral clock enable set register */
 #define STM32_RCC_AHB5ENSR_OFFSET     0x0a60  /* AHB5 peripheral clock enable set register */
 #define STM32_RCC_AHB1RSTSR_OFFSET    0x0a10  /* AHB1 peripheral reset set register */
 #define STM32_RCC_AHB5RSTSR_OFFSET    0x0a20  /* AHB5 peripheral reset set register */
+#define STM32_RCC_APB1LRSTSR_OFFSET   0x0a24  /* APB1L peripheral reset set register */
+#define STM32_RCC_APB2RSTSR_OFFSET    0x0a2c  /* APB2 peripheral reset set register */
+#define STM32_RCC_APB4LRSTSR_OFFSET   0x0a34  /* APB4L peripheral reset set register */
 #define STM32_RCC_BUSENSR_OFFSET      0x0a44  /* Embedded bus clock enable set register */
 
 /* Peripheral clock enable / set / clear register offsets.  Each enable
@@ -72,6 +77,7 @@
 #define STM32_RCC_AHB4ENR_OFFSET      0x025c  /* AHB4 peripheral clock enable register */
 #define STM32_RCC_APB1LENR_OFFSET     0x0264  /* APB1 peripheral clock enable register 1 */
 #define STM32_RCC_APB2ENR_OFFSET      0x026c  /* APB2 peripheral clock enable register */
+#define STM32_RCC_APB4LENR_OFFSET     0x0274  /* APB4 peripheral clock enable register 1 */
 #define STM32_RCC_APB4HENR_OFFSET     0x0278  /* APB4 peripheral clock enable register 2 */
 #define STM32_RCC_BUSLPENR_OFFSET     0x0284  /* Bus clocks enable in Sleep mode */
 #define STM32_RCC_MEMLPENR_OFFSET     0x028c  /* SRAM clocks enable in Sleep mode */
@@ -85,6 +91,7 @@
 #define STM32_RCC_AHB4ENSR_OFFSET     0x0a5c  /* AHB4 clock enable set register */
 #define STM32_RCC_APB1LENSR_OFFSET    0x0a64  /* APB1 clock enable set register 1 */
 #define STM32_RCC_APB2ENSR_OFFSET     0x0a6c  /* APB2 clock enable set register */
+#define STM32_RCC_APB4LENSR_OFFSET    0x0a74  /* APB4 clock enable set register 1 */
 #define STM32_RCC_APB4HENSR_OFFSET    0x0a78  /* APB4 clock enable set register 2 */
 #define STM32_RCC_BUSLPENSR_OFFSET    0x0a84  /* Bus LP clock enable set register */
 #define STM32_RCC_MEMLPENSR_OFFSET    0x0a8c  /* SRAM LP clock enable set register */
@@ -94,7 +101,12 @@
 #define STM32_RCC_CCR_OFFSET          0x1000  /* Clock control clear register */
 #define STM32_RCC_AHB1RSTCR_OFFSET    0x1210  /* AHB1 peripheral reset clear register */
 #define STM32_RCC_AHB5RSTCR_OFFSET    0x1220  /* AHB5 peripheral reset clear register */
+#define STM32_RCC_APB1LRSTCR_OFFSET   0x1224  /* APB1L peripheral reset clear register */
+#define STM32_RCC_APB2RSTCR_OFFSET    0x122c  /* APB2 peripheral reset clear register */
+#define STM32_RCC_APB4LRSTCR_OFFSET   0x1234  /* APB4L peripheral reset clear register */
+#define STM32_RCC_APB1LENCR_OFFSET    0x1264  /* APB1L clock enable clear register */
 #define STM32_RCC_APB2ENCR_OFFSET     0x126c  /* APB2 clock enable clear register */
+#define STM32_RCC_APB4LENCR_OFFSET   0x1274  /* APB4L clock enable clear register */
 
 #define STM32_RCC_CSR_OFFSET          0x0800  /* Clock status (set) register */
 
@@ -111,11 +123,13 @@
 #define STM32_RCC_IC3CFGR             (STM32_RCC_BASE + STM32_RCC_IC3CFGR_OFFSET)
 #define STM32_RCC_IC6CFGR             (STM32_RCC_BASE + STM32_RCC_IC6CFGR_OFFSET)
 #define STM32_RCC_IC11CFGR            (STM32_RCC_BASE + STM32_RCC_IC11CFGR_OFFSET)
+#define STM32_RCC_CCIPR9              (STM32_RCC_BASE + STM32_RCC_CCIPR9_OFFSET)
 #define STM32_RCC_CCIPR13             (STM32_RCC_BASE + STM32_RCC_CCIPR13_OFFSET)
 #define STM32_RCC_AHB1RSTR            (STM32_RCC_BASE + STM32_RCC_AHB1RSTR_OFFSET)
 #define STM32_RCC_AHB5RSTR            (STM32_RCC_BASE + STM32_RCC_AHB5RSTR_OFFSET)
-#define STM32_RCC_APB1LRSTR            (STM32_RCC_BASE + STM32_RCC_APB1LRSTR_OFFSET)
-#define STM32_RCC_APB2RSTR             (STM32_RCC_BASE + STM32_RCC_APB2RSTR_OFFSET)
+#define STM32_RCC_APB1LRSTR           (STM32_RCC_BASE + STM32_RCC_APB1LRSTR_OFFSET)
+#define STM32_RCC_APB2RSTR            (STM32_RCC_BASE + STM32_RCC_APB2RSTR_OFFSET)
+#define STM32_RCC_APB4LRSTR           (STM32_RCC_BASE + STM32_RCC_APB4LRSTR_OFFSET)
 #define STM32_RCC_BUSENR               (STM32_RCC_BASE + STM32_RCC_BUSENR_OFFSET)
 #define STM32_RCC_AHB1ENSR            (STM32_RCC_BASE + STM32_RCC_AHB1ENSR_OFFSET)
 #define STM32_RCC_AHB5ENSR            (STM32_RCC_BASE + STM32_RCC_AHB5ENSR_OFFSET)
@@ -123,6 +137,12 @@
 #define STM32_RCC_AHB5RSTSR           (STM32_RCC_BASE + STM32_RCC_AHB5RSTSR_OFFSET)
 #define STM32_RCC_AHB1RSTCR           (STM32_RCC_BASE + STM32_RCC_AHB1RSTCR_OFFSET)
 #define STM32_RCC_AHB5RSTCR           (STM32_RCC_BASE + STM32_RCC_AHB5RSTCR_OFFSET)
+#define STM32_RCC_APB1LRSTSR          (STM32_RCC_BASE + STM32_RCC_APB1LRSTSR_OFFSET)
+#define STM32_RCC_APB2RSTSR           (STM32_RCC_BASE + STM32_RCC_APB2RSTSR_OFFSET)
+#define STM32_RCC_APB4LRSTSR          (STM32_RCC_BASE + STM32_RCC_APB4LRSTSR_OFFSET)
+#define STM32_RCC_APB1LRSTCR          (STM32_RCC_BASE + STM32_RCC_APB1LRSTCR_OFFSET)
+#define STM32_RCC_APB2RSTCR           (STM32_RCC_BASE + STM32_RCC_APB2RSTCR_OFFSET)
+#define STM32_RCC_APB4LRSTCR          (STM32_RCC_BASE + STM32_RCC_APB4LRSTCR_OFFSET)
 #define STM32_RCC_BUSENSR             (STM32_RCC_BASE + STM32_RCC_BUSENSR_OFFSET)
 
 #define STM32_RCC_DIVENR              (STM32_RCC_BASE + STM32_RCC_DIVENR_OFFSET)
@@ -132,6 +152,7 @@
 #define STM32_RCC_AHB4ENR             (STM32_RCC_BASE + STM32_RCC_AHB4ENR_OFFSET)
 #define STM32_RCC_APB1LENR            (STM32_RCC_BASE + STM32_RCC_APB1LENR_OFFSET)
 #define STM32_RCC_APB2ENR             (STM32_RCC_BASE + STM32_RCC_APB2ENR_OFFSET)
+#define STM32_RCC_APB4LENR            (STM32_RCC_BASE + STM32_RCC_APB4LENR_OFFSET)
 #define STM32_RCC_APB4HENR            (STM32_RCC_BASE + STM32_RCC_APB4HENR_OFFSET)
 #define STM32_RCC_BUSLPENR            (STM32_RCC_BASE + STM32_RCC_BUSLPENR_OFFSET)
 #define STM32_RCC_MEMLPENR            (STM32_RCC_BASE + STM32_RCC_MEMLPENR_OFFSET)
@@ -142,15 +163,17 @@
 #define STM32_RCC_AHB4ENSR            (STM32_RCC_BASE + STM32_RCC_AHB4ENSR_OFFSET)
 #define STM32_RCC_APB1LENSR           (STM32_RCC_BASE + STM32_RCC_APB1LENSR_OFFSET)
 #define STM32_RCC_APB2ENSR            (STM32_RCC_BASE + STM32_RCC_APB2ENSR_OFFSET)
+#define STM32_RCC_APB4LENSR           (STM32_RCC_BASE + STM32_RCC_APB4LENSR_OFFSET)
 #define STM32_RCC_APB4HENSR           (STM32_RCC_BASE + STM32_RCC_APB4HENSR_OFFSET)
+#define STM32_RCC_APB1LENCR           (STM32_RCC_BASE + STM32_RCC_APB1LENCR_OFFSET)
+#define STM32_RCC_APB2ENCR            (STM32_RCC_BASE + STM32_RCC_APB2ENCR_OFFSET)
+#define STM32_RCC_APB4LENCR           (STM32_RCC_BASE + STM32_RCC_APB4LENCR_OFFSET)
 #define STM32_RCC_BUSLPENSR           (STM32_RCC_BASE + STM32_RCC_BUSLPENSR_OFFSET)
 #define STM32_RCC_MEMLPENSR           (STM32_RCC_BASE + STM32_RCC_MEMLPENSR_OFFSET)
 #define STM32_RCC_APB1LLPENSR         (STM32_RCC_BASE + STM32_RCC_APB1LLPENSR_OFFSET)
 #define STM32_RCC_APB2LPENSR          (STM32_RCC_BASE + STM32_RCC_APB2LPENSR_OFFSET)
 
 #define STM32_RCC_CCR                 (STM32_RCC_BASE + STM32_RCC_CCR_OFFSET)
-#define STM32_RCC_APB2ENCR            (STM32_RCC_BASE + STM32_RCC_APB2ENCR_OFFSET)
-
 #define STM32_RCC_CSR                 (STM32_RCC_BASE + STM32_RCC_CSR_OFFSET)
 
 /* Register Bitfield Definitions ********************************************/
@@ -321,6 +344,27 @@
 #define RCC_APB2RSTR_TIM16RST         (1 << 17)  /* Bit 17: TIM16 reset */
 #define RCC_APB2RSTR_TIM17RST         (1 << 18)  /* Bit 18: TIM17 reset */
 #define RCC_APB2RSTR_TIM9RST          (1 << 19)  /* Bit 19: TIM9 reset */
+#define RCC_APB2RSTR_SPI5RST           (1 << 20)  /* Bit 20: SPI5 reset */
+#define RCC_APB2RSTR_SPI4RST           (1 << 13)  /* Bit 13: SPI4 reset */
+#define RCC_APB2RSTR_SPI1RST           (1 << 12)  /* Bit 12: SPI1 reset */
+#define RCC_APB1LRSTR_SPI3RST          (1 << 15)  /* Bit 15: SPI3 reset */
+#define RCC_APB1LRSTR_SPI2RST          (1 << 14)  /* Bit 14: SPI2 reset */
+#define RCC_APB4LRSTR_SPI6RST          (1 << 5)   /* Bit 5:  SPI6 reset */
+
+/* SPI peripheral reset set and clear registers */
+
+#define RCC_APB1LRSTSR_SPI3RSTS        (1 << 15)  /* Bit 15: SPI3 reset set */
+#define RCC_APB1LRSTSR_SPI2RSTS        (1 << 14)  /* Bit 14: SPI2 reset set */
+#define RCC_APB1LRSTCR_SPI3RSTC        (1 << 15)  /* Bit 15: SPI3 reset clear */
+#define RCC_APB1LRSTCR_SPI2RSTC        (1 << 14)  /* Bit 14: SPI2 reset clear */
+#define RCC_APB2RSTSR_SPI5RSTS         (1 << 20)  /* Bit 20: SPI5 reset set */
+#define RCC_APB2RSTSR_SPI4RSTS         (1 << 13)  /* Bit 13: SPI4 reset set */
+#define RCC_APB2RSTSR_SPI1RSTS         (1 << 12)  /* Bit 12: SPI1 reset set */
+#define RCC_APB2RSTCR_SPI5RSTC         (1 << 20)  /* Bit 20: SPI5 reset clear */
+#define RCC_APB2RSTCR_SPI4RSTC         (1 << 13)  /* Bit 13: SPI4 reset clear */
+#define RCC_APB2RSTCR_SPI1RSTC         (1 << 12)  /* Bit 12: SPI1 reset clear */
+#define RCC_APB4LRSTSR_SPI6RSTS        (1 << 5)   /* Bit 5:  SPI6 reset set */
+#define RCC_APB4LRSTCR_SPI6RSTC        (1 << 5)   /* Bit 5:  SPI6 reset clear */
 
 /* APB1 peripheral clock enable register 1 */
 
@@ -346,6 +390,27 @@
 #define RCC_APB2ENR_TIM16EN           (1 << 17)  /* Bit 17: TIM16 enable */
 #define RCC_APB2ENR_TIM17EN           (1 << 18)  /* Bit 18: TIM17 enable */
 #define RCC_APB2ENR_TIM9EN            (1 << 19)  /* Bit 19: TIM9 enable */
+#define RCC_APB2ENR_SPI5EN            (1 << 20)  /* Bit 20: SPI5 enable */
+#define RCC_APB2ENR_SPI4EN            (1 << 13)  /* Bit 13: SPI4 enable */
+#define RCC_APB2ENR_SPI1EN            (1 << 12)  /* Bit 12: SPI1 enable */
+#define RCC_APB1LENR_SPI3EN           (1 << 15)  /* Bit 15: SPI3 enable */
+#define RCC_APB1LENR_SPI2EN           (1 << 14)  /* Bit 14: SPI2 enable */
+#define RCC_APB4LENR_SPI6EN           (1 << 5)   /* Bit 5:  SPI6 enable */
+
+/* SPI peripheral clock enable set and clear registers */
+
+#define RCC_APB1LENSR_SPI3ENS         (1 << 15)  /* Bit 15: SPI3 enable set */
+#define RCC_APB1LENSR_SPI2ENS         (1 << 14)  /* Bit 14: SPI2 enable set */
+#define RCC_APB1LENCR_SPI3ENC         (1 << 15)  /* Bit 15: SPI3 enable clear */
+#define RCC_APB1LENCR_SPI2ENC         (1 << 14)  /* Bit 14: SPI2 enable clear */
+#define RCC_APB2ENSR_SPI5ENS          (1 << 20)  /* Bit 20: SPI5 enable set */
+#define RCC_APB2ENSR_SPI4ENS          (1 << 13)  /* Bit 13: SPI4 enable set */
+#define RCC_APB2ENSR_SPI1ENS          (1 << 12)  /* Bit 12: SPI1 enable set */
+#define RCC_APB2ENCR_SPI5ENC          (1 << 20)  /* Bit 20: SPI5 enable clear */
+#define RCC_APB2ENCR_SPI4ENC          (1 << 13)  /* Bit 13: SPI4 enable clear */
+#define RCC_APB2ENCR_SPI1ENC          (1 << 12)  /* Bit 12: SPI1 enable clear */
+#define RCC_APB4LENSR_SPI6ENS         (1 << 5)   /* Bit 5:  SPI6 enable set */
+#define RCC_APB4LENCR_SPI6ENC         (1 << 5)   /* Bit 5:  SPI6 enable clear */
 
 /* APB4 peripheral clock enable register 2 */
 
@@ -415,6 +480,68 @@
 #define RCC_CCIPR13_USART1SEL_SHIFT   (0)
 #define RCC_CCIPR13_USART1SEL_MASK    (0x7 << RCC_CCIPR13_USART1SEL_SHIFT)
 #define RCC_CCIPR13_USART1SEL_HSI     (6 << RCC_CCIPR13_USART1SEL_SHIFT)
+
+/* Peripheral kernel clock select register 9 (RM0486 14.10.58) */
+
+#define RCC_CCIPR9_SPI1SEL_SHIFT       (4)
+#define RCC_CCIPR9_SPI1SEL_MASK        (0x7 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_PCLK2       (0 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_PER_CK      (1 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_IC8_CK      (2 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_IC9_CK      (3 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_MSI_CK      (4 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_HSI_DIV_CK  (5 << RCC_CCIPR9_SPI1SEL_SHIFT)
+#define RCC_CCIPR9_SPI1SEL_I2S_CKIN    (6 << RCC_CCIPR9_SPI1SEL_SHIFT)
+
+#define RCC_CCIPR9_SPI2SEL_SHIFT       (8)
+#define RCC_CCIPR9_SPI2SEL_MASK        (0x7 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_PCLK1       (0 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_PER_CK      (1 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_IC8_CK      (2 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_IC9_CK      (3 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_MSI_CK      (4 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_HSI_DIV_CK  (5 << RCC_CCIPR9_SPI2SEL_SHIFT)
+#define RCC_CCIPR9_SPI2SEL_I2S_CKIN    (6 << RCC_CCIPR9_SPI2SEL_SHIFT)
+
+#define RCC_CCIPR9_SPI3SEL_SHIFT       (12)
+#define RCC_CCIPR9_SPI3SEL_MASK        (0x7 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_PCLK1       (0 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_PER_CK      (1 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_IC8_CK      (2 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_IC9_CK      (3 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_MSI_CK      (4 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_HSI_DIV_CK  (5 << RCC_CCIPR9_SPI3SEL_SHIFT)
+#define RCC_CCIPR9_SPI3SEL_I2S_CKIN    (6 << RCC_CCIPR9_SPI3SEL_SHIFT)
+
+#define RCC_CCIPR9_SPI4SEL_SHIFT       (16)
+#define RCC_CCIPR9_SPI4SEL_MASK        (0x7 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_PCLK2       (0 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_PER_CK      (1 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_IC9_CK      (2 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_IC14_CK     (3 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_MSI_CK      (4 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_HSI_DIV_CK  (5 << RCC_CCIPR9_SPI4SEL_SHIFT)
+#define RCC_CCIPR9_SPI4SEL_HSE_CK      (6 << RCC_CCIPR9_SPI4SEL_SHIFT)
+
+#define RCC_CCIPR9_SPI5SEL_SHIFT       (20)
+#define RCC_CCIPR9_SPI5SEL_MASK        (0x7 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_PCLK2       (0 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_PER_CK      (1 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_IC9_CK      (2 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_IC14_CK     (3 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_MSI_CK      (4 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_HSI_DIV_CK  (5 << RCC_CCIPR9_SPI5SEL_SHIFT)
+#define RCC_CCIPR9_SPI5SEL_HSE_CK      (6 << RCC_CCIPR9_SPI5SEL_SHIFT)
+
+#define RCC_CCIPR9_SPI6SEL_SHIFT       (24)
+#define RCC_CCIPR9_SPI6SEL_MASK        (0x7 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_PCLK4       (0 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_PER_CK      (1 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_IC8_CK      (2 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_IC9_CK      (3 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_MSI_CK      (4 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_HSI_DIV_CK  (5 << RCC_CCIPR9_SPI6SEL_SHIFT)
+#define RCC_CCIPR9_SPI6SEL_I2S_CKIN    (6 << RCC_CCIPR9_SPI6SEL_SHIFT)
 
 #endif /* CONFIG_STM32_STM32N6XXXX */
 #endif /* __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_RCC_H */

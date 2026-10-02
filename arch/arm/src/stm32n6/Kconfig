@@ -29,7 +29,15 @@ config STM32_N6_PERIPHERALS
 	select STM32_HAVE_TIM16
 	select STM32_HAVE_TIM17
 	select STM32_HAVE_TIM18
+	select STM32_HAVE_SPI1
+	select STM32_HAVE_SPI2
+	select STM32_HAVE_SPI3
+	select STM32_HAVE_SPI4
+	select STM32_HAVE_SPI5
+	select STM32_HAVE_SPI6
 	select STM32_HAVE_USART1
+	select SPI
+	select SPI_EXCHANGE
 
 config STM32_STM32N6XXXX
 	bool
@@ -112,6 +120,25 @@ config STM32_DMA_CIRCULAR
 	default n
 	---help---
 		Enable circular and ping-pong linked-list DMA operations.
+
+endmenu
+
+menu "STM32N6 SPI DMA Configuration"
+
+choice
+	prompt "SPI DMA controller"
+	depends on STM32_SPI1_DMA || STM32_SPI2_DMA || STM32_SPI3_DMA || STM32_SPI4_DMA || STM32_SPI5_DMA || STM32_SPI6_DMA
+	default STM32_SPI_DMA_GPDMA1
+
+config STM32_SPI_DMA_GPDMA1
+	bool "GPDMA1"
+	select STM32_GPDMA1
+
+config STM32_SPI_DMA_HPDMA1
+	bool "HPDMA1"
+	select STM32_HPDMA1
+
+endchoice
 
 endmenu
 
