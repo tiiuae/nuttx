@@ -108,5 +108,6 @@
 #define PWR_SVMCR3_VDDIO3SV       (1 << 9)  /* Bit 9: VddIO3 supply valid */
 #define PWR_SVMCR3_VDDIO2VRSEL    (1 << 16) /* Bit 16: VddIO2 high-speed low-voltage */
 #define PWR_SVMCR3_VDDIO3VRSEL    (1 << 17) /* Bit 17: VddIO3 high-speed low-voltage */
+#define PWR_SVMCR3_VDDIOVRSEL     (1 << 24) /* Bit 24: Vdd I/O voltage range select, 1=1.8V */
 
 #endif /* __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_PWR_H */

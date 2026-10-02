@@ -209,12 +209,12 @@ void __start_c(void)
   putreg32(RCC_APB2LPENR_USART1LPEN, STM32_RCC_APB2LPENSR);
 #endif
 
-  /* Mark the board's I/O voltage domains as supply-valid before any GPIO
-   * pad is driven.  The mask of PWR_SVMCR3_* bits is board-specific and
-   * provided by board.h via BOARD_PWR_VDDIO.
+  /* Configure the board's I/O voltage ranges and mark selected I/O domains
+   * supply-valid before any GPIO pad is driven. Board policy is provided by
+   * BOARD_PWR_VDDIO and BOARD_PWR_VDDIO_CLEAR in board.h.
    */
 
-  stm32_pwr_enablevddio(BOARD_PWR_VDDIO);
+  stm32_pwr_configvddio(BOARD_PWR_VDDIO, BOARD_PWR_VDDIO_CLEAR);
 
   /* Apply the ES0620 I/O-compensation mitigation (write 0x287) to the
    * domains we use.  Only VDDIO2 and VDDIO3 are touched: the other

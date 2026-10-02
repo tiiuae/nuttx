@@ -71,17 +71,16 @@ extern "C"
 bool stm32_pwr_enablebkp(bool writable);
 
 /****************************************************************************
- * Name: stm32_pwr_enablevddio
+ * Name: stm32_pwr_configvddio
  *
  * Description:
- *   Mark a set of I/O voltage domains as supply-valid in PWR SVMCR3.
- *   The board passes an OR of PWR_SVMCR3_VDDIOxSV (and optionally
- *   PWR_SVMCR3_VDDIOxVRSEL for the 1.8 V range) bits matching the GPIO
- *   ports it uses.
+ *   Configure the I/O supply and voltage-range bits in PWR SVMCR3.
+ *   Board policy passes separate masks for bits to set and clear so the
+ *   voltage-range selection is correct even after a standby wake-up.
  *
  ****************************************************************************/
 
-void stm32_pwr_enablevddio(uint32_t mask);
+void stm32_pwr_configvddio(uint32_t setmask, uint32_t clearmask);
 
 #undef EXTERN
 #if defined(__cplusplus)

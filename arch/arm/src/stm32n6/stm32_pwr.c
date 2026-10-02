@@ -74,19 +74,18 @@ bool stm32_pwr_enablebkp(bool writable)
 }
 
 /****************************************************************************
- * Name: stm32_pwr_enablevddio
+ * Name: stm32_pwr_configvddio
  *
  * Description:
- *   Mark a set of I/O voltage domains as supply-valid in PWR SVMCR3 and
- *   optionally select their VRSEL (1.8 V) range.  The board passes the
- *   bitmask of PWR_SVMCR3_* bits matching the GPIO ports it uses.
+ *   Configure I/O supply-valid and voltage-range bits in PWR SVMCR3.
  *
  * Input Parameters:
- *   mask - OR of PWR_SVMCR3_VDDIOxSV and PWR_SVMCR3_VDDIOxVRSEL bits.
+ *   setmask   - PWR_SVMCR3 bits to set.
+ *   clearmask - PWR_SVMCR3 bits to clear.
  *
  ****************************************************************************/
 
-void stm32_pwr_enablevddio(uint32_t mask)
+void stm32_pwr_configvddio(uint32_t setmask, uint32_t clearmask)
 {
-  modifyreg32(STM32_PWR_SVMCR3, 0, mask);
+  modifyreg32(STM32_PWR_SVMCR3, clearmask, setmask);
 }
