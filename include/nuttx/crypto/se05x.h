@@ -55,6 +55,7 @@
 #define SEIOC_CREATE_SIGNATURE _SEIOC(0x0008) /* Arg: se05x_signature_s */
 #define SEIOC_VERIFY_SIGNATURE _SEIOC(0x0009) /* Arg: se05x_signature_s */
 #define SEIOC_DERIVE_SYMM_KEY _SEIOC(0x000A)  /* Arg: se05x_derive_key_s */
+#define SEIOC_GET_VERSION _SEIOC(0x000B)      /* Arg: se05x_version_s */
 
 /****************************************************************************
  * Public Types
@@ -80,6 +81,15 @@ typedef enum
 struct se05x_info_s
 {
   uint16_t oef_id;
+};
+
+struct se05x_version_s
+{
+  uint8_t major;
+  uint8_t minor;
+  uint8_t patch;
+  uint16_t applet_config;
+  uint16_t secure_box;
 };
 
 struct se05x_uid_s

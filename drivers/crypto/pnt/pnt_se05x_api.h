@@ -64,6 +64,24 @@ int pnt_se05x_get_info(FAR struct se05x_dev_s *se05x,
                        FAR struct se05x_info_s *se05x_info);
 
 /****************************************************************************
+ * Name: pnt_se05x_get_version
+ *
+ * Description:
+ *   Read the applet version, its feature bitmap and the Secure Box version
+ *
+ * Input Parameters:
+ *   se05x   - Pointer to the se05x device
+ *   version - Pointer to the version struct to fill
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int pnt_se05x_get_version(FAR struct se05x_dev_s *se05x,
+                          FAR struct se05x_version_s *version);
+
+/****************************************************************************
  * Name: pnt_se05x_get_uid
  *
  * Description:

@@ -164,6 +164,26 @@ int pnt_se05x_get_info(FAR struct se05x_dev_s *se05x,
   return result ? 0 : -EIO;
 }
 
+int pnt_se05x_get_version(FAR struct se05x_dev_s *se05x,
+                          FAR struct se05x_version_s *version)
+{
+  uint8_t raw[7];
+  size_t len = sizeof(raw);
+
+  if (Se05x_API_GetVersion(&(se05x->pnt->session), raw, &len) != SM_OK ||
+      len < sizeof(raw))
+    {
+      return -EIO;
+    }
+
+  version->major = raw[0];
+  version->minor = raw[1];
+  version->patch = raw[2];
+  version->applet_config = (raw[3] << 8) | raw[4];
+  version->secure_box = (raw[5] << 8) | raw[6];
+  return 0;
+}
+
 int pnt_se05x_get_uid(FAR struct se05x_dev_s *se05x,
                       FAR struct se05x_uid_s *uid)
 {

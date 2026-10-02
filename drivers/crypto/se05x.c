@@ -125,6 +125,14 @@ static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
       }
       break;
 
+    case SEIOC_GET_VERSION:
+      {
+        FAR struct se05x_version_s *version =
+          (FAR struct se05x_version_s *)arg;
+        ret = pnt_se05x_get_version(priv, version);
+      }
+      break;
+
     case SEIOC_GET_UID:
       {
         FAR struct se05x_uid_s *uid = (FAR struct se05x_uid_s *)arg;
