@@ -31,8 +31,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/mutex.h>
 
 #include "arm_internal.h"
 #include "hardware/rt117x/imxrt117x_caam.h"
@@ -72,6 +74,13 @@
 #define CAAM_JUMP_WAIT_CLASS1 0xa2000001
 #define CAAM_LOAD_CLRW        0x10880004
 #define CAAM_FIFO_STORE_RNG   0x60340000
+#define CAAM_KEY_CLASS2       0x04000000
+#define CAAM_SEQ_IN_PTR       0xf0000000
+#define CAAM_SEQ_OUT_PTR      0xf8000000
+#define CAAM_OP_BLOB_ENCAP    0x870d0000
+#define CAAM_OP_BLOB_DECAP    0x860d0000
+
+#define CAAM_BLOB_BUFLEN      (IMXRT_CAAM_BLOB_MAX + IMXRT_CAAM_BLOB_OVERHEAD)
 
 /* Entropy sample length, in system clocks. A self test that fails is
  * retried with a longer one, which is how NXP's own code finds a value
@@ -106,6 +115,16 @@ static uint32_t g_desc[CAAM_DESC_WORDS]
 static uint8_t g_rngbuf[CAAM_RNG_BLOCKLEN]
   aligned_data(ARMV7M_DCACHE_LINESIZE);
 
+static uint8_t g_keymod[IMXRT_CAAM_BLOB_KEYMOD]
+  aligned_data(ARMV7M_DCACHE_LINESIZE);
+
+static uint8_t g_blob_in[CAAM_BLOB_BUFLEN]
+  aligned_data(ARMV7M_DCACHE_LINESIZE);
+
+static uint8_t g_blob_out[CAAM_BLOB_BUFLEN]
+  aligned_data(ARMV7M_DCACHE_LINESIZE);
+
+static mutex_t g_lock = NXMUTEX_INITIALIZER;
 static bool g_initialized;
 
 /*****************************************************************************
@@ -354,6 +373,73 @@ static int imxrt_caam_ring_init(void)
 }
 
 /*****************************************************************************
+ * Name: imxrt_caam_blob
+ *
+ * Description:
+ *   Run one blob job: encapsulate inlen bytes into a blob, or decapsulate a
+ *   blob back into its data. The data never touches a caller buffer that
+ *   CAAM writes by DMA, and the bounce buffers are wiped afterwards.
+ *
+ *****************************************************************************/
+
+static int imxrt_caam_blob(uint32_t op, const uint8_t *keymod,
+                           const uint8_t *in, size_t inlen,
+                           uint8_t *out, size_t outlen)
+{
+  int ret;
+
+  if (keymod == NULL || in == NULL || out == NULL ||
+      inlen > CAAM_BLOB_BUFLEN || outlen > CAAM_BLOB_BUFLEN)
+    {
+      return -EINVAL;
+    }
+
+  ret = nxmutex_lock(&g_lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = imxrt_caam_initialize();
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  memcpy(g_keymod, keymod, sizeof(g_keymod));
+  memcpy(g_blob_in, in, inlen);
+  memset(g_blob_out, 0, sizeof(g_blob_out));
+  imxrt_caam_clean(g_keymod, sizeof(g_keymod));
+  imxrt_caam_clean(g_blob_in, sizeof(g_blob_in));
+  imxrt_caam_clean(g_blob_out, sizeof(g_blob_out));
+
+  g_desc[0] = CAAM_DESC_HDR(8);
+  g_desc[1] = CAAM_KEY_CLASS2 | sizeof(g_keymod);
+  g_desc[2] = (uint32_t)(uintptr_t)g_keymod;
+  g_desc[3] = CAAM_SEQ_IN_PTR | inlen;
+  g_desc[4] = (uint32_t)(uintptr_t)g_blob_in;
+  g_desc[5] = CAAM_SEQ_OUT_PTR | outlen;
+  g_desc[6] = (uint32_t)(uintptr_t)g_blob_out;
+  g_desc[7] = op;
+
+  ret = imxrt_caam_run();
+  if (ret == OK)
+    {
+      imxrt_caam_invalidate(g_blob_out, sizeof(g_blob_out));
+      memcpy(out, g_blob_out, outlen);
+    }
+
+out:
+  explicit_bzero(g_keymod, sizeof(g_keymod));
+  explicit_bzero(g_blob_in, sizeof(g_blob_in));
+  explicit_bzero(g_blob_out, sizeof(g_blob_out));
+  imxrt_caam_clean(g_blob_in, sizeof(g_blob_in));
+  imxrt_caam_clean(g_blob_out, sizeof(g_blob_out));
+  nxmutex_unlock(&g_lock);
+  return ret;
+}
+
+/*****************************************************************************
  * Public Functions
  *****************************************************************************/
 
@@ -408,9 +494,16 @@ int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
       return -EINVAL;
     }
 
+  ret = nxmutex_lock(&g_lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   ret = imxrt_caam_initialize();
   if (ret < 0)
     {
+      nxmutex_unlock(&g_lock);
       return ret;
     }
 
@@ -435,6 +528,7 @@ int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
       if (ret < 0)
         {
           memset(buffer, 0, buflen);
+          nxmutex_unlock(&g_lock);
           return ret;
         }
 
@@ -446,7 +540,40 @@ int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
   /* Leave nothing behind for the next caller to find. */
 
   memset(g_rngbuf, 0, sizeof(g_rngbuf));
+  nxmutex_unlock(&g_lock);
   return OK;
+}
+
+/*****************************************************************************
+ * Name: imxrt_caam_blob_encap
+ *****************************************************************************/
+
+int imxrt_caam_blob_encap(const uint8_t *keymod, const uint8_t *data,
+                          size_t len, uint8_t *blob)
+{
+  if (len == 0 || len > IMXRT_CAAM_BLOB_MAX)
+    {
+      return -EINVAL;
+    }
+
+  return imxrt_caam_blob(CAAM_OP_BLOB_ENCAP, keymod, data, len, blob,
+                         len + IMXRT_CAAM_BLOB_OVERHEAD);
+}
+
+/*****************************************************************************
+ * Name: imxrt_caam_blob_decap
+ *****************************************************************************/
+
+int imxrt_caam_blob_decap(const uint8_t *keymod, const uint8_t *blob,
+                          size_t len, uint8_t *data)
+{
+  if (len == 0 || len > IMXRT_CAAM_BLOB_MAX)
+    {
+      return -EINVAL;
+    }
+
+  return imxrt_caam_blob(CAAM_OP_BLOB_DECAP, keymod, blob,
+                         len + IMXRT_CAAM_BLOB_OVERHEAD, data, len);
 }
 
 #endif /* CONFIG_IMXRT_CAAM */

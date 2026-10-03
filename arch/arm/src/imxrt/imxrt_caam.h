@@ -33,6 +33,14 @@
 #include <stdint.h>
 
 /*****************************************************************************
+ * Pre-processor Definitions
+ *****************************************************************************/
+
+#define IMXRT_CAAM_BLOB_KEYMOD   16
+#define IMXRT_CAAM_BLOB_OVERHEAD 48
+#define IMXRT_CAAM_BLOB_MAX      128
+
+/*****************************************************************************
  * Public Function Prototypes
  *****************************************************************************/
 
@@ -76,6 +84,32 @@ int imxrt_caam_initialize(void);
  *****************************************************************************/
 
 int imxrt_caam_get_random(uint8_t *buffer, size_t buflen);
+
+/*****************************************************************************
+ * Name: imxrt_caam_blob_encap
+ *
+ * Description:
+ *   Seal len bytes of data into a blob of len + IMXRT_CAAM_BLOB_OVERHEAD
+ *   bytes, bound to this part's master key and to the 16-byte key modifier.
+ *   An open part seals under the test key; a closed part under its OTPMK.
+ *
+ *****************************************************************************/
+
+int imxrt_caam_blob_encap(const uint8_t *keymod, const uint8_t *data,
+                          size_t len, uint8_t *blob);
+
+/*****************************************************************************
+ * Name: imxrt_caam_blob_decap
+ *
+ * Description:
+ *   Open a blob made by imxrt_caam_blob_encap into its len bytes of data.
+ *   A blob altered, made on another part or under another key modifier is
+ *   refused.
+ *
+ *****************************************************************************/
+
+int imxrt_caam_blob_decap(const uint8_t *keymod, const uint8_t *blob,
+                          size_t len, uint8_t *data);
 
 #undef EXTERN
 #if defined(__cplusplus)
