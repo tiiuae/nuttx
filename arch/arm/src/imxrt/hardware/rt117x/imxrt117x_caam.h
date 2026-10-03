@@ -47,6 +47,7 @@
 
 #define IMXRT_CAAM_MCFGR_OFFSET       0x0004
 #define IMXRT_CAAM_SCFGR_OFFSET       0x000c
+#define IMXRT_CAAM_JRSTART_OFFSET     0x005c
 
 /* RNG4 block, inside the general block */
 
@@ -58,6 +59,7 @@
 
 #define IMXRT_CAAM_MCFGR              (IMXRT_CAAM_GEN_BASE + IMXRT_CAAM_MCFGR_OFFSET)
 #define IMXRT_CAAM_SCFGR              (IMXRT_CAAM_GEN_BASE + IMXRT_CAAM_SCFGR_OFFSET)
+#define IMXRT_CAAM_JRSTART            (IMXRT_CAAM_GEN_BASE + IMXRT_CAAM_JRSTART_OFFSET)
 #define IMXRT_CAAM_RTMCTL             (IMXRT_CAAM_GEN_BASE + IMXRT_CAAM_RTMCTL_OFFSET)
 #define IMXRT_CAAM_RTSDCTL            (IMXRT_CAAM_GEN_BASE + IMXRT_CAAM_RTSDCTL_OFFSET)
 #define IMXRT_CAAM_RTFRQMIN           (IMXRT_CAAM_GEN_BASE + IMXRT_CAAM_RTFRQMIN_OFFSET)
@@ -100,23 +102,26 @@
 
 #define CAAM_MCFGR_SWRST              (1 << 31)  /* Software reset */
 #define CAAM_MCFGR_DMA_RST            (1 << 28)  /* DMA reset */
-#define CAAM_MCFGR_WDE                (1 << 30)  /* Write-back disable */
-#define CAAM_MCFGR_DEFAULT            0x00082300
+#define CAAM_MCFGR_WDE                (1 << 30)  /* DECO watchdog enable */
+#define CAAM_MCFGR_LARGE_BURST        (1 << 2)   /* 128/256-byte bursts */
+#define CAAM_MCFGR_AWCACHE_MASK       (0xf << 8)
+#define CAAM_MCFGR_AWCACHE_BUFF       (0x1 << 8)
+#define CAAM_MCFGR_AWCACHE_CACH       (0x2 << 8)
+
+#define CAAM_JRSTART_JR0              (1 << 0)   /* Start job ring zero */
 
 /* JRCR, JRINT, JRCFG1 */
 
 #define CAAM_JRCR_RESET               (1 << 0)
 #define CAAM_JRINT_ERR_HALT_MASK      (3 << 2)
 #define CAAM_JRINT_ERR_HALT_INPROG    (1 << 2)
+#define CAAM_JRINT_ERR_HALT_DONE      (2 << 2)
 #define CAAM_JRCFG1_IMSK              (1 << 0)   /* Mask the ring interrupt */
 
 /* RTMCTL, RTSDCTL, RDSTA */
 
 #define CAAM_RTMCTL_PRGM              (1 << 16)  /* Program, not run, mode */
 #define CAAM_RTMCTL_ERR               (1 << 12)
-#define CAAM_RTMCTL_RST_DEF           (1 << 6)
-#define CAAM_RTMCTL_OSC_DIV4          (2 << 2)
-#define CAAM_RTMCTL_SAMP_MODE_RAW     (1 << 0)
 #define CAAM_RTSDCTL_ENT_DLY_SHIFT    (16)
 #define CAAM_RTSDCTL_ENT_DLY_MASK     (0xffff << CAAM_RTSDCTL_ENT_DLY_SHIFT)
 #define CAAM_RTSDCTL_SAMP_SIZE_MASK   (0xffff)
