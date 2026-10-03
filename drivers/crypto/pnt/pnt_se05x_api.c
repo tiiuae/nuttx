@@ -32,6 +32,7 @@
 #include "pnt_util.h"
 #include "scp03_keys.h"
 #include <nuttx/kmalloc.h>
+#include <sys/param.h>
 #include <phNxpEse_Internal.h>
 #include <se05x_APDU_apis.h>
 #include <smCom.h>
@@ -42,6 +43,12 @@
 
 #define SCP03_KEY_SIZE 16
 #define DATA_CHUNK_SIZE 100
+
+#define SE05X_ECCURVE_ED25519       ((SE05x_ECCurve_t)0x40)
+#define SE05X_ECCURVE_MONT_DH_25519 ((SE05x_ECCurve_t)0x41)
+#define SE05X_ALGO_ED25519PURE      ((SE05x_ECSignatureAlgo_t)0xa3)
+#define SE05X_P256_PUBLIC_SIZE      65
+#define SE05X_25519_SIZE            32
 
 /****************************************************************************
  * Private Types
@@ -62,7 +69,13 @@ static const SE05x_ECSignatureAlgo_t
         kSE05x_ECSignatureAlgo_NA,      kSE05x_ECSignatureAlgo_PLAIN,
         kSE05x_ECSignatureAlgo_SHA,     kSE05x_ECSignatureAlgo_SHA_224,
         kSE05x_ECSignatureAlgo_SHA_256, kSE05x_ECSignatureAlgo_SHA_384,
-        kSE05x_ECSignatureAlgo_SHA_512
+        kSE05x_ECSignatureAlgo_SHA_512, SE05X_ALGO_ED25519PURE
+};
+
+static const SE05x_ECCurve_t curve_mapping[] =
+{
+  kSE05x_ECCurve_NIST_P256, SE05X_ECCURVE_ED25519,
+  SE05X_ECCURVE_MONT_DH_25519
 };
 
 static const uint8_t scp03_enc_key[SCP03_KEY_SIZE] = SCP03_ENC_KEY;
@@ -72,6 +85,41 @@ static const uint8_t scp03_dek_key[SCP03_KEY_SIZE] = SCP03_DEK_KEY;
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+static void reverse(FAR uint8_t *out, FAR const uint8_t *in, size_t len)
+{
+  size_t i;
+
+  for (i = 0; i < len; i++)
+    {
+      out[i] = in[len - 1 - i];
+    }
+}
+
+static void reverse_in_place(FAR uint8_t *buf, size_t len)
+{
+  size_t i;
+
+  for (i = 0; i < len / 2; i++)
+    {
+      uint8_t t = buf[i];
+      buf[i] = buf[len - 1 - i];
+      buf[len - 1 - i] = t;
+    }
+}
+
+static bool all_zero(FAR const uint8_t *buf, size_t len)
+{
+  uint8_t acc = 0;
+  size_t i;
+
+  for (i = 0; i < len; i++)
+    {
+      acc |= buf[i];
+    }
+
+  return acc == 0;
+}
 
 static bool set_enable_pin(FAR struct se05x_dev_s *se05x, bool state)
 {
@@ -209,8 +257,29 @@ int pnt_se05x_generate_keypair(
     FAR struct se05x_generate_keypair_s *generate_keypair_args)
 {
   SE05x_Result_t exists = kSE05x_Result_NA;
-  smStatus_t status = Se05x_API_CheckObjectExists(
-      &(se05x->pnt->session), generate_keypair_args->id, &exists);
+  uint32_t rule = generate_keypair_args->policy;
+  uint8_t policy_buf[9];
+  Se05xPolicy_t policy;
+  SE05x_ECCurve_t curve;
+  smStatus_t status;
+
+  if (generate_keypair_args->cipher >= nitems(curve_mapping))
+    {
+      return -EINVAL;
+    }
+
+  curve = curve_mapping[generate_keypair_args->cipher];
+  policy_buf[0] = sizeof(policy_buf) - 1;
+  memset(&policy_buf[1], 0, 4);
+  policy_buf[5] = rule >> 24;
+  policy_buf[6] = rule >> 16;
+  policy_buf[7] = rule >> 8;
+  policy_buf[8] = rule;
+  policy.value = policy_buf;
+  policy.value_len = sizeof(policy_buf);
+
+  status = Se05x_API_CheckObjectExists(&(se05x->pnt->session),
+                                       generate_keypair_args->id, &exists);
 
   if (status != SM_OK)
     {
@@ -223,8 +292,8 @@ int pnt_se05x_generate_keypair(
     }
 
   status = Se05x_API_WriteECKey(
-      &(se05x->pnt->session), NULL, 0, generate_keypair_args->id,
-      kSE05x_ECCurve_NIST_P256, NULL, 0, NULL, 0, kSE05x_INS_NA,
+      &(se05x->pnt->session), rule != 0 ? &policy : NULL, 0,
+      generate_keypair_args->id, curve, NULL, 0, NULL, 0, kSE05x_INS_NA,
       kSE05x_KeyPart_Pair);
   return status == SM_OK ? 0 : -EIO;
 }
@@ -269,13 +338,38 @@ int pnt_se05x_set_data(
 int pnt_se05x_get_key(FAR struct se05x_dev_s *se05x,
                       FAR struct se05x_key_transmission_s *get_key_args)
 {
+  se05x_asym_cipher_type_e cipher = get_key_args->entry.cipher;
+  size_t want = cipher == SE05X_ASYM_CIPHER_EC_NIST_P_256 ?
+                SE05X_P256_PUBLIC_SIZE : SE05X_25519_SIZE;
+  smStatus_t status;
+
+  if (cipher >= nitems(curve_mapping))
+    {
+      return -EINVAL;
+    }
+
   get_key_args->content.buffer_content_size =
       get_key_args->content.buffer_size;
-  smStatus_t status =
-      Se05x_API_ReadObject(&(se05x->pnt->session), get_key_args->entry.id, 0,
-                           0, get_key_args->content.buffer,
-                           &get_key_args->content.buffer_content_size);
-  return status == SM_OK ? 0 : -EIO;
+  status = Se05x_API_ReadObject(&(se05x->pnt->session),
+                                get_key_args->entry.id, 0, 0,
+                                get_key_args->content.buffer,
+                                &get_key_args->content.buffer_content_size);
+  if (status != SM_OK)
+    {
+      return -EIO;
+    }
+
+  if (get_key_args->content.buffer_content_size != want)
+    {
+      return -EINVAL;
+    }
+
+  if (cipher != SE05X_ASYM_CIPHER_EC_NIST_P_256)
+    {
+      reverse_in_place(get_key_args->content.buffer, want);
+    }
+
+  return 0;
 }
 
 int pnt_se05x_get_data(FAR struct se05x_dev_s *se05x,
@@ -317,66 +411,142 @@ int pnt_se05x_delete_key(FAR struct se05x_dev_s *se05x, uint32_t key_id)
 int pnt_se05x_derive_key(FAR struct se05x_dev_s *se05x,
                          FAR struct se05x_derive_key_s *derive_key_args)
 {
-  uint8_t public_key[65];
+  uint8_t public_key[SE05X_P256_PUBLIC_SIZE];
   size_t public_key_size = sizeof(public_key);
-  smStatus_t status = Se05x_API_ReadObject(&(se05x->pnt->session),
-                                           derive_key_args->public_key_id, 0,
-                                           0, public_key, &public_key_size);
+  FAR const uint8_t *peer = derive_key_args->public_key.buffer;
+  FAR uint8_t *secret = derive_key_args->content.buffer;
+  smStatus_t status;
 
-  if (status == SM_OK)
+  if (peer == NULL)
     {
-      derive_key_args->content.buffer_content_size =
-          derive_key_args->content.buffer_size;
-      status = Se05x_API_ECDHGenerateSharedSecret(
-          &(se05x->pnt->session), derive_key_args->private_key_id,
-          public_key, public_key_size, derive_key_args->content.buffer,
-          &derive_key_args->content.buffer_content_size);
+      status = Se05x_API_ReadObject(&(se05x->pnt->session),
+                                    derive_key_args->public_key_id, 0, 0,
+                                    public_key, &public_key_size);
+      if (status != SM_OK)
+        {
+          return -EIO;
+        }
+    }
+  else
+    {
+      public_key_size = derive_key_args->public_key.buffer_content_size;
+      if (public_key_size == SE05X_25519_SIZE)
+        {
+          reverse(public_key, peer, public_key_size);
+        }
+      else if (public_key_size == SE05X_P256_PUBLIC_SIZE)
+        {
+          memcpy(public_key, peer, public_key_size);
+        }
+      else
+        {
+          return -EINVAL;
+        }
     }
 
-  return status == SM_OK ? 0 : -EIO;
+  derive_key_args->content.buffer_content_size =
+      derive_key_args->content.buffer_size;
+  status = Se05x_API_ECDHGenerateSharedSecret(
+      &(se05x->pnt->session), derive_key_args->private_key_id, public_key,
+      public_key_size, secret,
+      &derive_key_args->content.buffer_content_size);
+  if (status != SM_OK)
+    {
+      return -EIO;
+    }
+
+  if (public_key_size == SE05X_25519_SIZE)
+    {
+      if (derive_key_args->content.buffer_content_size != SE05X_25519_SIZE)
+        {
+          return -EIO;
+        }
+
+      reverse_in_place(secret, SE05X_25519_SIZE);
+      if (all_zero(secret, SE05X_25519_SIZE))
+        {
+          return -EINVAL;
+        }
+    }
+
+  return 0;
 }
 
 int pnt_se05x_create_signature(
     FAR struct se05x_dev_s *se05x,
     FAR struct se05x_signature_s *create_signature_args)
 {
-  create_signature_args->signature.buffer_content_size =
-      create_signature_args->signature.buffer_size;
-  int result =
-      Se05x_API_ECDSASign(
-          &(se05x->pnt->session), create_signature_args->key_id,
-          signature_algorithm_mapping[create_signature_args->algorithm],
-          create_signature_args->tbs.buffer,
-          create_signature_args->tbs.buffer_content_size,
-          create_signature_args->signature.buffer,
-          &create_signature_args->signature.buffer_content_size) == SM_OK
-          ? 0
-          : -EIO;
+  FAR struct se05x_buffer_s *signature = &create_signature_args->signature;
+  smStatus_t status;
 
-  return result;
+  if (create_signature_args->algorithm >= SE05X_ALGORITHM_SIZE)
+    {
+      return -EINVAL;
+    }
+
+  signature->buffer_content_size = signature->buffer_size;
+  status = Se05x_API_ECDSASign(
+      &(se05x->pnt->session), create_signature_args->key_id,
+      signature_algorithm_mapping[create_signature_args->algorithm],
+      create_signature_args->tbs.buffer,
+      create_signature_args->tbs.buffer_content_size, signature->buffer,
+      &signature->buffer_content_size);
+  if (status != SM_OK)
+    {
+      return -EIO;
+    }
+
+  if (create_signature_args->algorithm == SE05X_ALGORITHM_ED25519)
+    {
+      if (signature->buffer_content_size != 2 * SE05X_25519_SIZE)
+        {
+          return -EIO;
+        }
+
+      reverse_in_place(signature->buffer, SE05X_25519_SIZE);
+      reverse_in_place(signature->buffer + SE05X_25519_SIZE,
+                       SE05X_25519_SIZE);
+    }
+
+  return 0;
 }
 
 int pnt_se05x_verify_signature(
     FAR struct se05x_dev_s *se05x,
     FAR struct se05x_signature_s *verify_signature_args)
 {
+  FAR struct se05x_buffer_s *signature = &verify_signature_args->signature;
+  FAR const uint8_t *sig = signature->buffer;
+  uint8_t ed25519[2 * SE05X_25519_SIZE];
   SE05x_Result_t se05x_result;
-  int result =
-      Se05x_API_ECDSAVerify(
+
+  if (verify_signature_args->algorithm >= SE05X_ALGORITHM_SIZE)
+    {
+      return -EINVAL;
+    }
+
+  if (verify_signature_args->algorithm == SE05X_ALGORITHM_ED25519)
+    {
+      if (signature->buffer_content_size != sizeof(ed25519))
+        {
+          return -EINVAL;
+        }
+
+      reverse(ed25519, sig, SE05X_25519_SIZE);
+      reverse(ed25519 + SE05X_25519_SIZE, sig + SE05X_25519_SIZE,
+              SE05X_25519_SIZE);
+      sig = ed25519;
+    }
+
+  if (Se05x_API_ECDSAVerify(
           &(se05x->pnt->session), verify_signature_args->key_id,
           signature_algorithm_mapping[verify_signature_args->algorithm],
           verify_signature_args->tbs.buffer,
-          verify_signature_args->tbs.buffer_content_size,
-          verify_signature_args->signature.buffer,
-          verify_signature_args->signature.buffer_content_size,
-          &se05x_result) == SM_OK
-          ? 0
-          : -EACCES;
-
-  if ((result == 0) && (se05x_result != kSE05x_Result_SUCCESS))
+          verify_signature_args->tbs.buffer_content_size, sig,
+          signature->buffer_content_size, &se05x_result) != SM_OK)
     {
-      result = -EIO;
+      return -EACCES;
     }
 
-  return result;
+  return se05x_result == kSE05x_Result_SUCCESS ? 0 : -EIO;
 }

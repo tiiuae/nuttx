@@ -43,6 +43,12 @@
 
 #define SE05X_MODULE_UNIQUE_ID_LEN 18
 
+#define SE05X_POLICY_ALLOW_SIGN   0x10000000
+#define SE05X_POLICY_ALLOW_KA     0x04000000
+#define SE05X_POLICY_ALLOW_READ   0x00200000
+#define SE05X_POLICY_ALLOW_DELETE 0x00040000
+#define SE05X_POLICY_REQUIRE_SM   0x00020000
+
 #define SEIOC_GET_INFO _SEIOC(0x0000)         /* Arg: se05x_info_s */
 #define SEIOC_GET_UID _SEIOC(0x0001)          /* Arg: se05x_uid_s */
 #define SEIOC_GENERATE_KEYPAIR _SEIOC(0x0002)
@@ -64,6 +70,8 @@
 typedef enum
 {
   SE05X_ASYM_CIPHER_EC_NIST_P_256 = 0,
+  SE05X_ASYM_CIPHER_EC_ED25519,
+  SE05X_ASYM_CIPHER_EC_X25519,
 } se05x_asym_cipher_type_e;
 
 typedef enum
@@ -75,6 +83,7 @@ typedef enum
   SE05X_ALGORITHM_SHA256,
   SE05X_ALGORITHM_SHA384,
   SE05X_ALGORITHM_SHA512,
+  SE05X_ALGORITHM_ED25519,
   SE05X_ALGORITHM_SIZE,
 } se05x_algorithm_e;
 
@@ -101,6 +110,7 @@ struct se05x_generate_keypair_s
 {
   uint32_t id;
   se05x_asym_cipher_type_e cipher;
+  uint32_t policy;
 };
 
 struct se05x_key_store_entry_s
@@ -126,6 +136,7 @@ struct se05x_derive_key_s
 {
   uint32_t private_key_id;
   uint32_t public_key_id;
+  struct se05x_buffer_s public_key;
   struct se05x_buffer_s content;
 };
 
