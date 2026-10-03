@@ -208,7 +208,21 @@ int pnt_se05x_generate_keypair(
     FAR struct se05x_dev_s *se05x,
     FAR struct se05x_generate_keypair_s *generate_keypair_args)
 {
-  smStatus_t status = Se05x_API_WriteECKey(
+  SE05x_Result_t exists = kSE05x_Result_NA;
+  smStatus_t status = Se05x_API_CheckObjectExists(
+      &(se05x->pnt->session), generate_keypair_args->id, &exists);
+
+  if (status != SM_OK)
+    {
+      return -EIO;
+    }
+
+  if (exists == kSE05x_Result_SUCCESS)
+    {
+      return -EEXIST;
+    }
+
+  status = Se05x_API_WriteECKey(
       &(se05x->pnt->session), NULL, 0, generate_keypair_args->id,
       kSE05x_ECCurve_NIST_P256, NULL, 0, NULL, 0, kSE05x_INS_NA,
       kSE05x_KeyPart_Pair);
