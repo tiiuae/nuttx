@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/signal.h>
 
 #include "arm_internal.h"
 #include "hardware/rt117x/imxrt117x_caam.h"
@@ -82,8 +83,8 @@
 #define CAAM_ENT_DELAY_MAX    12800
 #define CAAM_ENT_DELAY_STEP   400
 
-#define CAAM_TIMEOUT_US       100000
-#define CAAM_POLL_US          10
+#define CAAM_SPIN_US          200
+#define CAAM_TIMEOUT_US       1000000
 
 /*****************************************************************************
  * Private Data
@@ -145,7 +146,7 @@ static int imxrt_caam_run(void)
 {
   uint32_t status;
   uint32_t stale;
-  int timeout;
+  int waited;
 
   stale = getreg32(IMXRT_CAAM_ORSF);
   if (stale != 0)
@@ -160,17 +161,22 @@ static int imxrt_caam_run(void)
 
   putreg32(1, IMXRT_CAAM_IRJA);
 
-  for (timeout = CAAM_TIMEOUT_US; timeout > 0; timeout -= CAAM_POLL_US)
+  waited = 0;
+  while (getreg32(IMXRT_CAAM_ORSF) == 0 && waited < CAAM_TIMEOUT_US)
     {
-      if (getreg32(IMXRT_CAAM_ORSF) != 0)
+      if (waited < CAAM_SPIN_US)
         {
-          break;
+          up_udelay(10);
+          waited += 10;
         }
-
-      up_udelay(CAAM_POLL_US);
+      else
+        {
+          nxsig_usleep(USEC_PER_TICK);
+          waited += USEC_PER_TICK;
+        }
     }
 
-  if (timeout <= 0)
+  if (getreg32(IMXRT_CAAM_ORSF) == 0)
     {
       _err("ERROR: job ring did not answer\n");
       return -ETIMEDOUT;
