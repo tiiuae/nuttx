@@ -34,6 +34,7 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/sched.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -73,18 +74,30 @@ static const FAR struct file_operations g_fops =
 
 static int se05x_open(FAR struct file *filep)
 {
-  /* create se05x session */
-
   FAR struct inode *inode = filep->f_inode;
   FAR struct se05x_dev_s *priv = inode->i_private;
-  nxmutex_lock(&priv->mutex);
-  int res = pnt_se05x_open(priv) == 0 ? OK : ERROR;
-  if (res == ERROR)
+  int ret;
+
+#ifndef CONFIG_BUILD_FLAT
+  if ((nxsched_self()->flags & TCB_FLAG_SYSCALL) != 0)
+    {
+      return -EPERM;
+    }
+#endif
+
+  ret = nxmutex_trylock(&priv->mutex);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = pnt_se05x_open(priv);
+  if (ret < 0)
     {
       nxmutex_unlock(&priv->mutex);
     }
 
-  return res;
+  return ret;
 }
 
 static int se05x_close(FAR struct file *filep)
@@ -271,15 +284,15 @@ int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
 
   /* Register driver */
 
+  nxmutex_init(&priv->mutex);
   ret = register_driver(devpath, &g_fops, 0666, priv);
   if (ret < 0)
     {
       crypterr("ERROR: Failed to register driver: %d\n", ret);
+      nxmutex_destroy(&priv->mutex);
       ret =  -ENODEV;
       goto errout_with_alloc;
     }
-
-  nxmutex_init(&priv->mutex);
 
   return OK;
 
