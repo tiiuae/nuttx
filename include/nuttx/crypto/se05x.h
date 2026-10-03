@@ -148,12 +148,20 @@ struct se05x_signature_s
   struct se05x_buffer_s signature;
 };
 
+struct se05x_scp03_keys_s
+{
+  uint8_t enc[16];
+  uint8_t mac[16];
+  uint8_t dek[16];
+};
+
 struct se05x_config_s
 {
   uint8_t address;
   uint32_t frequency;
 
   CODE bool (*set_enable_pin)(bool state);
+  FAR const struct se05x_scp03_keys_s *scp03;
 };
 
 struct i2c_master_s;

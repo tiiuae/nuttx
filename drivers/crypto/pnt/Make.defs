@@ -46,8 +46,9 @@ CSRCS += \
 
 ifeq ($(CONFIG_DEV_SE05X_SCP03),y)
 	PNT_INCDIRS += -I$(PNT_NANO_DIR)/lib/apdu/scp03
-	CFLAGS += DWITH_PLATFORM_SCP03
-	CSRCS += hcrypto.c $(PNT_NANO_DIR)/lib/apdu/scp03/se05x_scp03.c
+	CFLAGS += -DWITH_PLATFORM_SCP03
+	CSRCS += $(PNT_WRAPPER_DIR)/pnt_hcrypto.c
+	CSRCS += $(PNT_NANO_DIR)/lib/apdu/scp03/se05x_scp03.c
 endif
 
 CFLAGS += $(PNT_INCDIRS) -DT1oI2C -DT1oI2C_UM11225 -DAX_EMBEDDED=0

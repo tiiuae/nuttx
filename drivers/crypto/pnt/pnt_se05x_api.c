@@ -30,8 +30,8 @@
 
 #include "../se05x_internal.h"
 #include "pnt_util.h"
-#include "scp03_keys.h"
 #include <nuttx/kmalloc.h>
+#include <strings.h>
 #include <sys/param.h>
 #include <phNxpEse_Internal.h>
 #include <se05x_APDU_apis.h>
@@ -41,7 +41,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define SCP03_KEY_SIZE 16
 #define DATA_CHUNK_SIZE 100
 
 #define SE05X_ECCURVE_ED25519       ((SE05x_ECCurve_t)0x40)
@@ -77,10 +76,6 @@ static const SE05x_ECCurve_t curve_mapping[] =
   kSE05x_ECCurve_NIST_P256, SE05X_ECCURVE_ED25519,
   SE05X_ECCURVE_MONT_DH_25519
 };
-
-static const uint8_t scp03_enc_key[SCP03_KEY_SIZE] = SCP03_ENC_KEY;
-static const uint8_t scp03_mac_key[SCP03_KEY_SIZE] = SCP03_MAC_KEY;
-static const uint8_t scp03_dek_key[SCP03_KEY_SIZE] = SCP03_DEK_KEY;
 
 /****************************************************************************
  * Private Functions
@@ -141,8 +136,20 @@ static bool set_enable_pin(FAR struct se05x_dev_s *se05x, bool state)
 
 int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
 {
+#ifdef CONFIG_DEV_SE05X_SCP03
+  FAR const struct se05x_scp03_keys_s *keys = se05x->config->scp03;
+#endif
   int ret;
-  se05x->pnt = kmm_malloc(sizeof(struct pnt_handle));
+
+#ifdef CONFIG_DEV_SE05X_SCP03
+  if (keys == NULL)
+    {
+      ret = -EINVAL;
+      goto errout;
+    }
+#endif
+
+  se05x->pnt = kmm_zalloc(sizeof(struct pnt_handle));
 
   if (se05x->pnt == NULL)
     {
@@ -150,14 +157,15 @@ int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
       goto errout;
     }
 
-  memset(&(se05x->pnt->session), 0, sizeof(Se05xSession_t));
+#ifdef CONFIG_DEV_SE05X_SCP03
+  se05x->pnt->session.pScp03_enc_key = (FAR uint8_t *)keys->enc;
+  se05x->pnt->session.pScp03_mac_key = (FAR uint8_t *)keys->mac;
+  se05x->pnt->session.pScp03_dek_key = (FAR uint8_t *)keys->dek;
+  se05x->pnt->session.scp03_enc_key_len = sizeof(keys->enc);
+  se05x->pnt->session.scp03_mac_key_len = sizeof(keys->mac);
+  se05x->pnt->session.scp03_dek_key_len = sizeof(keys->dek);
+#endif
 
-  se05x->pnt->session.pScp03_enc_key = (FAR uint8_t *)scp03_enc_key;
-  se05x->pnt->session.pScp03_mac_key = (FAR uint8_t *)scp03_mac_key;
-  se05x->pnt->session.pScp03_dek_key = (FAR uint8_t *)scp03_dek_key;
-  se05x->pnt->session.scp03_enc_key_len = SCP03_KEY_SIZE;
-  se05x->pnt->session.scp03_mac_key_len = SCP03_KEY_SIZE;
-  se05x->pnt->session.scp03_dek_key_len = SCP03_KEY_SIZE;
   if (!set_enable_pin(se05x, true))
     {
       ret = -EIO;
@@ -180,6 +188,7 @@ errout_with_alloc:
       kmm_free(se05x->pnt->session.conn_context);
     }
 
+  explicit_bzero(se05x->pnt, sizeof(struct pnt_handle));
   kmm_free(se05x->pnt);
 
 errout:
@@ -190,6 +199,7 @@ void pnt_se05x_close(FAR struct se05x_dev_s *se05x)
 {
   Se05x_API_SessionClose(&(se05x->pnt->session));
   (void)set_enable_pin(se05x, FALSE);
+  explicit_bzero(se05x->pnt, sizeof(struct pnt_handle));
   kmm_free(se05x->pnt);
 }
 

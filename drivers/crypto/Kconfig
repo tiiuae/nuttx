@@ -94,24 +94,18 @@ choice
 		Select authentication method
 
 config DEV_SE05X_SCP03
-	bool "SCP03 secure channel (TBI)"
-	select CRYPTO_RANDOM_POOL
-	select CRYPTO_AES
+	bool "SCP03 secure channel"
+	depends on ALLOW_BSD_COMPONENTS && DEV_RANDOM
+	select CRYPTO_SW_AES
+	---help---
+		Encrypt and authenticate every command and response with
+		GlobalPlatform SCP03. The board passes the platform keys in
+		struct se05x_config_s.
 
 config DEV_SE05X_PLAIN
 	bool "plain communication"
 
 endchoice # Channel communication interface
-
-config DEV_SE05X_SCP03_KEY_FILE
-	string "SCP03 keys"
-	depends on DEV_SE05X_SCP03
-	default "/host/path/to/key_file"
-	---help---
-		Specify file containing the keys needed with SCP03 channel authentication.
-		Location may be relative to the NuttX root folder. File should contain
-		the definitions for SCP03_ENC_KEY, SCP03_MAC_KEY and SCP03_DEK_KEY as
-		byte array initializers.
 
 choice SE05X_LOG_LEVEL
 	prompt "SE05x debug log level"

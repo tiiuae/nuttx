@@ -1,0 +1,75 @@
+From 018ccf97b1aff58ae0cf233233a795fab0f80d58 Mon Sep 17 00:00:00 2001
+From: Royyan Zahir <royzah@gmail.com>
+Date: Sat, 3 Oct 2026 22:55:51 +0400
+Subject: [PATCH 5/5] SCP03: counter and response ICV of a command without data
+
+Before applet 4.3 the card advances the SCP03 counter only for a command that carries data, and encrypts the response to one without data under the previous counter. The SCP03 code advanced it for every command and always used the current one, so a GetVersion response never decrypted and every later command in the session failed its MAC. Backported from nano-package v1.6.1.
+---
+ lib/apdu/scp03/se05x_scp03.c | 10 +++++++---
+ lib/apdu/se05x_APDU_impl.c   |  2 ++
+ lib/apdu/se05x_types.h       |  1 +
+ 3 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/lib/apdu/scp03/se05x_scp03.c b/lib/apdu/scp03/se05x_scp03.c
+index e798cf0..6289200 100644
+--- a/lib/apdu/scp03/se05x_scp03.c
++++ b/lib/apdu/scp03/se05x_scp03.c
+@@ -686,7 +686,7 @@ smStatus_t Se05x_API_SCP03_GetResponseICV(pSe05xSession_t session_ctx, uint8_t *
+     ENSURE_OR_RETURN_ON_ERROR(pIcv != NULL, SM_NOT_OK);
+ 
+     memcpy(paddedCounterBlock, se05x_cCounter, SCP_KEY_SIZE);
+-    if ((0 /*pdySCP03SessCtx->authType == kSSS_AuthType_SCP03*/) && (!hasCmd)) {
++    if (!hasCmd) {
+         nxpSCP03_Dec_CommandCounter(paddedCounterBlock);
+     }
+     paddedCounterBlock[0] = SCP_DATA_PAD_BYTE; // MSB padded with 0x80 Section 6.2.7 of SCP03 spec
+@@ -926,7 +926,9 @@ smStatus_t Se05x_API_SCP03_TransmitData(pSe05xSession_t session_ctx,
+             // Calculate ICV to decrypt the response
+ 
+             ENSURE_OR_RETURN_ON_ERROR(
+-                (Se05x_API_SCP03_GetResponseICV(session_ctx, iv, cmdBufLen == 0 ? FALSE : TRUE) == SM_OK), SM_NOT_OK);
++                (Se05x_API_SCP03_GetResponseICV(
++                     session_ctx, iv, (session_ctx->applet_version >= 0x04030000) || (cmdBufLen != 0)) == SM_OK),
++                SM_NOT_OK);
+ 
+             ret = hcrypto_aes_cbc_decrypt(se05x_sessionEncKey,
+                 AES_KEY_LEN_nBYTE,
+@@ -953,7 +955,9 @@ smStatus_t Se05x_API_SCP03_TransmitData(pSe05xSession_t session_ctx,
+         }
+     }
+ 
+-    Se05x_API_SCP03_IncCommandCounter(session_ctx);
++    if ((session_ctx->applet_version >= 0x04030000) || (cmdBufLen != 0)) {
++        Se05x_API_SCP03_IncCommandCounter(session_ctx);
++    }
+ 
+     return apduStatus;
+ }
+diff --git a/lib/apdu/se05x_APDU_impl.c b/lib/apdu/se05x_APDU_impl.c
+index 86b0d8f..50ea5cb 100644
+--- a/lib/apdu/se05x_APDU_impl.c
++++ b/lib/apdu/se05x_APDU_impl.c
+@@ -98,6 +98,8 @@ smStatus_t Se05x_API_SessionOpen(pSe05xSession_t session_ctx, void *conn_context
+             SMLOG_E("Se05x_API_SessionOpen failed");
+             goto cleanup;
+         }
++        session_ctx->applet_version = (session_ctx->apdu_buffer[0] << 24) | (session_ctx->apdu_buffer[1] << 16) |
++                                      (session_ctx->apdu_buffer[2] << 8) | session_ctx->apdu_buffer[3];
+ 
+         if (ret == SM_OK && buff_len >= 2) {
+             ret = session_ctx->apdu_buffer[buff_len - 2];
+diff --git a/lib/apdu/se05x_types.h b/lib/apdu/se05x_types.h
+index dc20e0b..891f4c0 100644
+--- a/lib/apdu/se05x_types.h
++++ b/lib/apdu/se05x_types.h
+@@ -128,6 +128,7 @@ typedef struct
+     uint8_t scp03_session;
+     /** Set 1 to resume session */
+     uint8_t session_resume;
++    uint32_t applet_version;
+ } Se05xSession_t;
+ 
+ typedef Se05xSession_t *pSe05xSession_t;
+-- 
+2.55.0
+
