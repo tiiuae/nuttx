@@ -101,6 +101,7 @@
 #define CAAM_MCFGR_SWRST              (1 << 31)  /* Software reset */
 #define CAAM_MCFGR_DMA_RST            (1 << 28)  /* DMA reset */
 #define CAAM_MCFGR_WDE                (1 << 30)  /* Write-back disable */
+#define CAAM_MCFGR_DEFAULT            0x00082300
 
 /* JRCR, JRINT, JRCFG1 */
 
@@ -113,6 +114,9 @@
 
 #define CAAM_RTMCTL_PRGM              (1 << 16)  /* Program, not run, mode */
 #define CAAM_RTMCTL_ERR               (1 << 12)
+#define CAAM_RTMCTL_RST_DEF           (1 << 6)
+#define CAAM_RTMCTL_OSC_DIV4          (2 << 2)
+#define CAAM_RTMCTL_SAMP_MODE_RAW     (1 << 0)
 #define CAAM_RTSDCTL_ENT_DLY_SHIFT    (16)
 #define CAAM_RTSDCTL_ENT_DLY_MASK     (0xffff << CAAM_RTSDCTL_ENT_DLY_SHIFT)
 #define CAAM_RTSDCTL_SAMP_SIZE_MASK   (0xffff)

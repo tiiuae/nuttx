@@ -275,29 +275,26 @@ static int imxrt_caam_rng_init(void)
 }
 
 /*****************************************************************************
+ * Name: imxrt_caam_reset
+ *****************************************************************************/
+
+static void imxrt_caam_reset(void)
+{
+  putreg32(CAAM_MCFGR_SWRST, IMXRT_CAAM_MCFGR);
+  putreg32(CAAM_MCFGR_SWRST | CAAM_MCFGR_DMA_RST, IMXRT_CAAM_MCFGR);
+  putreg32(CAAM_MCFGR_DEFAULT, IMXRT_CAAM_MCFGR);
+
+  putreg32(CAAM_RTMCTL_PRGM | CAAM_RTMCTL_ERR | CAAM_RTMCTL_RST_DEF |
+           CAAM_RTMCTL_SAMP_MODE_RAW, IMXRT_CAAM_RTMCTL);
+  putreg32(CAAM_RTMCTL_ERR | CAAM_RTMCTL_OSC_DIV4, IMXRT_CAAM_RTMCTL);
+}
+
+/*****************************************************************************
  * Name: imxrt_caam_ring_init
  *****************************************************************************/
 
-static int imxrt_caam_ring_init(void)
+static void imxrt_caam_ring_init(void)
 {
-  int timeout;
-
-  putreg32(CAAM_JRCR_RESET, IMXRT_CAAM_JRCR);
-
-  for (timeout = CAAM_TIMEOUT; timeout > 0; timeout--)
-    {
-      if ((getreg32(IMXRT_CAAM_JRCR) & CAAM_JRCR_RESET) == 0)
-        {
-          break;
-        }
-    }
-
-  if (timeout == 0)
-    {
-      _err("ERROR: job ring would not reset\n");
-      return -ETIMEDOUT;
-    }
-
   memset(g_input_ring, 0, sizeof(g_input_ring));
   memset(g_output_ring, 0, sizeof(g_output_ring));
   imxrt_caam_clean(g_input_ring, sizeof(g_input_ring));
@@ -313,8 +310,6 @@ static int imxrt_caam_ring_init(void)
   /* Completion is polled, so the ring interrupt is never wanted. */
 
   modifyreg32(IMXRT_CAAM_JRCFG1, 0, CAAM_JRCFG1_IMSK);
-
-  return OK;
 }
 
 /*****************************************************************************
@@ -335,12 +330,8 @@ int imxrt_caam_initialize(void)
     }
 
   imxrt_clockall_caam();
-
-  ret = imxrt_caam_ring_init();
-  if (ret < 0)
-    {
-      return ret;
-    }
+  imxrt_caam_reset();
+  imxrt_caam_ring_init();
 
   ret = imxrt_caam_rng_init();
   if (ret < 0)
