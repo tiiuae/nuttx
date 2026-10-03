@@ -82,7 +82,8 @@
 #define CAAM_ENT_DELAY_MAX    12800
 #define CAAM_ENT_DELAY_STEP   400
 
-#define CAAM_TIMEOUT          100000
+#define CAAM_TIMEOUT_US       100000
+#define CAAM_POLL_US          10
 
 /*****************************************************************************
  * Private Data
@@ -143,7 +144,14 @@ static void imxrt_caam_invalidate(void *addr, size_t len)
 static int imxrt_caam_run(void)
 {
   uint32_t status;
+  uint32_t stale;
   int timeout;
+
+  stale = getreg32(IMXRT_CAAM_ORSF);
+  if (stale != 0)
+    {
+      putreg32(stale, IMXRT_CAAM_ORJR);
+    }
 
   imxrt_caam_clean(g_desc, sizeof(g_desc));
 
@@ -152,15 +160,17 @@ static int imxrt_caam_run(void)
 
   putreg32(1, IMXRT_CAAM_IRJA);
 
-  for (timeout = CAAM_TIMEOUT; timeout > 0; timeout--)
+  for (timeout = CAAM_TIMEOUT_US; timeout > 0; timeout -= CAAM_POLL_US)
     {
       if (getreg32(IMXRT_CAAM_ORSF) != 0)
         {
           break;
         }
+
+      up_udelay(CAAM_POLL_US);
     }
 
-  if (timeout == 0)
+  if (timeout <= 0)
     {
       _err("ERROR: job ring did not answer\n");
       return -ETIMEDOUT;
