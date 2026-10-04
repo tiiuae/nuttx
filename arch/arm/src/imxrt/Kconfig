@@ -2520,11 +2520,10 @@ config IMXRT_ENET_PHYINIT
 config IMXRT_ENET_FIXED_LINK
 	bool "Fixed link when no PHY answers"
 	default n
-	depends on IMXRT_ENET && ETH0_PHY_MULTI
+	depends on IMXRT_ENET
 	---help---
-		If none of the board's PHYs answers on MDIO, run the MAC at 100
-		Mbps full duplex instead of failing, for a switch port wired MAC
-		to MAC.
+		If no PHY answers on MDIO, run the MAC at 100 Mbps full duplex
+		instead of failing ifup, for a switch port wired MAC to MAC.
 
 config IMXRT_PHY_POLLING
 	bool "Support network monitoring by polling the PHY"

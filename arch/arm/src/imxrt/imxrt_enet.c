@@ -397,9 +397,9 @@ struct imxrt_driver_s
 #if defined(CONFIG_ETH0_PHY_MULTI)
   uint8_t  current_phy;         /* The index of the PHY being used */
   uint8_t  current_phy_address; /* The address of the PHY being used */
+#endif
 #ifdef CONFIG_IMXRT_ENET_FIXED_LINK
   bool     fixed_link;          /* No PHY answered: 100 Mbps full duplex */
-#endif
 #endif
   /* This holds the information visible to the NuttX network */
 
@@ -1419,24 +1419,38 @@ static int imxrt_ifup_action(struct net_driver_s *dev, bool resetphy)
 
   /* Configure the PHY */
 
+#ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+  priv->fixed_link = false;
+#endif
+
 #if defined(CONFIG_ETH0_PHY_MULTI)
   ret = imxrt_determine_phy(priv);
-#  ifdef CONFIG_IMXRT_ENET_FIXED_LINK
-  priv->fixed_link = ret < 0;
-  if (priv->fixed_link)
-    {
-      nwarn("WARNING: no PHY answered, fixed 100 Mbps full duplex link\n");
-    }
-  else
-#  endif
   if (ret < 0)
     {
+#  ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+      priv->fixed_link = true;
+#  else
       nerr("ERROR: Failed to determine the PHY: %d\n", ret);
       return ret;
+#  endif
     }
 #endif
 
   ret = imxrt_initphy(priv, resetphy);
+
+#ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+  if (ret == -ENOENT && !priv->fixed_link)
+    {
+      priv->fixed_link = true;
+      ret = imxrt_initphy(priv, false);
+    }
+
+  if (priv->fixed_link)
+    {
+      nwarn("WARNING: no PHY answered, fixed 100 Mbps full duplex link\n");
+    }
+#endif
+
   if (ret < 0)
     {
       nerr("ERROR: Failed to configure the PHY: %d\n", ret);
@@ -3163,7 +3177,7 @@ int imxrt_netinitialize(int intf)
   imxrt_config_gpio(GPIO_ENET_TX_CLK);
   imxrt_config_gpio(GPIO_ENET_TX_EN);
 #  ifdef GPIO_ENET_RX_ER
-    imxrt_config_gpio(GPIO_ENET_RX_ER);
+  imxrt_config_gpio(GPIO_ENET_RX_ER);
 #  endif
 #endif
 
@@ -3178,7 +3192,7 @@ int imxrt_netinitialize(int intf)
   imxrt_config_gpio(GPIO_ENET2_TX_CLK);
   imxrt_config_gpio(GPIO_ENET2_TX_EN);
 #  ifdef GPIO_ENET2_RX_ER
-    imxrt_config_gpio(GPIO_ENET2_RX_ER);
+  imxrt_config_gpio(GPIO_ENET2_RX_ER);
 #  endif
 #endif
 
