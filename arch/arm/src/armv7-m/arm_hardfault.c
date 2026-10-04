@@ -27,15 +27,20 @@
 #include <nuttx/config.h>
 
 #include <inttypes.h>
+#include <signal.h>
 #include <stdint.h>
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
+#include <unistd.h>
 
+#include <nuttx/sched.h>
 #include <nuttx/userspace.h>
 #include <arch/irq.h>
 
 #include "nvic.h"
+#include "exc_return.h"
+#include "psr.h"
 #include "arm_internal.h"
 
 /****************************************************************************
@@ -69,10 +74,46 @@
  *
  ****************************************************************************/
 
+#ifdef CONFIG_BUILD_PROTECTED
+bool arm_user_fault(uint32_t *regs)
+{
+  uint32_t cfsr = getreg32(NVIC_CFAULTS);
+  struct tcb_s *tcb = nxsched_self();
+
+  if ((regs[REG_CONTROL] & CONTROL_NPRIV) == 0 ||
+      (regs[REG_EXC_RETURN] & EXC_RETURN_THREAD_MODE) == 0 ||
+      (cfsr & (NVIC_CFAULTS_MSTKERR | NVIC_CFAULTS_MUNSTKERR |
+               NVIC_CFAULTS_STKERR | NVIC_CFAULTS_UNSTKERR)) != 0)
+    {
+      return false;
+    }
+
+  _alert("Segmentation fault in PID %d: %s\n", tcb->pid,
+         get_task_name(tcb));
+
+  tcb->flags |= TCB_FLAG_FORCED_CANCEL;
+  regs[REG_PC] = (uint32_t)_exit & ~1;
+  regs[REG_R0] = SIGSEGV;
+  regs[REG_XPSR] = ARMV7M_EPSR_T;
+  regs[REG_CONTROL] &= ~CONTROL_NPRIV;
+
+  putreg32(cfsr, NVIC_CFAULTS);
+  putreg32(getreg32(NVIC_HFAULTS), NVIC_HFAULTS);
+  return true;
+}
+#endif
+
 int arm_hardfault(int irq, void *context, void *arg)
 {
   uint32_t hfsr = getreg32(NVIC_HFAULTS);
   uint32_t cfsr = getreg32(NVIC_CFAULTS);
+
+#ifdef CONFIG_BUILD_PROTECTED
+  if (arm_user_fault(context))
+    {
+      return OK;
+    }
+#endif
 
   UNUSED(cfsr);
   UNUSED(hfsr);

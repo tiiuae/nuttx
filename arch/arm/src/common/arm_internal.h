@@ -339,6 +339,9 @@ int  arm_memfault(int irq, void *context, void *arg);
 int  arm_busfault(int irq, void *context, void *arg);
 int  arm_usagefault(int irq, void *context, void *arg);
 int  arm_securefault(int irq, void *context, void *arg);
+#    ifdef CONFIG_BUILD_PROTECTED
+bool arm_user_fault(uint32_t *regs);
+#    endif
 
 #  endif /* CONFIG_ARCH_CORTEXM3,4,7 */
 

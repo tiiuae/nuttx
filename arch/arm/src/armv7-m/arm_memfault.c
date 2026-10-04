@@ -64,6 +64,13 @@ int arm_memfault(int irq, void *context, void *arg)
 {
   uint32_t cfsr = getreg32(NVIC_CFAULTS);
 
+#ifdef CONFIG_BUILD_PROTECTED
+  if (arm_user_fault(context))
+    {
+      return OK;
+    }
+#endif
+
   /* Dump some memory management fault info */
 
   mfalert("PANIC!!! Memory Management Fault:\n");

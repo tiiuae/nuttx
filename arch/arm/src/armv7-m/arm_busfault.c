@@ -63,6 +63,13 @@ int arm_busfault(int irq, void *context, void *arg)
 {
   uint32_t cfsr = getreg32(NVIC_CFAULTS);
 
+#ifdef CONFIG_BUILD_PROTECTED
+  if (arm_user_fault(context))
+    {
+      return OK;
+    }
+#endif
+
   bfalert("PANIC!!! Bus Fault:\n");
   bfalert("\tIRQ: %d regs: %p\n", irq, context);
   bfalert("\tBASEPRI: %08x PRIMASK: %08x IPSR: %08"
