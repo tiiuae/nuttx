@@ -107,6 +107,14 @@ config DEV_SE05X_PLAIN
 
 endchoice # Channel communication interface
 
+config DEV_SE05X_PRIORITY
+	int "SE05x worker priority"
+	default 100
+
+config DEV_SE05X_STACKSIZE
+	int "SE05x worker stack size"
+	default 4096
+
 choice SE05X_LOG_LEVEL
 	prompt "SE05x debug log level"
 	default SE05X_LOG_NONE

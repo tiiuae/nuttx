@@ -34,6 +34,8 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/kthread.h>
+#include <nuttx/semaphore.h>
 #include <nuttx/sched.h>
 #include <string.h>
 #include <strings.h>
@@ -64,6 +66,8 @@ static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
  * Private Data
  ****************************************************************************/
 
+static FAR struct se05x_dev_s *g_se05x;
+
 static const FAR struct file_operations g_fops =
 {
     se05x_open, se05x_close, se05x_read, se05x_write,
@@ -76,10 +80,6 @@ static const FAR struct file_operations g_fops =
 
 static int se05x_open(FAR struct file *filep)
 {
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct se05x_dev_s *priv = inode->i_private;
-  int ret;
-
 #ifndef CONFIG_BUILD_FLAT
   if ((nxsched_self()->flags & TCB_FLAG_SYSCALL) != 0)
     {
@@ -87,29 +87,11 @@ static int se05x_open(FAR struct file *filep)
     }
 #endif
 
-  ret = nxmutex_trylock(&priv->mutex);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  ret = pnt_se05x_open(priv);
-  if (ret < 0)
-    {
-      nxmutex_unlock(&priv->mutex);
-    }
-
-  return ret;
+  return OK;
 }
 
 static int se05x_close(FAR struct file *filep)
 {
-  /* stop se05x session */
-
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct se05x_dev_s *priv = inode->i_private;
-  pnt_se05x_close(priv);
-  nxmutex_unlock(&priv->mutex);
   return OK;
 }
 
@@ -125,10 +107,9 @@ static ssize_t se05x_write(FAR struct file *filep, const char *buffer,
   return -ENOSYS;
 }
 
-static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+static int se05x_dispatch(FAR struct se05x_dev_s *priv, int cmd,
+                          unsigned long arg)
 {
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct se05x_dev_s *priv = inode->i_private;
   int ret = -ENOTTY;
 
   switch (cmd)
@@ -248,9 +229,66 @@ static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
   return ret;
 }
 
+static int se05x_worker(int argc, FAR char *argv[])
+{
+  FAR struct se05x_dev_s *priv = g_se05x;
+
+  for (; ; )
+    {
+      nxsem_wait_uninterruptible(&priv->request);
+
+      if (priv->pnt == NULL && pnt_se05x_open(priv) < 0)
+        {
+          priv->result = -EIO;
+        }
+      else
+        {
+          priv->result = se05x_dispatch(priv, priv->cmd, priv->arg);
+          if (priv->result == -EIO)
+            {
+              pnt_se05x_close(priv);
+            }
+        }
+
+      nxsem_post(&priv->done);
+    }
+
+  return OK;
+}
+
+static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+{
+  return se05x_kioctl(cmd, arg);
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+int se05x_kioctl(int cmd, unsigned long arg)
+{
+  FAR struct se05x_dev_s *priv = g_se05x;
+  int ret;
+
+  if (priv == NULL)
+    {
+      return -ENODEV;
+    }
+
+  ret = nxmutex_lock(&priv->mutex);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  priv->cmd = cmd;
+  priv->arg = arg;
+  nxsem_post(&priv->request);
+  nxsem_wait_uninterruptible(&priv->done);
+  ret = priv->result;
+  nxmutex_unlock(&priv->mutex);
+  return ret;
+}
 
 int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
                    FAR struct se05x_config_s *config)
@@ -266,7 +304,12 @@ int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
 
   /* Initialize the device's structure */
 
-  priv = (FAR struct se05x_dev_s *)kmm_malloc(sizeof(*priv));
+  if (g_se05x != NULL)
+    {
+      return -EEXIST;
+    }
+
+  priv = (FAR struct se05x_dev_s *)kmm_zalloc(sizeof(*priv));
   if (priv == NULL)
     {
       crypterr("ERROR: Failed to allocate instance\n");
@@ -307,21 +350,32 @@ int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
       goto errout_with_alloc_and_open;
     }
 
-  pnt_se05x_close(priv);
-
-  /* Register driver */
-
   nxmutex_init(&priv->mutex);
+  nxsem_init(&priv->request, 0, 0);
+  nxsem_init(&priv->done, 0, 0);
+  g_se05x = priv;
+
+  ret = kthread_create("se05x", CONFIG_DEV_SE05X_PRIORITY,
+                       CONFIG_DEV_SE05X_STACKSIZE, se05x_worker, NULL);
+  if (ret < 0)
+    {
+      crypterr("ERROR: Failed to start the worker: %d\n", ret);
+      goto errout_with_sync;
+    }
+
   ret = register_driver(devpath, &g_fops, 0666, priv);
   if (ret < 0)
     {
       crypterr("ERROR: Failed to register driver: %d\n", ret);
-      nxmutex_destroy(&priv->mutex);
-      ret =  -ENODEV;
-      goto errout_with_alloc;
     }
 
   return OK;
+
+errout_with_sync:
+  g_se05x = NULL;
+  nxsem_destroy(&priv->done);
+  nxsem_destroy(&priv->request);
+  nxmutex_destroy(&priv->mutex);
 
 errout_with_alloc_and_open:
   pnt_se05x_close(priv);

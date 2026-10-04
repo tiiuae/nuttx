@@ -192,6 +192,18 @@ struct i2c_master_s;
 int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
                    FAR struct se05x_config_s *config);
 
+/****************************************************************************
+ * Name: se05x_kioctl
+ *
+ * Description:
+ *   Run one SEIOC_* request on the element from kernel code. Requests run
+ *   one at a time on the driver's own thread and session, so the caller's
+ *   stack never holds the channel's keys.
+ *
+ ****************************************************************************/
+
+int se05x_kioctl(int cmd, unsigned long arg);
+
 #endif /* CONFIG_DEV_SE05X */
 
 #endif /* __INCLUDE_NUTTX_CRYPTO_SE05X_H_ */

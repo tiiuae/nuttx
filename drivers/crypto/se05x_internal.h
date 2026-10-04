@@ -31,6 +31,7 @@
 
 #include <nuttx/crypto/se05x.h>
 #include <nuttx/mutex.h>
+#include <nuttx/semaphore.h>
 #include <stdint.h>
 
 /****************************************************************************
@@ -48,6 +49,11 @@ struct se05x_dev_s
   FAR struct pnt_handle *pnt;
   struct se05x_scp03_keys_s scp03;
   mutex_t mutex;
+  sem_t request;
+  sem_t done;
+  int cmd;
+  unsigned long arg;
+  int result;
 };
 
 #endif /* __INCLUDE_NUTTX_DRIVERS_CRYPTO_SE05X_INTERNAL_H_ */
