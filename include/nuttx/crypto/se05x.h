@@ -63,6 +63,7 @@
 #define SEIOC_DERIVE_SYMM_KEY _SEIOC(0x000A)  /* Arg: se05x_derive_key_s */
 #define SEIOC_GET_VERSION _SEIOC(0x000B)      /* Arg: se05x_version_s */
 #define SEIOC_ROTATE_SCP03 _SEIOC(0x000C)     /* Arg: se05x_scp03_keys_s */
+#define SEIOC_PLATFORM_SCP _SEIOC(0x000D)     /* Arg: bool required */
 
 /****************************************************************************
  * Public Types

@@ -225,6 +225,12 @@ static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
       }
       break;
 
+    case SEIOC_PLATFORM_SCP:
+      {
+        ret = pnt_se05x_platform_scp(priv, arg != 0);
+      }
+      break;
+
     case SEIOC_VERIFY_SIGNATURE:
       {
         FAR struct se05x_signature_s *verify_signature_args =

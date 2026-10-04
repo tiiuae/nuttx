@@ -56,10 +56,12 @@
 #define SE05X_AES_BLOCK             16
 #define SE05X_KCV_LEN               3
 #define SE05X_SCP03_KVN             0x0b
-#define SE05X_GP_CLA                0x80
+#define SE05X_CLA                   0x80
 #define SE05X_GP_PUT_KEY            0xd8
 #define SE05X_GP_P2_KEYS            0x81
 #define SE05X_GP_KEY_AES            0x88
+#define SE05X_PLATFORM_SCP_USER     0x7fff0207
+#define SE05X_SESSION_ID_LEN        8
 
 /****************************************************************************
  * Private Types
@@ -227,7 +229,7 @@ static int pnt_put_keys(FAR struct se05x_dev_s *se05x,
   key[0] = keys->enc;
   key[1] = keys->mac;
   key[2] = keys->dek;
-  hdr.hdr[0] = SE05X_GP_CLA;
+  hdr.hdr[0] = SE05X_CLA;
   hdr.hdr[1] = SE05X_GP_PUT_KEY;
   hdr.hdr[2] = SE05X_SCP03_KVN;
   hdr.hdr[3] = SE05X_GP_P2_KEYS;
@@ -269,9 +271,135 @@ out:
 }
 #endif
 
+static size_t tlv_u32(FAR uint8_t *buf, uint8_t tag, uint32_t value)
+{
+  buf[0] = tag;
+  buf[1] = 4;
+  buf[2] = value >> 24;
+  buf[3] = value >> 16;
+  buf[4] = value >> 8;
+  buf[5] = value;
+  return 6;
+}
+
+static size_t tlv_buf(FAR uint8_t *buf, uint8_t tag, FAR const uint8_t *data,
+                      size_t len)
+{
+  buf[0] = tag;
+  buf[1] = len;
+  memcpy(&buf[2], data, len);
+  return 2 + len;
+}
+
+static smStatus_t pnt_session_cmd(FAR struct se05x_dev_s *se05x,
+                                  FAR const uint8_t *sid, uint8_t p2,
+                                  FAR const uint8_t *data, size_t len)
+{
+  FAR uint8_t *buf = se05x->pnt->session.apdu_buffer;
+  tlvHeader_t hdr;
+  size_t n;
+
+  hdr.hdr[0] = SE05X_CLA;
+  hdr.hdr[1] = kSE05x_INS_PROCESS;
+  hdr.hdr[2] = kSE05x_P1_DEFAULT;
+  hdr.hdr[3] = kSE05x_P2_DEFAULT;
+
+  n = tlv_buf(buf, kSE05x_TAG_SESSION_ID, sid, SE05X_SESSION_ID_LEN);
+  buf[n++] = kSE05x_TAG_1;
+  buf[n++] = 4 + (len > 0 ? 1 + len : 0);
+  buf[n++] = SE05X_CLA;
+  buf[n++] = kSE05x_INS_MGMT;
+  buf[n++] = kSE05x_P1_DEFAULT;
+  buf[n++] = p2;
+  if (len > 0)
+    {
+      buf[n++] = len;
+      memcpy(&buf[n], data, len);
+      n += len;
+    }
+
+  return DoAPDUTx(&(se05x->pnt->session), &hdr, buf, n, 0);
+}
+
 int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
 {
   return pnt_session_open(se05x, false);
+}
+
+int pnt_se05x_platform_scp(FAR struct se05x_dev_s *se05x, bool required)
+{
+  static const uint8_t userid[] =
+  {
+    'N', 'E', 'E', 'D', 'S', 'C', 'P'
+  };
+
+  FAR Se05xSession_t *session = &(se05x->pnt->session);
+  SE05x_Result_t exists = kSE05x_Result_NA;
+  uint8_t sid[SE05X_SESSION_ID_LEN];
+  size_t sidlen = sizeof(sid);
+  uint8_t data[sizeof(userid) + 2];
+  uint8_t rsp[32];
+  size_t rsplen = sizeof(rsp);
+  size_t rspindex = 0;
+  tlvHeader_t hdr;
+  smStatus_t status;
+  size_t n;
+
+  status = Se05x_API_CheckObjectExists(session, SE05X_PLATFORM_SCP_USER,
+                                       &exists);
+  if (status != SM_OK)
+    {
+      return -EIO;
+    }
+
+  hdr.hdr[0] = SE05X_CLA;
+  hdr.hdr[2] = kSE05x_P1_DEFAULT;
+
+  if (exists != kSE05x_Result_SUCCESS)
+    {
+      hdr.hdr[1] = kSE05x_INS_WRITE | kSE05x_INS_AUTH_OBJECT;
+      hdr.hdr[2] = kSE05x_P1_UserID;
+      hdr.hdr[3] = kSE05x_P2_DEFAULT;
+      n = tlv_u32(session->apdu_buffer, kSE05x_TAG_1,
+                  SE05X_PLATFORM_SCP_USER);
+      n += tlv_buf(&session->apdu_buffer[n], kSE05x_TAG_2, userid,
+                   sizeof(userid));
+      if (DoAPDUTx(session, &hdr, session->apdu_buffer, n, 0) != SM_OK)
+        {
+          return -EIO;
+        }
+
+      hdr.hdr[2] = kSE05x_P1_DEFAULT;
+    }
+
+  hdr.hdr[1] = kSE05x_INS_MGMT;
+  hdr.hdr[3] = kSE05x_P2_SESSION_CREATE;
+  n = tlv_u32(session->apdu_buffer, kSE05x_TAG_1, SE05X_PLATFORM_SCP_USER);
+  status = DoAPDUTxRx(session, &hdr, session->apdu_buffer, n, rsp, &rsplen,
+                      0);
+  if (status != SM_OK ||
+      tlvGet_u8buf(rsp, &rspindex, rsplen, kSE05x_TAG_1, sid,
+                   &sidlen) != 0 ||
+      sidlen != sizeof(sid))
+    {
+      return -EIO;
+    }
+
+  n = tlv_buf(data, kSE05x_TAG_1, userid, sizeof(userid));
+  if (pnt_session_cmd(se05x, sid, kSE05x_P2_SESSION_UserID, data, n) !=
+      SM_OK)
+    {
+      return -EACCES;
+    }
+
+  data[0] = kSE05x_TAG_1;
+  data[1] = 1;
+  data[2] = required ? kSE05x_PlatformSCPRequest_REQUIRED :
+                       kSE05x_PlatformSCPRequest_NOT_REQUIRED;
+  status = pnt_session_cmd(se05x, sid, kSE05x_P2_SCP, data, 3);
+  pnt_session_cmd(se05x, sid, kSE05x_P2_SESSION_CLOSE, NULL, 0);
+
+  return status == SM_OK ? 0 : -EIO;
 }
 
 int pnt_se05x_rotate_scp03(FAR struct se05x_dev_s *se05x,
