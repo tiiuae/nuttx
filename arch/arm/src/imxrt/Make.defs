@@ -117,6 +117,10 @@ ifeq ($(CONFIG_IMXRT_RNG),y)
 CHIP_CSRCS += imxrt_rng.c
 endif
 
+ifeq ($(CONFIG_IMXRT_XRDC2),y)
+CHIP_CSRCS += imxrt_xrdc2.c
+endif
+
 ifeq ($(CONFIG_IMXRT_LPI2C),y)
 CHIP_CSRCS += imxrt_lpi2c.c
 endif

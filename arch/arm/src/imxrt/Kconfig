@@ -385,6 +385,15 @@ config IMXRT_RNG
 		true random number generator. Without this the entropy pool is
 		never seeded from hardware.
 
+config IMXRT_XRDC2
+	bool "XRDC2 fence around kernel key memory"
+	default n
+	depends on ARCH_FAMILY_IMXRT117x
+	---help---
+		Let the board call imxrt_xrdc2_fence() to keep every bus master
+		but the Cortex-M7 core out of one memory region.  The M7-side
+		XRDC2 manager stays locked until reset.
+
 config IMXRT_EDMA
 	bool "eDMA"
 	default n
