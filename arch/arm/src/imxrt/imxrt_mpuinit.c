@@ -79,6 +79,22 @@
 #endif
 
 /****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: imxrt_mpu_user_sram
+ ****************************************************************************/
+
+#ifdef CONFIG_BUILD_PROTECTED
+static void imxrt_mpu_user_sram(uintptr_t base, size_t size)
+{
+  mpu_configure_region(base, size, MPU_RASR_AP_RWRW | MPU_RASR_TEX_SO |
+                       RASR_C_VALUE | RASR_B_VALUE);
+}
+#endif
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -352,7 +368,7 @@ void imxrt_mpu_initialize(void)
 
   DEBUGASSERT(dataend >= datastart);
 
-  mpu_user_intsram(datastart, dataend - datastart);
+  imxrt_mpu_user_sram(datastart, dataend - datastart);
 
   mpu_control(true, false, true);
 #else
@@ -373,7 +389,7 @@ void imxrt_mpu_initialize(void)
 #ifdef CONFIG_BUILD_PROTECTED
 void imxrt_mpu_uheap(uintptr_t start, size_t size)
 {
-  mpu_user_intsram(start, size);
+  imxrt_mpu_user_sram(start, size);
 }
 #endif
 
