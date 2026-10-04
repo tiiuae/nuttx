@@ -397,6 +397,9 @@ struct imxrt_driver_s
 #if defined(CONFIG_ETH0_PHY_MULTI)
   uint8_t  current_phy;         /* The index of the PHY being used */
   uint8_t  current_phy_address; /* The address of the PHY being used */
+#ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+  bool     fixed_link;          /* No PHY answered: 100 Mbps full duplex */
+#endif
 #endif
   /* This holds the information visible to the NuttX network */
 
@@ -1418,6 +1421,14 @@ static int imxrt_ifup_action(struct net_driver_s *dev, bool resetphy)
 
 #if defined(CONFIG_ETH0_PHY_MULTI)
   ret = imxrt_determine_phy(priv);
+#  ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+  priv->fixed_link = ret < 0;
+  if (priv->fixed_link)
+    {
+      nwarn("WARNING: no PHY answered, fixed 100 Mbps full duplex link\n");
+    }
+  else
+#  endif
   if (ret < 0)
     {
       nerr("ERROR: Failed to determine the PHY: %d\n", ret);
@@ -1919,6 +1930,16 @@ static int imxrt_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
         {
           struct mii_ioctl_data_s *req =
             (struct mii_ioctl_data_s *)((uintptr_t)arg);
+#ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+          if (priv->fixed_link)
+            {
+              req->val_out = req->reg_num == MII_MSR ?
+                             MII_MSR_LINKSTATUS | MII_MSR_100BASETXFULL : 0;
+              ret = OK;
+              break;
+            }
+#endif
+
 #if defined(CLAUSE45)
           if (
 #  if defined(CONFIG_ETH0_PHY_MULTI)
@@ -2534,6 +2555,16 @@ static inline int imxrt_initphy(struct imxrt_driver_s *priv, bool renogphy)
   uint8_t phyaddr    = BOARD_PHY_ADDR;
   int retries;
   int ret;
+  bool fixed = false;
+
+#ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+  fixed = priv->fixed_link;
+  phydata = 0;
+  if (fixed)
+    {
+      goto mac_setup;
+    }
+#endif
 
   if (renogphy)
     {
@@ -2863,6 +2894,10 @@ static inline int imxrt_initphy(struct imxrt_driver_s *priv, bool renogphy)
 #  endif
 #endif
 
+#ifdef CONFIG_IMXRT_ENET_FIXED_LINK
+mac_setup:
+#endif
+
   /* Set up the transmit and receive control registers based on the
    * configuration and the auto negotiation results.
    */
@@ -2893,7 +2928,7 @@ static inline int imxrt_initphy(struct imxrt_driver_s *priv, bool renogphy)
 
   /* Setup half or full duplex */
 
-  if (BOARD_PHY_ISDUPLEX(phydata))
+  if (fixed || BOARD_PHY_ISDUPLEX(phydata))
     {
       /* Full duplex */
 
@@ -2908,14 +2943,14 @@ static inline int imxrt_initphy(struct imxrt_driver_s *priv, bool renogphy)
       rcr |= ENET_RCR_DRT;
     }
 
-  if (BOARD_PHY_10BASET(phydata))
+  if (!fixed && BOARD_PHY_10BASET(phydata))
     {
       /* 10 Mbps */
 
       ninfo("%s: 10 Base-T\n",  BOARD_PHY_NAME);
       rcr |= ENET_RCR_RMII_10T;
     }
-  else if (BOARD_PHY_100BASET(phydata))
+  else if (fixed || BOARD_PHY_100BASET(phydata))
     {
       /* 100 Mbps */
 
