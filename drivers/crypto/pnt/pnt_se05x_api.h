@@ -235,6 +235,9 @@ int pnt_se05x_get_data(FAR struct se05x_dev_s *se05x,
 
 int pnt_se05x_delete_key(FAR struct se05x_dev_s *se05x, uint32_t key_id);
 
+int pnt_se05x_rotate_scp03(FAR struct se05x_dev_s *se05x,
+                           FAR const struct se05x_scp03_keys_s *keys);
+
 /****************************************************************************
  * Name: pnt_se05x_derive_key
  *

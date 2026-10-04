@@ -62,6 +62,7 @@
 #define SEIOC_VERIFY_SIGNATURE _SEIOC(0x0009) /* Arg: se05x_signature_s */
 #define SEIOC_DERIVE_SYMM_KEY _SEIOC(0x000A)  /* Arg: se05x_derive_key_s */
 #define SEIOC_GET_VERSION _SEIOC(0x000B)      /* Arg: se05x_version_s */
+#define SEIOC_ROTATE_SCP03 _SEIOC(0x000C)     /* Arg: se05x_scp03_keys_s */
 
 /****************************************************************************
  * Public Types

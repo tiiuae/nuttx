@@ -37,6 +37,10 @@
 #include <se05x_APDU_apis.h>
 #include <smCom.h>
 
+#ifdef CONFIG_DEV_SE05X_SCP03
+#  include <se05x_scp03_crypto.h>
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -48,6 +52,14 @@
 #define SE05X_ALGO_ED25519PURE      ((SE05x_ECSignatureAlgo_t)0xa3)
 #define SE05X_P256_PUBLIC_SIZE      65
 #define SE05X_25519_SIZE            32
+
+#define SE05X_AES_BLOCK             16
+#define SE05X_KCV_LEN               3
+#define SE05X_SCP03_KVN             0x0b
+#define SE05X_GP_CLA                0x80
+#define SE05X_GP_PUT_KEY            0xd8
+#define SE05X_GP_P2_KEYS            0x81
+#define SE05X_GP_KEY_AES            0x88
 
 /****************************************************************************
  * Private Types
@@ -134,20 +146,9 @@ static bool set_enable_pin(FAR struct se05x_dev_s *se05x, bool state)
  * Public Functions
  ****************************************************************************/
 
-int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
+static int pnt_session_open(FAR struct se05x_dev_s *se05x, bool ssd)
 {
-#ifdef CONFIG_DEV_SE05X_SCP03
-  FAR const struct se05x_scp03_keys_s *keys = se05x->config->scp03;
-#endif
   int ret;
-
-#ifdef CONFIG_DEV_SE05X_SCP03
-  if (keys == NULL)
-    {
-      ret = -EINVAL;
-      goto errout;
-    }
-#endif
 
   se05x->pnt = kmm_zalloc(sizeof(struct pnt_handle));
 
@@ -158,12 +159,12 @@ int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
     }
 
 #ifdef CONFIG_DEV_SE05X_SCP03
-  se05x->pnt->session.pScp03_enc_key = (FAR uint8_t *)keys->enc;
-  se05x->pnt->session.pScp03_mac_key = (FAR uint8_t *)keys->mac;
-  se05x->pnt->session.pScp03_dek_key = (FAR uint8_t *)keys->dek;
-  se05x->pnt->session.scp03_enc_key_len = sizeof(keys->enc);
-  se05x->pnt->session.scp03_mac_key_len = sizeof(keys->mac);
-  se05x->pnt->session.scp03_dek_key_len = sizeof(keys->dek);
+  se05x->pnt->session.pScp03_enc_key = se05x->scp03.enc;
+  se05x->pnt->session.pScp03_mac_key = se05x->scp03.mac;
+  se05x->pnt->session.pScp03_dek_key = se05x->scp03.dek;
+  se05x->pnt->session.scp03_enc_key_len = sizeof(se05x->scp03.enc);
+  se05x->pnt->session.scp03_mac_key_len = sizeof(se05x->scp03.mac);
+  se05x->pnt->session.scp03_dek_key_len = sizeof(se05x->scp03.dek);
 #endif
 
   if (!set_enable_pin(se05x, true))
@@ -172,7 +173,7 @@ int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
       goto errout_with_alloc;
     }
 
-  se05x->pnt->session.skip_applet_select = 0;
+  se05x->pnt->session.skip_applet_select = ssd ? 1 : 0;
   se05x->pnt->session.session_resume = 0;
   if (Se05x_API_SessionOpen(&(se05x->pnt->session), se05x) != SM_OK)
     {
@@ -190,17 +191,143 @@ errout_with_alloc:
 
   explicit_bzero(se05x->pnt, sizeof(struct pnt_handle));
   kmm_free(se05x->pnt);
+  se05x->pnt = NULL;
 
 errout:
   return ret;
 }
 
+#ifdef CONFIG_DEV_SE05X_SCP03
+static int aes_block(FAR const uint8_t *key, FAR const uint8_t *in,
+                     FAR uint8_t *out)
+{
+  uint8_t iv[SE05X_AES_BLOCK];
+
+  memset(iv, 0, sizeof(iv));
+  return hcrypto_aes_cbc_encrypt((FAR uint8_t *)key, SE05X_AES_BLOCK, iv,
+                                 sizeof(iv), in, out, SE05X_AES_BLOCK);
+}
+
+static int pnt_put_keys(FAR struct se05x_dev_s *se05x,
+                        FAR const struct se05x_scp03_keys_s *keys)
+{
+  FAR const uint8_t *key[3];
+  tlvHeader_t hdr;
+  uint8_t ones[SE05X_AES_BLOCK];
+  uint8_t kcv[SE05X_AES_BLOCK];
+  uint8_t expect[1 + 3 * SE05X_KCV_LEN];
+  uint8_t rsp[32];
+  size_t rsplen = sizeof(rsp);
+  FAR uint8_t *cmd = se05x->pnt->session.apdu_buffer;
+  size_t len = 0;
+  smStatus_t status;
+  int ret = -EIO;
+  int i;
+
+  key[0] = keys->enc;
+  key[1] = keys->mac;
+  key[2] = keys->dek;
+  hdr.hdr[0] = SE05X_GP_CLA;
+  hdr.hdr[1] = SE05X_GP_PUT_KEY;
+  hdr.hdr[2] = SE05X_SCP03_KVN;
+  hdr.hdr[3] = SE05X_GP_P2_KEYS;
+  memset(ones, 1, sizeof(ones));
+  cmd[len++] = SE05X_SCP03_KVN;
+  expect[0] = SE05X_SCP03_KVN;
+
+  for (i = 0; i < 3; i++)
+    {
+      cmd[len++] = SE05X_GP_KEY_AES;
+      cmd[len++] = SE05X_AES_BLOCK + 1;
+      cmd[len++] = SE05X_AES_BLOCK;
+      if (aes_block(se05x->scp03.dek, key[i], &cmd[len]) != 0 ||
+          aes_block(key[i], ones, kcv) != 0)
+        {
+          goto out;
+        }
+
+      len += SE05X_AES_BLOCK;
+      cmd[len++] = SE05X_KCV_LEN;
+      memcpy(&cmd[len], kcv, SE05X_KCV_LEN);
+      memcpy(&expect[1 + i * SE05X_KCV_LEN], kcv, SE05X_KCV_LEN);
+      len += SE05X_KCV_LEN;
+    }
+
+  status = DoAPDUTxRx(&(se05x->pnt->session), &hdr, cmd, len, rsp, &rsplen,
+                      0);
+  if (status == SM_OK && rsplen == sizeof(expect) + 2 &&
+      memcmp(rsp, expect, sizeof(expect)) == 0)
+    {
+      ret = OK;
+    }
+
+out:
+  explicit_bzero(kcv, sizeof(kcv));
+  explicit_bzero(se05x->pnt->session.apdu_buffer,
+                 sizeof(se05x->pnt->session.apdu_buffer));
+  return ret;
+}
+#endif
+
+int pnt_se05x_open(FAR struct se05x_dev_s *se05x)
+{
+  return pnt_session_open(se05x, false);
+}
+
+int pnt_se05x_rotate_scp03(FAR struct se05x_dev_s *se05x,
+                           FAR const struct se05x_scp03_keys_s *keys)
+{
+#ifdef CONFIG_DEV_SE05X_SCP03
+  struct se05x_scp03_keys_s old;
+  int ret;
+
+  pnt_se05x_close(se05x);
+
+  ret = pnt_session_open(se05x, true);
+  if (ret == OK)
+    {
+      ret = pnt_put_keys(se05x, keys);
+      pnt_se05x_close(se05x);
+    }
+
+  memcpy(&old, &se05x->scp03, sizeof(old));
+  if (ret == OK)
+    {
+      memcpy(&se05x->scp03, keys, sizeof(se05x->scp03));
+    }
+
+  if (pnt_session_open(se05x, false) != OK)
+    {
+      memcpy(&se05x->scp03, ret == OK ? &old : keys, sizeof(se05x->scp03));
+      if (pnt_session_open(se05x, false) == OK)
+        {
+          ret = ret == OK ? -EIO : OK;
+        }
+      else
+        {
+          ret = -ENXIO;
+        }
+    }
+
+  explicit_bzero(&old, sizeof(old));
+  return ret;
+#else
+  return -ENOSYS;
+#endif
+}
+
 void pnt_se05x_close(FAR struct se05x_dev_s *se05x)
 {
+  if (se05x->pnt == NULL)
+    {
+      return;
+    }
+
   Se05x_API_SessionClose(&(se05x->pnt->session));
   (void)set_enable_pin(se05x, FALSE);
   explicit_bzero(se05x->pnt, sizeof(struct pnt_handle));
   kmm_free(se05x->pnt);
+  se05x->pnt = NULL;
 }
 
 int pnt_se05x_get_info(FAR struct se05x_dev_s *se05x,

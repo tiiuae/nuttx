@@ -29,6 +29,7 @@
  * Included Files
  ****************************************************************************/
 
+#include <nuttx/crypto/se05x.h>
 #include <nuttx/mutex.h>
 #include <stdint.h>
 
@@ -45,6 +46,7 @@ struct se05x_dev_s
   FAR struct se05x_config_s *config;
   FAR struct i2c_master_s *i2c; /* I2C interface */
   FAR struct pnt_handle *pnt;
+  struct se05x_scp03_keys_s scp03;
   mutex_t mutex;
 };
 

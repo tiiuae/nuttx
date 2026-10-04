@@ -35,6 +35,8 @@
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/sched.h>
+#include <string.h>
+#include <strings.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -215,6 +217,14 @@ static int se05x_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
       }
       break;
 
+    case SEIOC_ROTATE_SCP03:
+      {
+        FAR const struct se05x_scp03_keys_s *keys =
+            (FAR const struct se05x_scp03_keys_s *)arg;
+        ret = pnt_se05x_rotate_scp03(priv, keys);
+      }
+      break;
+
     case SEIOC_VERIFY_SIGNATURE:
       {
         FAR struct se05x_signature_s *verify_signature_args =
@@ -260,6 +270,17 @@ int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
 
   priv->config = config;
   priv->i2c = i2c;
+  priv->pnt = NULL;
+
+#ifdef CONFIG_DEV_SE05X_SCP03
+  if (config->scp03 == NULL)
+    {
+      ret = -EINVAL;
+      goto errout_with_alloc;
+    }
+
+  memcpy(&priv->scp03, config->scp03, sizeof(priv->scp03));
+#endif
 
   /* Check se05x availability */
 
@@ -300,6 +321,7 @@ errout_with_alloc_and_open:
   pnt_se05x_close(priv);
 
 errout_with_alloc:
+  explicit_bzero(priv, sizeof(*priv));
   kmm_free(priv);
 
 errout:
