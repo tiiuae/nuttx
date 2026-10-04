@@ -88,8 +88,10 @@ bool arm_user_fault(uint32_t *regs)
       return false;
     }
 
-  _alert("Segmentation fault in PID %d: %s\n", tcb->pid,
-         get_task_name(tcb));
+  _alert("Segmentation fault in PID %d: %s, PC %08" PRIx32 " CFSR %08"
+         PRIx32 " MMFAR %08" PRIx32 " BFAR %08" PRIx32 "\n", tcb->pid,
+         get_task_name(tcb), regs[REG_PC], cfsr,
+         getreg32(NVIC_MEMMANAGE_ADDR), getreg32(NVIC_BFAULT_ADDR));
 
   tcb->flags |= TCB_FLAG_FORCED_CANCEL;
   regs[REG_PC] = (uint32_t)_exit & ~1;
