@@ -125,16 +125,14 @@ int stm32_spi5_loopback_test(void)
                  "SPI5 loopback: byte %u TX=0x%02x RX=0x%02x\n",
                  (unsigned int)i, tx[i], rx[i]);
           ret = -EIO;
-          //goto out;
         }
     }
 
   if (ret == 0)
-  {
-  syslog(LOG_INFO, "SPI5 loopback passed at %lu Hz\n",
-         (unsigned long)frequency);
-
-  }
+    {
+      syslog(LOG_INFO, "SPI5 loopback passed at %lu Hz\n",
+             (unsigned long)frequency);
+    }
   syslog(LOG_INFO, "SPI5 loopback rx data [%lx %lx %lx %lx %lx %lx] \n",
          (unsigned long)rx[0],
          (unsigned long)rx[1],
@@ -142,8 +140,6 @@ int stm32_spi5_loopback_test(void)
          (unsigned long)rx[3],
          (unsigned long)rx[4],
          (unsigned long)rx[5]);
-  ret = OK;
-
 out:
   SPI_LOCK(spi, false);
   return ret;

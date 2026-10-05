@@ -151,7 +151,8 @@ build the bus. The board provides two mutually exclusive bring-up tests:
   starts pressure and temperature measurements at 1 MHz, and logs the raw
   ADC values. It is enabled in ``nsh-test``.
 * ``CONFIG_NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST`` transmits a fixed byte
-  pattern at 250 kHz and logs any received-byte mismatches. To run it,
+  pattern at 250 kHz, logs any received-byte mismatches, and returns
+  ``-EIO`` if any byte differs. To run it,
   disable the BMP280 test and enable loopback in ``make menuconfig``.
   Disconnect the BMP280 SDO from MISO, then jumper Arduino D11/MOSI (PG2)
   to D12/MISO (PG1). Leave D10/CS high so the sensor does not drive MISO.
