@@ -162,6 +162,10 @@ Both tests run during board bring-up. To enable or change an option for a
 configuration, run ``make menuconfig`` from the NuttX build directory and
 select the option under the Nucleo-N657X0-Q board settings.
 
+The tests read ``stm32_spi_getlasterror()`` after transfers while holding
+the bus lock, so SPI failures are returned to the bring-up caller rather
+than being treated as successful exchanges.
+
 Buttons and LEDs
 ================
 

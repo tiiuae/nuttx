@@ -110,6 +110,12 @@ int stm32_spi5_loopback_test(void)
 
   memset(rx, 0xff, sizeof(rx));
   SPI_EXCHANGE(spi, tx, rx, sizeof(tx));
+  ret = stm32_spi_getlasterror(spi);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "SPI5 loopback: transfer failed: %d\n", ret);
+      goto out;
+    }
 
   for (i = 0; i < sizeof(tx); i++)
     {
@@ -165,17 +171,18 @@ static int bmp280_transfer(struct spi_dev_s *spi, const uint8_t *tx,
 {
 #ifdef CONFIG_SPI_EXCHANGE
   SPI_EXCHANGE(spi, tx, rx, nbytes);
-  return OK;
+  return stm32_spi_getlasterror(spi);
 #else
   size_t i;
 
   for (i = 0; i < nbytes; i++)
     {
       uint32_t value = SPI_SEND(spi, tx[i]);
+      int ret = stm32_spi_getlasterror(spi);
 
-      if (value == UINT32_MAX)
+      if (ret < 0)
         {
-          return -EIO;
+          return ret;
         }
 
       if (rx != NULL)
