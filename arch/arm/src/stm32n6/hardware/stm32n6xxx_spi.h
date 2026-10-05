@@ -70,7 +70,7 @@
 #define SPI_CFG1_MBR_DIV256        (7u << SPI_CFG1_MBR_SHIFT)
 #define SPI_CFG1_TXDMAEN           (1u << 15)
 #define SPI_CFG1_RXDMAEN           (1u << 14)
-#define SPI_CFG1_FTHLV_SHIFT       8
+#define SPI_CFG1_FTHLV_SHIFT       5
 #define SPI_CFG1_FTHLV_MASK        (0xfu << SPI_CFG1_FTHLV_SHIFT)
 #define SPI_CFG1_FTHLV_1DATA       (0u << SPI_CFG1_FTHLV_SHIFT)
 #define SPI_CFG1_DSIZE_SHIFT       0
