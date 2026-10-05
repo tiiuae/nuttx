@@ -870,15 +870,23 @@ static uint64_t spi_transfer_timeout_us(struct stm32_spi_priv_s *priv,
   return wire_us + SPI_TIMEOUT_MARGIN_US;
 }
 
-static void spi_drain_rx(struct stm32_spi_priv_s *priv)
+static int spi_drain_rx(struct stm32_spi_priv_s *priv,
+                        const struct spi_deadline_s *deadline)
 {
   uint32_t status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
 
   while (spi_rx_pending(status))
     {
+      if (spi_deadline_expired(deadline))
+        {
+          return -ETIMEDOUT;
+        }
+
       (void)spi_read_rxframe(priv);
       status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
     }
+
+  return OK;
 }
 
 static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
@@ -908,37 +916,42 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
       return;
     }
 
-  status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
-  if (!started || (cr1 & SPI_CR1_CSTART) == 0 ||
-      (status & SPI_SR_EOT) != 0)
-    {
-      spi_drain_rx(priv);
-      spi_putreg(priv, STM32_SPI_IFCR_OFFSET, SPI_IFCR_CLEARABLE);
-      spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
-      return;
-    }
-
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET,
-             SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_CSUSP);
   if (!spi_deadline_start(&deadline, SPI_ABORT_TIMEOUT_US))
     {
       priv->faulted = true;
+      spierr("ERROR: SPI%u recovery deadline initialization failed\n",
+             priv->bus);
       return;
     }
 
-  while ((spi_getreg(priv, STM32_SPI_SR_OFFSET) & SPI_SR_SUSP) == 0 ||
-         (spi_getreg(priv, STM32_SPI_CR1_OFFSET) & SPI_CR1_CSTART) != 0)
+  status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
+  if (started && (cr1 & SPI_CR1_CSTART) != 0 &&
+      (status & SPI_SR_EOT) == 0)
     {
-      if (spi_deadline_expired(&deadline))
+      spi_putreg(priv, STM32_SPI_CR1_OFFSET,
+                 SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_CSUSP);
+
+      while ((spi_getreg(priv, STM32_SPI_SR_OFFSET) & SPI_SR_SUSP) == 0 ||
+             (spi_getreg(priv, STM32_SPI_CR1_OFFSET) & SPI_CR1_CSTART) != 0)
         {
-          priv->faulted = true;
-          spierr("ERROR: SPI%u suspend timed out after transfer failure\n",
-                 priv->bus);
-          return;
+          if (spi_deadline_expired(&deadline))
+            {
+              priv->faulted = true;
+              spierr("ERROR: SPI%u suspend timed out after transfer failure\n",
+                     priv->bus);
+              return;
+            }
         }
     }
 
-  spi_drain_rx(priv);
+  ret = spi_drain_rx(priv, &deadline);
+  if (ret < 0)
+    {
+      priv->faulted = true;
+      spierr("ERROR: SPI%u RX FIFO drain timed out after transfer failure\n",
+             priv->bus);
+    }
+
   spi_putreg(priv, STM32_SPI_IFCR_OFFSET, SPI_IFCR_CLEARABLE);
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
 }
@@ -997,7 +1010,14 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
 
       while (spi_rx_pending(status))
         {
-          uint16_t frame = spi_read_rxframe(priv);
+          uint16_t frame;
+
+          if (spi_deadline_expired(&deadline))
+            {
+              return -ETIMEDOUT;
+            }
+
+          frame = spi_read_rxframe(priv);
 
           if (rxframes < nframes)
             {
@@ -1031,7 +1051,14 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
 
           while (spi_rx_pending(status))
             {
-              uint16_t frame = spi_read_rxframe(priv);
+              uint16_t frame;
+
+              if (spi_deadline_expired(&deadline))
+                {
+                  return -ETIMEDOUT;
+                }
+
+              frame = spi_read_rxframe(priv);
 
               if (rxframes < nframes)
                 {

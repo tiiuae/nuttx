@@ -65,6 +65,12 @@ modes 0-3, MSB-first 8- and 16-bit frames, finite transfers up to the
 controller's transfer-size limit, and GPIO chip select through board
 callbacks. The bus must be locked around a transaction when shared.
 
+FIFO service and completion waits use a DWT cycle-counter deadline based
+on the chunk's wire time plus 100 ms. Recovery uses a separate 100 ms
+deadline shared by suspension and RX FIFO draining. These deadlines do not
+depend on scheduler ticks and remain usable with interrupts masked. A
+recovery timeout is logged and leaves the bus faulted.
+
 After a mode fault, the driver clears the fault and restores the cached
 master/mode configuration without replaying the interrupted transfer. If
 restoration fails, the bus is marked faulted and rejects subsequent transfers.
