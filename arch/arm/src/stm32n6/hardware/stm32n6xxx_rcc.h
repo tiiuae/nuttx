@@ -42,6 +42,7 @@
 #define STM32_RCC_SR_OFFSET           0x0004  /* Clock status register */
 #define STM32_RCC_CFGR1_OFFSET        0x0020  /* Clock configuration register 1 */
 #define STM32_RCC_CFGR2_OFFSET        0x0024  /* Clock configuration register 2 */
+#define STM32_RCC_HSICFGR_OFFSET      0x0048  /* HSI configuration register (RM0486 14.10.11) */
 #define STM32_RCC_PLL1CFGR1_OFFSET    0x0080  /* PLL1 configuration register 1 */
 #define STM32_RCC_PLL1CFGR3_OFFSET    0x0088  /* PLL1 configuration register 3 */
 #define STM32_RCC_IC1CFGR_OFFSET      0x00c4  /* IC1 configuration register */
@@ -116,6 +117,7 @@
 #define STM32_RCC_SR                  (STM32_RCC_BASE + STM32_RCC_SR_OFFSET)
 #define STM32_RCC_CFGR1               (STM32_RCC_BASE + STM32_RCC_CFGR1_OFFSET)
 #define STM32_RCC_CFGR2               (STM32_RCC_BASE + STM32_RCC_CFGR2_OFFSET)
+#define STM32_RCC_HSICFGR             (STM32_RCC_BASE + STM32_RCC_HSICFGR_OFFSET)
 #define STM32_RCC_PLL1CFGR1           (STM32_RCC_BASE + STM32_RCC_PLL1CFGR1_OFFSET)
 #define STM32_RCC_PLL1CFGR3           (STM32_RCC_BASE + STM32_RCC_PLL1CFGR3_OFFSET)
 #define STM32_RCC_IC1CFGR             (STM32_RCC_BASE + STM32_RCC_IC1CFGR_OFFSET)
@@ -187,6 +189,11 @@
 
 #define RCC_SR_PLL1RDY                (1 << 8)  /* Bit 8:  PLL1 clock ready */
 #define RCC_SR_HSIRDY                 (1 << 3)  /* Bit 3:  HSI clock ready */
+
+/* HSI configuration register (RM0486 section 14.10.11). */
+
+#define RCC_HSICFGR_HSIDIV_SHIFT      (7)
+#define RCC_HSICFGR_HSIDIV_MASK       (0x3u << RCC_HSICFGR_HSIDIV_SHIFT)
 
 /* Clock configuration register 1.  SYSSW = 0b11 selects three IC dividers
  * (IC2 for SYSCLK, IC6 for AHB, IC11 for APB) -- the SVD names this state

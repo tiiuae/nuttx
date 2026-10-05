@@ -91,6 +91,7 @@ struct stm32_spi_priv_s
   uint32_t rcc_reset_mask;
   uint32_t ccipr_mask;
   uint32_t ccipr_source;
+  uint32_t kernel_frequency;
   uint32_t frequency;
   uint8_t bus;
   uint8_t nbits;
@@ -186,7 +187,6 @@ static const struct spi_ops_s g_spi_ops =
     .rcc_reset_mask  = (rstmask),                                        \
     .ccipr_mask      = (selmask),                                        \
     .ccipr_source    = (selval),                                         \
-    .frequency       = STM32_HSI_FREQUENCY / 256u,                        \
     .bus             = (n),                                              \
     .nbits           = 8,                                                \
     .mode            = SPIDEV_MODE0                                       \
@@ -250,6 +250,27 @@ static inline void spi_putreg(struct stm32_spi_priv_s *priv,
                               unsigned int offset, uint32_t value)
 {
   putreg32(value, priv->base + offset);
+}
+
+static int spi_get_kernel_frequency(struct stm32_spi_priv_s *priv,
+                                    uint32_t *frequency)
+{
+  uint32_t divider;
+
+  if ((getreg32(STM32_RCC_CCIPR9) & priv->ccipr_mask) != priv->ccipr_source)
+    {
+      return -EIO;
+    }
+
+  if ((getreg32(STM32_RCC_SR) & RCC_SR_HSIRDY) == 0)
+    {
+      return -ENODEV;
+    }
+
+  divider = (getreg32(STM32_RCC_HSICFGR) & RCC_HSICFGR_HSIDIV_MASK) >>
+            RCC_HSICFGR_HSIDIV_SHIFT;
+  *frequency = STM32_HSI_FREQUENCY >> divider;
+  return *frequency != 0 ? OK : -ERANGE;
 }
 
 static bool spi_dwt_initialize(void)
@@ -482,6 +503,14 @@ static int spi_initialize(struct stm32_spi_priv_s *priv)
     }
 
   modifyreg32(STM32_RCC_CCIPR9, priv->ccipr_mask, priv->ccipr_source);
+  ret = spi_get_kernel_frequency(priv, &priv->kernel_frequency);
+  if (ret < 0)
+    {
+      leave_critical_section(flags);
+      return ret;
+    }
+
+  priv->frequency = priv->kernel_frequency / 256u;
   putreg32(priv->rcc_enable_mask, priv->rcc_enable);
 
   ret = spi_config_pins(priv);
@@ -667,8 +696,10 @@ static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
     SPI_CFG1_MBR_DIV128, SPI_CFG1_MBR_DIV256
   };
   uint32_t actual = 0;
+  uint32_t kernel_frequency;
   uint32_t cfg1;
   unsigned int i;
+  int ret;
 
   if (frequency == 0)
     {
@@ -677,9 +708,18 @@ static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
       return 0;
     }
 
+  ret = spi_get_kernel_frequency(priv, &kernel_frequency);
+  if (ret < 0)
+    {
+      priv->last_error = ret;
+      spierr("ERROR: SPI%u kernel clock verification failed: %d\n",
+             priv->bus, ret);
+      return 0;
+    }
+
   for (i = 0; i < sizeof(dividers) / sizeof(dividers[0]); i++)
     {
-      uint32_t candidate = STM32_HSI_FREQUENCY / dividers[i];
+      uint32_t candidate = kernel_frequency / dividers[i];
 
       if (candidate <= frequency)
         {
@@ -712,6 +752,7 @@ static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
   up_udelay(1);
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
 
+  priv->kernel_frequency = kernel_frequency;
   priv->frequency = actual;
   priv->last_error = 0;
   return actual;
@@ -1107,6 +1148,7 @@ static int spi_transfer(struct stm32_spi_priv_s *priv,
   uint8_t *rx = (uint8_t *)rxbuffer;
   size_t offset = 0;
   size_t wordsize = priv->nbits / 8;
+  uint32_t kernel_frequency;
   bool started;
   int ret = OK;
 
@@ -1125,6 +1167,22 @@ static int spi_transfer(struct stm32_spi_priv_s *priv,
   if (priv->faulted)
     {
       ret = -EIO;
+      goto failed;
+    }
+
+  ret = spi_get_kernel_frequency(priv, &kernel_frequency);
+  if (ret < 0)
+    {
+      spierr("ERROR: SPI%u kernel clock verification failed: %d\n",
+             priv->bus, ret);
+      goto failed;
+    }
+
+  if (kernel_frequency != priv->kernel_frequency)
+    {
+      ret = -EIO;
+      spierr("ERROR: SPI%u kernel clock changed; set frequency again\n",
+             priv->bus);
       goto failed;
     }
 

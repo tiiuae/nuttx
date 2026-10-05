@@ -131,6 +131,12 @@ supports SPI1-SPI6 when enabled in the configuration, modes 0-3, and 8- or
 status callbacks for its attached devices. SPI DMA and interrupt-driven
 transfers are not supported.
 
+SPI5 uses ``hsi_div_ck``, not PCLK2. With the board's 64 MHz HSI, the
+kernel clock is 64, 32, 16, or 8 MHz for HSIDIV /1, /2, /4, or /8
+respectively. The driver reads the active divider rather than assuming
+the reset /1 setting, and returns the actual prescaled SCK from
+``SPI_SETFREQUENCY``.
+
 SPI5 on the Nucleo-N657X0-Q is routed to the Arduino connector and Morpho
 header:
 

@@ -65,6 +65,16 @@ modes 0-3, MSB-first 8- and 16-bit frames, finite transfers up to the
 controller's transfer-size limit, and GPIO chip select through board
 callbacks. The bus must be locked around a transaction when shared.
 
+All instances select ``hsi_div_ck`` through ``RCC_CCIPR9``. The driver
+verifies that selection and HSI readiness, and reads ``RCC_HSICFGR.HSIDIV``
+to derive the kernel frequency from the board's ``STM32_HSI_FREQUENCY``.
+Both the initial /256 SCK and subsequent prescaler selections use this
+divided frequency; transfer deadlines use the resulting actual SCK.
+The driver does not change HSIDIV or other shared boot clocks. Clock
+configuration must remain stable during a transfer. If HSIDIV changes
+between transfers, the next nonempty transfer fails until
+``SPI_SETFREQUENCY`` successfully refreshes the prescaler and cached clock.
+
 FIFO service and completion waits use a DWT cycle-counter deadline based
 on the chunk's wire time plus 100 ms. Recovery uses a separate 100 ms
 deadline shared by suspension and RX FIFO draining. These deadlines do not
