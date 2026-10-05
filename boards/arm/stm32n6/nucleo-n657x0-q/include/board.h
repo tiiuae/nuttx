@@ -74,11 +74,17 @@
 #define GPIO_I2C2_SDA                    GPIO_I2C2_SDA_1
 #define BOARD_I2C2_KERNEL_CLOCK_SOURCE   RCC_CCIPR4_I2C2SEL_HSI_DIV_CK
 #define BOARD_I2C2_KERNEL_CLOCK_HZ       STM32_HSI_FREQUENCY
-/* Rise/fall are intentionally unset pending measurement on the final wiring. */
+#define BOARD_I2C2_APB_CLOCK_HZ           STM32_PCLK1_FREQUENCY
+/* This nominal clock input has not been qualified against device tolerance. */
+#define BOARD_I2C2_CLOCK_TOLERANCE_PPM    0u
+/* Timing initialization rejects these until the final wiring is measured. */
 #define BOARD_I2C2_RISE_TIME_NS          0u
 #define BOARD_I2C2_FALL_TIME_NS          0u
 #define BOARD_I2C2_DIGITAL_FILTER        0u
-#define BOARD_I2C2_ANALOG_FILTER         1
+/* Leave the analog filter disabled until N6 tAF bounds are confirmed. */
+#define BOARD_I2C2_ANALOG_FILTER         0
+#define BOARD_I2C2_ANALOG_FILTER_MIN_NS  0u
+#define BOARD_I2C2_ANALOG_FILTER_MAX_NS  0u
 
 /* RCC CFGR2 bus prescalers */
 
