@@ -39,6 +39,12 @@ extern "C"
 
 struct spi_dev_s *stm32_spibus_initialize(int bus);
 
+/* Read the last configuration/transfer result without clearing it.
+ * Call while owning the bus, before another configuration or transfer.
+ */
+
+int stm32_spi_getlasterror(struct spi_dev_s *dev);
+
 #ifdef CONFIG_STM32_SPI1
 void stm32_spi1select(struct spi_dev_s *dev, uint32_t devid, bool selected);
 uint8_t stm32_spi1status(struct spi_dev_s *dev, uint32_t devid);

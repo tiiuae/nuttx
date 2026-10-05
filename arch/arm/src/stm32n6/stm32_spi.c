@@ -1112,6 +1112,7 @@ static int spi_transfer(struct stm32_spi_priv_s *priv,
 
   if (nwords == 0)
     {
+      priv->last_error = 0;
       return OK;
     }
 
@@ -1242,12 +1243,32 @@ struct spi_dev_s *stm32_spibus_initialize(int bus)
   return &priv->dev;
 }
 
+int stm32_spi_getlasterror(struct spi_dev_s *dev)
+{
+  struct stm32_spi_priv_s *priv = (struct stm32_spi_priv_s *)dev;
+
+  if (priv == NULL)
+    {
+      spierr("ERROR: last-error query called with NULL SPI device\n");
+      return -EINVAL;
+    }
+
+  return priv->last_error;
+}
+
 #else
 
 struct spi_dev_s *stm32_spibus_initialize(int bus)
 {
   spierr("ERROR: no STM32N6 SPI buses are enabled (bus %d)\n", bus);
   return NULL;
+}
+
+int stm32_spi_getlasterror(struct spi_dev_s *dev)
+{
+  (void)dev;
+  spierr("ERROR: no STM32N6 SPI buses are enabled\n");
+  return -ENODEV;
 }
 
 #endif /* SPI bus enabled */

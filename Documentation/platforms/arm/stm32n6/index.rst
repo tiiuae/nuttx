@@ -75,6 +75,15 @@ After a mode fault, the driver clears the fault and restores the cached
 master/mode configuration without replaying the interrupted transfer. If
 restoration fails, the bus is marked faulted and rejects subsequent transfers.
 
+The NuttX exchange and block-transfer methods return no status. STM32N6
+callers can use ``stm32_spi_getlasterror(dev)`` from ``stm32_spi.h`` to read
+the last configuration/transfer result: zero on success or a negative errno
+on failure. Read it after the operation and chip-select cleanup, while
+still owning the bus and before another configuration or transfer. Reading
+does not clear the result; a subsequent successful operation, including a
+zero-length transfer, clears it. ``SPI_STATUS`` remains a device-presence
+status, not a transfer-error channel.
+
 SPI DMA and interrupt-driven transfers are not implemented. Enabling an
 SPI DMA or interrupt option for STM32N6 causes a build-time error. Configure
 ``CONFIG_STM32_SPI`` and the required ``CONFIG_STM32_SPIn`` option to enable
