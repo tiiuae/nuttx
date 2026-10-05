@@ -102,4 +102,14 @@ config NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST
 		PG2) to D12 (MISO, PG1). The BMP280 chip select on D10 (PA3) stays
 		inactive during the test.
 
+config NUCLEO_N657X0_Q_I2C2
+	bool "Initialize I2C2 for board clients and the NSH I2C tool"
+	depends on I2C && STM32_I2C2
+	default n
+	---help---
+		Initialize the board-routed I2C2 bus on PB10/PB11 during bring-up.
+		Register /dev/i2c2 when CONFIG_I2C_DRIVER is enabled. The Nucleo
+		board timing inputs remain intentionally unqualified; I2C2 setup
+		fails closed until board.h contains measured timing values.
+
 endif

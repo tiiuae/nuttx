@@ -59,7 +59,7 @@ int stm32_bringup(void)
 {
 int ret = OK;
 
-UNUSED(ret);
+(void)ret;
 
 #ifdef CONFIG_FS_PROCFS
   /* Mount the procfs file system */
@@ -81,6 +81,14 @@ UNUSED(ret);
       syslog(LOG_ERR, "ERROR: userled_lower_initialize() failed: %d\n", ret);
     }
 
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_I2C2
+  ret = nucleo_i2c_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: I2C2 initialization failed: %d\n", ret);
+    }
 #endif
 
   stm32_bringup_test();

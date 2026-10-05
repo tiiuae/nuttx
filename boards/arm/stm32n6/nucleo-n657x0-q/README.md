@@ -169,6 +169,44 @@ Each test retains its own `CONFIG_NUCLEO_N657X0_Q_*` switch. Failures are
 logged without preventing later tests or normal board bring-up; with no
 tests enabled, the runner does nothing.
 
+## I2C2 NSH configuration
+
+The dedicated `i2c` configuration enables STM32N6 I2C2, the board's opt-in
+PB10/PB11 bring-up, `/dev/i2c2` registration through `CONFIG_I2C_DRIVER`, and
+NuttX's `i2c` NSH tool:
+
+```sh
+./tools/configure.sh nucleo-n657x0-q:i2c
+make -j$(nproc)
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh
+```
+
+**This configuration is not yet runtime-qualified.** The I2C2 rise/fall timing
+inputs in `boards/arm/stm32n6/nucleo-n657x0-q/include/board.h` remain
+unmeasured and zero, so the driver deliberately rejects timing setup.
+Bring-up logs the initialization failure and does not register `/dev/i2c2`
+until qualified board timing values are supplied. Do not substitute guessed
+values.
+
+PB10/PB11 are the configured MCU pin route only; connector mapping, I/O
+voltage, external pull-ups, and bus capacitance have not been qualified here.
+Verify those electrical details against the board documentation and hardware
+before connecting or probing a target.
+
+After timing is qualified and a compatible device is connected, use `i2c bus`
+to check the registered bus. For a device whose datasheet documents a
+register-read transaction, use `i2c get -b 2 -a ADDRESS -r REGISTER`, replacing
+`ADDRESS` and `REGISTER` with that device's documented 7-bit address and
+register. The default combined register/read operation uses a repeated START;
+the `-s` option instead splits it into separate transfers with a STOP between
+them. Use the device's documented transaction requirements.
+
+Avoid broad `i2c dev` scans: the tool's default address probe performs a
+one-byte read, which can have device-specific side effects. Do not issue
+`i2c set` unless the target and register are known and the write is safe.
+Physical SCL/SDA waveforms, one real sensor's identification and repeated
+reads, and 400 kHz operation remain to be verified on hardware.
+
 ## GPIO external interrupts
 
 EXTI lines 0-15 are shared by GPIO port: for example, PA3 and PB3 both use

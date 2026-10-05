@@ -34,6 +34,10 @@ if(CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST)
   list(APPEND SRCS stm32_gpio_exti_test.c)
 endif()
 
+if(CONFIG_NUCLEO_N657X0_Q_I2C2)
+  list(APPEND SRCS stm32_i2c_board.c)
+endif()
+
 if(CONFIG_STM32_SPI5)
   list(APPEND SRCS stm32_spi5_bmp280_test.c)
 endif()

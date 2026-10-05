@@ -37,6 +37,10 @@ ifeq ($(CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST),y)
 CSRCS += stm32_gpio_exti_test.c
 endif
 
+ifeq ($(CONFIG_NUCLEO_N657X0_Q_I2C2),y)
+CSRCS += stm32_i2c_board.c
+endif
+
 ifeq ($(CONFIG_STM32_SPI5),y)
 CSRCS += stm32_spi5_bmp280_test.c
 endif
