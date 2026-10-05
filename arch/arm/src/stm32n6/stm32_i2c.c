@@ -60,6 +60,11 @@
 #  define CONFIG_STM32_I2C_DYNTIMEO_STARTSTOP 1000
 #endif
 
+#define STM32_I2C_BUS_IDLE_TIMEOUT_MS 25
+#define STM32_I2C_STOP_TIMEOUT_MS     20
+#define STM32_I2C_RECOVERY_TIMEOUT_MS  100
+#define STM32_I2C_RECOVERY_PULSE_US   5
+
 enum stm32_i2c_phase_e
 {
   STM32_I2C_PHASE_IDLE = 0,
@@ -115,11 +120,13 @@ struct stm32_i2c_priv_s
   uint32_t kernel_frequency;
   uint32_t configured_frequency;
   bool initialized;
+  bool faulted;
   bool scl_configured;
   bool sda_configured;
   volatile bool transfer_active;
   volatile enum stm32_i2c_phase_e phase;
   volatile int transfer_result;
+  volatile uint32_t transfer_error_status;
   struct i2c_msg_s *messages;
   int message_count;
   int message_index;
@@ -139,13 +146,19 @@ struct stm32_i2c_priv_s
 
 static int stm32_i2c_transfer(FAR struct i2c_master_s *dev,
                               FAR struct i2c_msg_s *msgs, int count);
+#ifdef CONFIG_I2C_RESET
+static int stm32_i2c_reset(FAR struct i2c_master_s *dev);
+#endif
 #ifndef CONFIG_I2C_POLLED
 static int stm32_i2c_interrupt(int irq, void *context, void *arg);
 #endif
 
 static const struct i2c_ops_s g_i2c_ops =
 {
-  .transfer = stm32_i2c_transfer
+  .transfer = stm32_i2c_transfer,
+#ifdef CONFIG_I2C_RESET
+  .reset = stm32_i2c_reset,
+#endif
 };
 
 #if defined(CONFIG_STM32_I2C1)
@@ -161,6 +174,10 @@ static const struct i2c_ops_s g_i2c_ops =
       !defined(BOARD_I2C1_DIGITAL_FILTER) || \
       !defined(BOARD_I2C1_ANALOG_FILTER)
 #    error "I2C1 requires board pin, clock, and timing input definitions"
+#  endif
+#  if (GPIO_I2C1_SCL & GPIO_OPENDRAIN) == 0 || \
+      (GPIO_I2C1_SDA & GPIO_OPENDRAIN) == 0
+#    error "I2C1 recovery requires open-drain SCL and SDA pins"
 #  endif
 #  if BOARD_I2C1_KERNEL_CLOCK_SOURCE != RCC_CCIPR4_I2C1SEL_HSI_DIV_CK
 #    error "STM32N6 I2C1 currently requires hsi_div_ck"
@@ -217,6 +234,10 @@ static struct stm32_i2c_priv_s g_i2c1 =
       !defined(BOARD_I2C2_ANALOG_FILTER)
 #    error "I2C2 requires board pin, clock, and timing input definitions"
 #  endif
+#  if (GPIO_I2C2_SCL & GPIO_OPENDRAIN) == 0 || \
+      (GPIO_I2C2_SDA & GPIO_OPENDRAIN) == 0
+#    error "I2C2 recovery requires open-drain SCL and SDA pins"
+#  endif
 #  if BOARD_I2C2_KERNEL_CLOCK_SOURCE != RCC_CCIPR4_I2C2SEL_HSI_DIV_CK
 #    error "STM32N6 I2C2 currently requires hsi_div_ck"
 #  endif
@@ -272,6 +293,10 @@ static struct stm32_i2c_priv_s g_i2c2 =
       !defined(BOARD_I2C3_ANALOG_FILTER)
 #    error "I2C3 requires board pin, clock, and timing input definitions"
 #  endif
+#  if (GPIO_I2C3_SCL & GPIO_OPENDRAIN) == 0 || \
+      (GPIO_I2C3_SDA & GPIO_OPENDRAIN) == 0
+#    error "I2C3 recovery requires open-drain SCL and SDA pins"
+#  endif
 #  if BOARD_I2C3_KERNEL_CLOCK_SOURCE != RCC_CCIPR4_I2C3SEL_HSI_DIV_CK
 #    error "STM32N6 I2C3 currently requires hsi_div_ck"
 #  endif
@@ -326,6 +351,10 @@ static struct stm32_i2c_priv_s g_i2c3 =
       !defined(BOARD_I2C4_DIGITAL_FILTER) || \
       !defined(BOARD_I2C4_ANALOG_FILTER)
 #    error "I2C4 requires board pin, clock, and timing input definitions"
+#  endif
+#  if (GPIO_I2C4_SCL & GPIO_OPENDRAIN) == 0 || \
+      (GPIO_I2C4_SDA & GPIO_OPENDRAIN) == 0
+#    error "I2C4 recovery requires open-drain SCL and SDA pins"
 #  endif
 #  if BOARD_I2C4_KERNEL_CLOCK_SOURCE != RCC_CCIPR4_I2C4SEL_HSI_DIV_CK
 #    error "STM32N6 I2C4 currently requires hsi_div_ck"
@@ -551,6 +580,72 @@ static void stm32_i2c_clear_flags(struct stm32_i2c_priv_s *priv,
     }
 }
 
+static bool stm32_i2c_deadline_expired(clock_t start, clock_t timeout)
+{
+  return clock_systime_ticks() - start >= timeout;
+}
+
+static clock_t stm32_i2c_timeout_from_ms(uint32_t milliseconds)
+{
+  clock_t timeout = MSEC2TICK(milliseconds);
+
+  return timeout > 0 ? timeout : 1;
+}
+
+static int stm32_i2c_reset_controller(struct stm32_i2c_priv_s *priv,
+                                      uint32_t frequency_hz)
+{
+  const struct stm32_i2c_config_s *config = priv->config;
+  uint32_t kernel_frequency;
+  uint32_t status;
+  int ret;
+
+  modifyreg32(config->base + STM32_I2C_CR1_OFFSET, I2C_CR1_PE, 0);
+  if ((getreg32(config->base + STM32_I2C_CR1_OFFSET) & I2C_CR1_PE) != 0)
+    {
+      return -EIO;
+    }
+
+  putreg32(config->reset_mask, config->rcc_reset_set);
+  if ((getreg32(config->rcc_reset) & config->reset_mask) == 0)
+    {
+      return -EIO;
+    }
+
+  putreg32(config->reset_mask, config->rcc_reset_clear);
+  if ((getreg32(config->rcc_reset) & config->reset_mask) != 0)
+    {
+      return -EIO;
+    }
+
+  ret = stm32_i2c_kernel_frequency(config, &kernel_frequency);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  if (kernel_frequency != priv->kernel_frequency)
+    {
+      return -EIO;
+    }
+
+  priv->configured_frequency = 0;
+  ret = stm32_i2c_set_timing(priv, frequency_hz);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  status = getreg32(config->base + STM32_I2C_ISR_OFFSET);
+  if ((status & I2C_ISR_RXNE) != 0)
+    {
+      (void)getreg8(config->base + STM32_I2C_RXDR_OFFSET);
+    }
+
+  stm32_i2c_clear_flags(priv, status);
+  return OK;
+}
+
 #ifndef CONFIG_I2C_POLLED
 static void stm32_i2c_wake_transfer(struct stm32_i2c_priv_s *priv)
 {
@@ -560,9 +655,11 @@ static void stm32_i2c_wake_transfer(struct stm32_i2c_priv_s *priv)
 #  define stm32_i2c_wake_transfer(p) ((void)(p))
 #endif
 
-static void stm32_i2c_fail_transfer(struct stm32_i2c_priv_s *priv, int result)
+static void stm32_i2c_fail_transfer(struct stm32_i2c_priv_s *priv, int result,
+                                    uint32_t status)
 {
   priv->transfer_result = result;
+  priv->transfer_error_status = status;
   priv->phase = STM32_I2C_PHASE_ERROR;
   priv->transfer_active = false;
   stm32_i2c_set_interrupt_sources(priv, 0);
@@ -611,7 +708,8 @@ static void stm32_i2c_load_message(struct stm32_i2c_priv_s *priv,
   putreg32(cr2, priv->config->base + STM32_I2C_CR2_OFFSET);
 }
 
-static void stm32_i2c_reload_block(struct stm32_i2c_priv_s *priv)
+static void stm32_i2c_reload_block(struct stm32_i2c_priv_s *priv,
+                                   uint32_t status)
 {
   uint8_t block_size;
   uint32_t cr2;
@@ -619,7 +717,7 @@ static void stm32_i2c_reload_block(struct stm32_i2c_priv_s *priv)
 
   if (priv->block_remaining != 0)
     {
-      stm32_i2c_fail_transfer(priv, -EIO);
+      stm32_i2c_fail_transfer(priv, -EIO, status);
       return;
     }
 
@@ -629,7 +727,7 @@ static void stm32_i2c_reload_block(struct stm32_i2c_priv_s *priv)
           (priv->messages[priv->message_index + 1].flags &
            I2C_M_NOSTART) == 0)
         {
-          stm32_i2c_fail_transfer(priv, -EIO);
+          stm32_i2c_fail_transfer(priv, -EIO, status);
           return;
         }
 
@@ -704,7 +802,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
         }
 
       stm32_i2c_clear_flags(priv, isr);
-      stm32_i2c_fail_transfer(priv, result);
+      stm32_i2c_fail_transfer(priv, result, isr);
       return;
     }
 
@@ -717,7 +815,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
           priv->message_remaining == 0 || priv->block_remaining == 0)
         {
           (void)getreg8(priv->config->base + STM32_I2C_RXDR_OFFSET);
-          stm32_i2c_fail_transfer(priv, -EIO);
+          stm32_i2c_fail_transfer(priv, -EIO, isr);
           return;
         }
 
@@ -735,7 +833,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
       if ((msg->flags & I2C_M_READ) != 0 ||
           priv->message_remaining == 0 || priv->block_remaining == 0)
         {
-          stm32_i2c_fail_transfer(priv, -EIO);
+          stm32_i2c_fail_transfer(priv, -EIO, isr);
           return;
         }
 
@@ -747,7 +845,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
 
   if ((isr & I2C_ISR_TCR) != 0)
     {
-      stm32_i2c_reload_block(priv);
+      stm32_i2c_reload_block(priv, isr);
       if (!priv->transfer_active)
         {
           return;
@@ -761,7 +859,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
 
       if (priv->block_remaining != 0 || priv->message_remaining != 0)
         {
-          stm32_i2c_fail_transfer(priv, -EIO);
+          stm32_i2c_fail_transfer(priv, -EIO, isr);
           return;
         }
 
@@ -770,7 +868,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
           if ((priv->messages[priv->message_index + 1].flags &
                I2C_M_NOSTART) != 0)
             {
-              stm32_i2c_fail_transfer(priv, -EIO);
+              stm32_i2c_fail_transfer(priv, -EIO, isr);
               return;
             }
 
@@ -798,7 +896,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
       stm32_i2c_clear_flags(priv, isr & I2C_ISR_STOPF);
       if (priv->phase != STM32_I2C_PHASE_STOPPING)
         {
-          stm32_i2c_fail_transfer(priv, -EIO);
+          stm32_i2c_fail_transfer(priv, -EIO, isr);
           return;
         }
 
@@ -1127,6 +1225,262 @@ static struct stm32_i2c_priv_s *stm32_i2c_get_instance(int port)
     }
 }
 
+#ifdef CONFIG_I2C_RESET
+static int stm32_i2c_wait_scl_high(uint32_t scl_gpio, clock_t start,
+                                   clock_t timeout)
+{
+  while (!stm32_gpioread(scl_gpio))
+    {
+      if (stm32_i2c_deadline_expired(start, timeout))
+        {
+          return -ETIMEDOUT;
+        }
+
+      up_udelay(10);
+    }
+
+  return OK;
+}
+
+static int stm32_i2c_recover_gpio_bus(struct stm32_i2c_priv_s *priv,
+                                      bool *scl_high, bool *sda_high)
+{
+  const struct stm32_i2c_config_s *config = priv->config;
+  uint32_t pin_mask = GPIO_PORT_MASK | GPIO_PIN_MASK;
+  uint32_t gpio_mode = GPIO_OUTPUT | GPIO_OUTPUT_SET | GPIO_OPENDRAIN |
+                       GPIO_SPEED_2MHZ | GPIO_FLOAT;
+  uint32_t scl_gpio = (config->scl_pin & pin_mask) | gpio_mode;
+  uint32_t sda_gpio = (config->sda_pin & pin_mask) | gpio_mode;
+  clock_t start = clock_systime_ticks();
+  clock_t timeout =
+      stm32_i2c_timeout_from_ms(STM32_I2C_RECOVERY_TIMEOUT_MS);
+  bool pulsed = false;
+  unsigned int pulse;
+  int ret;
+
+  *scl_high = false;
+  *sda_high = false;
+
+  ret = stm32_configgpio(scl_gpio);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  ret = stm32_configgpio(sda_gpio);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  /* Open-drain high releases the lines; it never drives them high. */
+
+  stm32_gpiowrite(scl_gpio, true);
+  stm32_gpiowrite(sda_gpio, true);
+  ret = stm32_i2c_wait_scl_high(scl_gpio, start, timeout);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  if (!stm32_gpioread(sda_gpio))
+    {
+      for (pulse = 0; pulse < 9; pulse++)
+        {
+          if (stm32_i2c_deadline_expired(start, timeout))
+            {
+              ret = -ETIMEDOUT;
+              goto out;
+            }
+
+          stm32_gpiowrite(scl_gpio, false);
+          up_udelay(STM32_I2C_RECOVERY_PULSE_US);
+          stm32_gpiowrite(scl_gpio, true);
+
+          ret = stm32_i2c_wait_scl_high(scl_gpio, start, timeout);
+          if (ret < 0)
+            {
+              goto out;
+            }
+
+          up_udelay(STM32_I2C_RECOVERY_PULSE_US);
+          pulsed = true;
+          if (stm32_gpioread(sda_gpio))
+            {
+              break;
+            }
+        }
+
+      if (!stm32_gpioread(sda_gpio))
+        {
+          ret = -EIO;
+          goto out;
+        }
+    }
+
+  if (pulsed)
+    {
+      ret = stm32_i2c_wait_scl_high(scl_gpio, start, timeout);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      stm32_gpiowrite(sda_gpio, false);
+      up_udelay(STM32_I2C_RECOVERY_PULSE_US);
+      ret = stm32_i2c_wait_scl_high(scl_gpio, start, timeout);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      stm32_gpiowrite(sda_gpio, true);
+      up_udelay(STM32_I2C_RECOVERY_PULSE_US);
+      if (!stm32_gpioread(sda_gpio))
+        {
+          ret = -EIO;
+          goto out;
+        }
+    }
+
+  ret = OK;
+
+out:
+  *scl_high = stm32_gpioread(scl_gpio);
+  *sda_high = stm32_gpioread(sda_gpio);
+  return ret;
+}
+
+static int stm32_i2c_reset(FAR struct i2c_master_s *dev)
+{
+  struct stm32_i2c_priv_s *priv = NULL;
+  uint32_t frequency;
+  bool scl_high = false;
+  bool sda_high = false;
+  int recover_ret;
+  int restore_ret;
+  int controller_ret;
+  int ret;
+  int i;
+
+  if (dev == NULL)
+    {
+      return -EINVAL;
+    }
+
+  if (up_interrupt_context() || getprimask() != 0 || getbasepri() != 0)
+    {
+      return -EWOULDBLOCK;
+    }
+
+  for (i = 1; i <= 4; i++)
+    {
+      struct stm32_i2c_priv_s *candidate = stm32_i2c_get_instance(i);
+
+      if (candidate != NULL && dev == &candidate->dev)
+        {
+          priv = candidate;
+          break;
+        }
+    }
+
+  if (priv == NULL)
+    {
+      return -EINVAL;
+    }
+
+  ret = nxmutex_lock(&priv->lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  if (!priv->initialized || priv->references == 0)
+    {
+      ret = -ENODEV;
+      goto out;
+    }
+
+  if (priv->transfer_active)
+    {
+      ret = -EBUSY;
+      goto out;
+    }
+
+  /* CONFIG_I2C_RESET is only safe for single-master board wiring. */
+
+  frequency = priv->configured_frequency != 0 ?
+              priv->configured_frequency : I2C_SPEED_STANDARD;
+  stm32_i2c_set_interrupt_sources(priv, 0);
+#ifndef CONFIG_I2C_POLLED
+  up_disable_irq(priv->config->event_irq);
+  up_disable_irq(priv->config->error_irq);
+#endif
+  modifyreg32(priv->config->base + STM32_I2C_CR1_OFFSET, I2C_CR1_PE, 0);
+
+  recover_ret = stm32_i2c_recover_gpio_bus(priv, &scl_high, &sda_high);
+
+  restore_ret = stm32_configgpio(priv->config->scl_pin);
+  if (restore_ret < 0)
+    {
+      i2cerr("I2C%u failed to restore SCL alternate function: %d\n",
+             priv->config->port, restore_ret);
+    }
+
+  controller_ret = stm32_configgpio(priv->config->sda_pin);
+  if (controller_ret < 0)
+    {
+      i2cerr("I2C%u failed to restore SDA alternate function: %d\n",
+             priv->config->port, controller_ret);
+    }
+  else if (restore_ret == OK)
+    {
+      controller_ret = stm32_i2c_reset_controller(priv, frequency);
+      if (controller_ret < 0)
+        {
+          i2cerr("I2C%u controller restore failed: %d\n",
+                 priv->config->port, controller_ret);
+        }
+    }
+
+  ret = recover_ret;
+  if (ret == OK && restore_ret < 0)
+    {
+      ret = restore_ret;
+    }
+
+  if (ret == OK && controller_ret < 0)
+    {
+      ret = controller_ret;
+    }
+
+  if (ret == OK && (!scl_high || !sda_high))
+    {
+      ret = -EIO;
+    }
+
+  priv->transfer_active = false;
+  priv->messages = NULL;
+  priv->message_count = 0;
+  priv->message_remaining = 0;
+  priv->block_remaining = 0;
+  priv->transfer_result = 0;
+  priv->transfer_error_status = 0;
+  priv->phase = STM32_I2C_PHASE_IDLE;
+  priv->faulted = ret < 0;
+
+  if (ret < 0)
+    {
+      i2cerr("I2C%u bus recovery failed: %d, SCL=%d SDA=%d\n",
+             priv->config->port, ret, scl_high, sda_high);
+    }
+
+out:
+  nxmutex_unlock(&priv->lock);
+  return ret;
+}
+#endif
+
 static int stm32_i2c_timeout_ticks(
     const struct stm32_i2c_message_vector_s *vector,
     uint32_t *timeout_ticks)
@@ -1225,10 +1579,15 @@ static uint32_t stm32_i2c_remaining_ticks(
 
 static int stm32_i2c_wait_idle(struct stm32_i2c_priv_s *priv)
 {
+  clock_t start = clock_systime_ticks();
+  clock_t timeout =
+      stm32_i2c_timeout_from_ms(STM32_I2C_BUS_IDLE_TIMEOUT_MS);
+
   while ((getreg32(priv->config->base + STM32_I2C_ISR_OFFSET) &
           I2C_ISR_BUSY) != 0)
     {
-      if (stm32_i2c_timed_out(priv))
+      if (stm32_i2c_timed_out(priv) ||
+          stm32_i2c_deadline_expired(start, timeout))
         {
           return -ETIMEDOUT;
         }
@@ -1285,6 +1644,7 @@ static void stm32_i2c_begin_transfer(struct stm32_i2c_priv_s *priv,
   priv->message_remaining = (size_t)msgs[0].length;
   priv->block_remaining = 0;
   priv->transfer_result = 0;
+  priv->transfer_error_status = 0;
   priv->transfer_timeout = timeout_ticks;
   priv->transfer_start = clock_systime_ticks();
   priv->transfer_active = true;
@@ -1325,6 +1685,12 @@ static int stm32_i2c_wait_next_message(struct stm32_i2c_priv_s *priv)
 {
   uint32_t delay_us = priv->messages[0].frequency == I2C_SPEED_STANDARD ?
                       5u : 2u;
+  int ret = stm32_i2c_wait_idle(priv);
+
+  if (ret < 0)
+    {
+      return ret;
+    }
 
   up_udelay(delay_us);
   if (stm32_i2c_timed_out(priv))
@@ -1332,7 +1698,7 @@ static int stm32_i2c_wait_next_message(struct stm32_i2c_priv_s *priv)
       return -ETIMEDOUT;
     }
 
-  return stm32_i2c_wait_idle(priv);
+  return OK;
 }
 
 static int stm32_i2c_wait_final_stop(struct stm32_i2c_priv_s *priv)
@@ -1371,12 +1737,13 @@ static void stm32_i2c_quiesce_transfer(struct stm32_i2c_priv_s *priv)
 static int stm32_i2c_cleanup_stop(struct stm32_i2c_priv_s *priv)
 {
   clock_t start;
-  clock_t timeout = MSEC2TICK(20);
+  clock_t timeout =
+      stm32_i2c_timeout_from_ms(STM32_I2C_STOP_TIMEOUT_MS);
   uint32_t status;
 
-  if (timeout <= 0)
+  if (priv->transfer_result == -EAGAIN)
     {
-      timeout = 1;
+      return OK;
     }
 
   status = getreg32(priv->config->base + STM32_I2C_ISR_OFFSET);
@@ -1410,7 +1777,7 @@ static int stm32_i2c_cleanup_stop(struct stm32_i2c_priv_s *priv)
 
       up_udelay(10);
     }
-  while (clock_systime_ticks() - start < timeout);
+  while (!stm32_i2c_deadline_expired(start, timeout));
 
   return -ETIMEDOUT;
 }
@@ -1510,8 +1877,12 @@ static int stm32_i2c_transfer(FAR struct i2c_master_s *dev,
   int i;
   bool started = false;
 
-  if (dev == NULL || up_interrupt_context() ||
-      getprimask() != 0 || getbasepri() != 0)
+  if (dev == NULL)
+    {
+      return -EINVAL;
+    }
+
+  if (up_interrupt_context() || getprimask() != 0 || getbasepri() != 0)
     {
       return -EWOULDBLOCK;
     }
@@ -1556,11 +1927,27 @@ static int stm32_i2c_transfer(FAR struct i2c_master_s *dev,
       goto out;
     }
 
+  if (priv->faulted)
+    {
+      ret = -EIO;
+      goto out;
+    }
+
   priv->transfer_start = clock_systime_ticks();
   priv->transfer_timeout = timeout_ticks;
   ret = stm32_i2c_wait_idle(priv);
   if (ret < 0)
     {
+      if (ret == -ETIMEDOUT)
+        {
+          priv->faulted = true;
+          priv->transfer_error_status =
+              getreg32(priv->config->base + STM32_I2C_ISR_OFFSET);
+          i2cerr("I2C%u bus remained busy before transfer, ISR=%08lx\n",
+                 priv->config->port,
+                 (unsigned long)priv->transfer_error_status);
+        }
+
       goto out;
     }
 
@@ -1591,22 +1978,39 @@ static int stm32_i2c_transfer(FAR struct i2c_master_s *dev,
   stm32_i2c_quiesce_transfer(priv);
   if (ret < 0 && started)
     {
-      int cleanup = stm32_i2c_cleanup_stop(priv);
+      int reset;
+      int cleanup;
 
+      if (priv->transfer_result == 0)
+        {
+          priv->transfer_error_status =
+              getreg32(priv->config->base + STM32_I2C_ISR_OFFSET);
+        }
+
+      cleanup = stm32_i2c_cleanup_stop(priv);
       if (cleanup < 0)
         {
+          priv->faulted = true;
           i2cerr("I2C%u stop cleanup failed after %d: %d\n",
                  priv->config->port, ret, cleanup);
+          reset = stm32_i2c_reset_controller(
+              priv, priv->configured_frequency);
+          if (reset < 0)
+            {
+              priv->faulted = true;
+              i2cerr("I2C%u controller reset failed after %d: %d\n",
+                     priv->config->port, ret, reset);
+            }
         }
     }
 
   stm32_i2c_clear_transfer_status(priv);
-  if (ret < 0)
+  if (ret < 0 && ret != -ENXIO)
     {
-      i2cerr("I2C%u transfer failed: %d, message %d, ISR=%08lx\n",
+      i2cerr("I2C%u transfer failed: %d, message %d, block=%u, ISR=%08lx\n",
              priv->config->port, ret, priv->message_index,
-             (unsigned long)getreg32(priv->config->base +
-                                     STM32_I2C_ISR_OFFSET));
+             priv->block_remaining,
+             (unsigned long)priv->transfer_error_status);
     }
 
   priv->messages = NULL;
@@ -1655,6 +2059,7 @@ struct i2c_master_s *stm32_i2cbus_initialize(int port)
         }
 
       priv->initialized = true;
+      priv->faulted = false;
     }
 
   priv->references++;
