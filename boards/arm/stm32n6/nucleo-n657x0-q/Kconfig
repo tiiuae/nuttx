@@ -78,12 +78,13 @@ config NUCLEO_N657X0_Q_DMA_POLICYTEST
 		and bounded abort behavior.
 
 config NUCLEO_N657X0_Q_GPIO_EXTI_TEST
-	bool "Test GPIO EXTI input on PE12"
+	bool "Test GPIO EXTI with the blue user button"
 	depends on USERLED_LOWER && !ARCH_LEDS
 	---help---
-		Configure PE12 as an active-low EXTI input with a pull-up. The
-		blue user LED turns on while PE12 is connected to ground and off
-		when it is released.
+		Configure the blue user button on PC13 as an active-high EXTI
+		input with a pull-down. Wait up to three seconds for a button
+		press during board bringup. The blue user LED turns on while
+		the button is pressed and off when it is released.
 
 config NUCLEO_N657X0_Q_SPI5_BMP280_TEST
 	bool "Read BMP280 data over SPI5 during bringup"

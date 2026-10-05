@@ -26,11 +26,15 @@
 
 #include <nuttx/config.h>
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdbool.h>
 #include <syslog.h>
 
 #include <nuttx/board.h>
+#include <nuttx/clock.h>
+#include <nuttx/irq.h>
+#include <nuttx/signal.h>
 
 #include <arch/board/board.h>
 
@@ -41,8 +45,18 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+/* The blue user button is active-high on PC13 (EXTI13). */
+
 #define GPIO_EXTI_TEST_PINSET \
-  (GPIO_INPUT | GPIO_PULLUP | GPIO_PORTE | GPIO_PIN12)
+  (GPIO_INPUT | GPIO_PULLDOWN | GPIO_PORTC | GPIO_PIN13)
+
+#define GPIO_EXTI_TEST_TIMEOUT SEC2TICK(3)
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+static volatile bool g_exti_int;
 
 /****************************************************************************
  * Private Functions
@@ -56,8 +70,14 @@ static int stm32_gpio_exti_test_isr(int irq, void *context, void *arg)
   (void)context;
   (void)arg;
 
-  active = !stm32_gpioread(GPIO_PORTE | GPIO_PIN12);
-  board_userled(BOARD_LED_BLUE, active);
+  active = stm32_gpioread(GPIO_EXTI_TEST_PINSET);
+  if (active)
+    {
+      /* Latch the press so release cannot hide it from the polling task. */
+
+      g_exti_int = true;
+    }
+
   return OK;
 }
 
@@ -69,8 +89,6 @@ int stm32_gpio_exti_test_initialize(void)
 {
   int ret;
 
-  board_userled(BOARD_LED_BLUE, false);
-
   ret = stm32_gpiosetevent(GPIO_EXTI_TEST_PINSET, true, true, false,
                            stm32_gpio_exti_test_isr, NULL);
   if (ret < 0)
@@ -78,10 +96,44 @@ int stm32_gpio_exti_test_initialize(void)
       return ret;
     }
 
-  board_userled(BOARD_LED_BLUE,
-                !stm32_gpioread(GPIO_PORTE | GPIO_PIN12));
-
-  syslog(LOG_INFO,
-         "GPIO EXTI test active: ground PE12 for blue LED on\n");
   return OK;
+}
+
+int stm32_gpio_exti_test(void)
+{
+  irqstate_t flags;
+  clock_t start;
+  bool pressed;
+  int ret;
+
+  flags = enter_critical_section();
+  g_exti_int = false;
+  start = clock_systime_ticks();
+  leave_critical_section(flags);
+
+  syslog(LOG_INFO, "Press blue user button within 3 seconds\n");
+
+  for (; ; )
+    {
+      flags = enter_critical_section();
+      pressed = g_exti_int;
+      leave_critical_section(flags);
+
+      if (pressed)
+        {
+          syslog(LOG_INFO, "GPIO EXTI test: button press detected\n");
+          return OK;
+        }
+
+      if (clock_systime_ticks() - start >= GPIO_EXTI_TEST_TIMEOUT)
+        {
+          return -ETIMEDOUT;
+        }
+
+      ret = nxsig_usleep(10000);
+      if (ret < 0 && ret != -EINTR)
+        {
+          return ret;
+        }
+    }
 }

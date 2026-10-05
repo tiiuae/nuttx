@@ -86,6 +86,8 @@
 
 int stm32_bringup(void);
 
+void stm32_bringup_test(void);
+
 #ifdef CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST
 void stm32_timer_clocktest(void);
 #endif
@@ -96,6 +98,7 @@ int stm32_dma_policy_test(void);
 
 #ifdef CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST
 int stm32_gpio_exti_test_initialize(void);
+int stm32_gpio_exti_test(void);
 #endif
 
 #ifdef CONFIG_NUCLEO_N657X0_Q_SPI5_BMP280_TEST

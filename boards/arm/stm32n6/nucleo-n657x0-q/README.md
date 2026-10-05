@@ -160,6 +160,15 @@ Useful script options (both scripts accept `-h`):
 0x34180400  bootloader image; also stage 2 .data/.bss (511 KiB region)
 ```
 
+## Boot-time tests
+
+`stm32_bringup()` calls `stm32_bringup_test()` in `src/stm32_bringup_test.c`
+after registering the user-LED driver. The runner executes enabled GPIO EXTI,
+timer clock, DMA policy, SPI5 loopback, and SPI5 BMP280 tests in that order.
+Each test retains its own `CONFIG_NUCLEO_N657X0_Q_*` switch. Failures are
+logged without preventing later tests or normal board bring-up; with no
+tests enabled, the runner does nothing.
+
 ## GPIO external interrupts
 
 EXTI lines 0-15 are shared by GPIO port: for example, PA3 and PB3 both use
@@ -167,21 +176,25 @@ EXTI3, so only one port can own a given line. The first GPIO port configured
 for an EXTI line retains that line until reboot; a request for the same line
 from another port fails with `-EBUSY`.
 
-### PE12-to-blue-LED hardware test
+### Blue user button EXTI hardware test
 
-Build the `gpio-exti` configuration and load it in DEV boot mode:
+Build the `nsh-test` configuration and load it in DEV boot mode:
 
 ```sh
-./tools/configure.sh nucleo-n657x0-q:gpio-exti
+./tools/configure.sh nucleo-n657x0-q:nsh-test
 make -j$(nproc)
 ./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh
 ```
 
-The test configures PE12 as an active-low input with an internal pull-up.
-Connect PE12 to a board GND pin: the blue user LED (LD7) turns on; disconnect
-it and the LED turns off. This configuration uses the user-LED lower half
-instead of `CONFIG_ARCH_LEDS`, and the test starts automatically during board
-bring-up.
+With `CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST`, the test configures the blue
+user button on PC13 (EXTI13) as an active-high input with an internal
+pull-down. During board bring-up, press the button within three seconds of
+the console prompt. A detected press is logged; otherwise the test returns
+`-ETIMEDOUT` and bring-up logs a warning and continues. Brief presses are
+latched until the polling task observes them. The blue user LED (LD7) turns
+on while the button is pressed and off when it is released, including after
+the wait completes. This configuration uses the user-LED lower half instead
+of `CONFIG_ARCH_LEDS`; no external jumper is needed.
 
 ## Troubleshooting
 

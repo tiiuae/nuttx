@@ -66,53 +66,10 @@ int stm32_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: userled_lower_initialize() failed: %d\n", ret);
     }
-#ifdef CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST
-  else
-    {
-      ret = stm32_gpio_exti_test_initialize();
-      if (ret < 0)
-        {
-          syslog(LOG_ERR, "ERROR: GPIO EXTI test setup failed: %d\n", ret);
-        }
-    }
-#endif
+
 #endif
 
-#if defined(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
-  syslog(LOG_INFO, "=== TIMER TEST BEGIN ===\n");
-  stm32_timer_clocktest();
-  syslog(LOG_INFO, "=== TIMER TEST END ===\n");
-#endif
-
-#if defined(CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST)
-  syslog(LOG_INFO, "=== DMA POLICY TEST BEGIN ===\n");
-  if (stm32_dma_policy_test() < 0)
-    {
-      syslog(LOG_ERR, "ERROR: DMA access policy test failed\n");
-    }
-
-  syslog(LOG_INFO, "=== DMA POLICY TEST END ===\n");
-#endif
-
-#if defined(CONFIG_NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST)
-  syslog(LOG_INFO, "=== SPI5 LOOPBACK TEST BEGIN ===\n");
-  if (stm32_spi5_loopback_test() < 0)
-    {
-      syslog(LOG_ERR, "ERROR: SPI5 loopback test failed\n");
-    }
-
-  syslog(LOG_INFO, "=== SPI5 LOOPBACK TEST END ===\n");
-#endif
-
-#if defined(CONFIG_NUCLEO_N657X0_Q_SPI5_BMP280_TEST)
-  syslog(LOG_INFO, "=== SPI5 BMP280 TEST BEGIN ===\n");
-  if (stm32_spi5_bmp280_test() < 0)
-    {
-      syslog(LOG_ERR, "ERROR: SPI5 BMP280 test failed\n");
-    }
-
-  syslog(LOG_INFO, "=== SPI5 BMP280 TEST END ===\n");
-#endif
+  stm32_bringup_test();
 
   return OK;
 }

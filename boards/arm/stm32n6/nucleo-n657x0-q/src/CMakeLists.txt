@@ -20,7 +20,7 @@
 #
 # ##############################################################################
 
-set(SRCS stm32_boot.c stm32_bringup.c)
+set(SRCS stm32_boot.c stm32_bringup.c stm32_bringup_test.c)
 
 if(CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST)
   list(APPEND SRCS stm32_timer_test.c)
