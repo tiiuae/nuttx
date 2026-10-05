@@ -41,14 +41,16 @@ Features
    This is the initial NuttX port for the STM32N6 family. The supported
    peripheral set is intentionally minimal: USART1 (the ST-LINK VCOM
    console), GPIO, RCC, PWR, the SysTick scheduler timer, the STM32
-   TIM1-TIM18 driver, partial GPDMA1/HPDMA1 support, and the three
-   on-board user LEDs. The timer driver is not yet connected to board or
-   PX4 PWM/DShot clients, and DMA support is not yet validated for general
-   peripheral RX/TX. Other on-chip peripherals and on-board features (XSPI
-   flash boot, networking, user button, USB, MIPI, NPU, etc) are not yet
-   wired up. The CPU is currently clocked at 200 MHz from PLL1. Raising it
-   to the standard 600 / 800 MHz operating points is deferred to a
-   follow-up change.
+   TIM1-TIM18 driver, polling SPI master support, partial GPDMA1/HPDMA1
+   support, and the three on-board user LEDs. SPI DMA and interrupt-driven
+   transfers are not implemented. The timer driver is not yet connected to
+   board or PX4 PWM/DShot clients, and DMA support is not yet validated for
+   general peripheral RX/TX. Other on-chip peripherals and on-board features
+   (networking, a general-purpose user-button driver, USB, MIPI, NPU, etc)
+   are not yet wired up. Standalone XSPI flash boot is available through
+   the board's SRAM2 bootloader and XIP application configurations. The CPU
+   is currently clocked at 200 MHz from PLL1. Raising it to the standard
+   600 / 800 MHz operating points is deferred to a follow-up change.
 
 DMA Support
 ===========
@@ -95,8 +97,9 @@ buffers require an explicit ownership protocol between the CPU and DMA.
 Peripheral RX/TX on both controllers, error injection, denied-RIFSC
 diagnostics, cache coherency under active D-cache, reset/restart, and
 memory/security boundary behavior still require target-level validation.
-This support is not yet sufficient to enable additional PX4 SPI, I2C, ADC,
-or timer/DShot clients.
+The SPI polling path is currently exercised by board diagnostics; additional
+PX4 SPI, I2C, ADC, and timer/DShot clients still need target integration and
+validation.
 
 Timer Support
 =============
@@ -118,6 +121,46 @@ enabled timer's input clock frequency with the corresponding
 diagnostic that starts TIM1 and TIM5 and logs their counters. It is not a
 PWM or DShot test, and these timers are not yet wired up to general board
 or PX4 timer clients.
+
+SPI Support and SPI5 Tests
+==========================
+
+The STM32N6 SPI driver provides polling full-duplex master transfers. It
+supports SPI1-SPI6 when enabled in the configuration, modes 0-3, and 8- or
+16-bit MSB-first frames. Each enabled bus uses board-provided select and
+status callbacks for its attached devices. SPI DMA and interrupt-driven
+transfers are not supported.
+
+SPI5 on the Nucleo-N657X0-Q is routed to the Arduino connector and Morpho
+header:
+
+===== ================== ====== ==============================
+MCU   SPI5 signal         AF     Connector
+===== ================== ====== ==============================
+PE15  SCK                 AF5    Arduino D13 / Morpho CN15-11
+PG1   MISO                AF5    Arduino D12 / Morpho CN15-13
+PG2   MOSI                AF5    Arduino D11 / Morpho CN15-15
+PA3   BMP280 chip select  --     Arduino D10
+===== ================== ====== ==============================
+
+The BMP280 chip select is active low and is controlled by the board's SPI5
+select callback; hardware NSS is not used. Enable ``CONFIG_STM32_SPI5`` to
+build the bus. The board provides two mutually exclusive bring-up tests:
+
+* ``CONFIG_NUCLEO_N657X0_Q_SPI5_BMP280_TEST`` reads the BMP280 chip ID,
+  starts pressure and temperature measurements at 1 MHz, and logs the raw
+  ADC values. It is enabled in ``nsh-test``.
+* ``CONFIG_NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST`` transmits a fixed byte
+  pattern at 250 kHz and logs any received-byte mismatches. To run it,
+  disable the BMP280 test and enable loopback in ``make menuconfig``.
+  Disconnect the BMP280 SDO from MISO, then jumper Arduino D11/MOSI (PG2)
+  to D12/MISO (PG1). Leave D10/CS high so the sensor does not drive MISO.
+  Compare the logged RX bytes with the transmitted pattern; the loopback
+  test requires ``CONFIG_SPI_EXCHANGE``.
+
+Both tests run during board bring-up. To enable or change an option for a
+configuration, run ``make menuconfig`` from the NuttX build directory and
+select the option under the Nucleo-N657X0-Q board settings.
 
 Buttons and LEDs
 ================
@@ -158,26 +201,32 @@ ownership constraint also applies after the line's callback or event is
 unregistered.
 
 The ``nucleo-n657x0-q:nsh-test`` config contains a hardware test for this
-API. It configures PE12 as an active-low input with an internal pull-up and
-registers callbacks for both edges. Connect PE12 to a board GND pin to turn on
-the blue user LED (LD7); release it to turn the LED off. The test initializes
-during board bring-up and requires the user-LED lower half
-(``CONFIG_ARCH_LEDS`` unset).
+API. It configures the on-board blue user button on PC13 as an active-high
+input with an internal pull-down and registers callbacks for both edges.
+Press the button within three seconds of the bring-up prompt; the test logs
+whether the press was detected. It runs during board bring-up and requires
+the user-LED lower half (``CONFIG_ARCH_LEDS`` unset).
 
 Pin Mapping
 ===========
 
-The regular configurations map only the pins required for the serial
-console. The ``nsh-test`` test configuration additionally assigns PE12.
+The regular configurations map the pins required for the serial console.
+Configurations enabling SPI5 also assign PE15, PG1, and PG2 to SPI
+alternate functions and PA3 to BMP280 chip select. The ``nsh-test``
+configuration additionally configures the on-board button input on PC13.
 Other GPIOs retain their reset state and are free for application use.
 
-===== ============= ======= =================================
-Pin   Signal        AF      Notes
-===== ============= ======= =================================
-PE5   USART1_TX     AF7     Routed to ST-LINK VCOM (host RX)
-PE6   USART1_RX     AF7     Routed to ST-LINK VCOM (host TX)
-PE12  GPIO input    --      ``nsh-test`` test input; active low
-===== ============= ======= =================================
+===== ================== ======= =================================
+Pin   Signal              AF      Notes
+===== ================== ======= =================================
+PE5   USART1_TX           AF7     Routed to ST-LINK VCOM (host RX)
+PE6   USART1_RX           AF7     Routed to ST-LINK VCOM (host TX)
+PC13  GPIO input          --      On-board blue user button; active high
+PE15  SPI5_SCK            AF5     Arduino D13 / Morpho CN15-11
+PG1   SPI5_MISO           AF5     Arduino D12 / Morpho CN15-13
+PG2   SPI5_MOSI           AF5     Arduino D11 / Morpho CN15-15
+PA3   SPI5 chip select    --      Arduino D10; active low for BMP280
+===== ================== ======= =================================
 
 Power Supply
 ============
@@ -216,23 +265,67 @@ The toolchain selection can be changed via ``make menuconfig``.
 Flashing
 ========
 
-The board boots in development mode: the on-board ST-LINK loads the
-image directly into AXISRAM at ``0x34000400`` (the first 1 KiB is
-reserved for the boot ROM header) and starts execution there. Signed
-XSPI flash boot via a first-stage bootloader is not yet supported.
-
-Use STM32CubeProgrammer's CLI to load and run ``nuttx.bin``:
+The board supports quick development loads into AXISRAM and standalone
+execution from the external XSPI NOR flash. Programming uses the on-board
+ST-LINK. Set ``STM32_PRG_PATH`` to the STM32CubeProgrammer ``bin`` directory;
+the flash scripts use it to locate ``STM32_Programmer_CLI`` and the external
+loader, while the XSPI image post-build step uses it to locate the signing
+tool:
 
 .. code:: console
 
-   $ STM32_Programmer_CLI -c port=SWD mode=UR -halt              \
-         -d nuttx.bin 0x34000400                                 \
-         -w32 0xE000ED08 0x34000400                              \
-         -g 0x34000400
+   $ export STM32_PRG_PATH=$HOME/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
 
-The ``-w32`` write retargets VTOR to the SRAM image before the ``-g``
-jump, so the Cortex-M55 starts from the NuttX vector table rather
-than the boot ROM's.
+Quick SRAM development load
+---------------------------
+
+Set the boot switches to **DEV boot mode**, configure and build a SRAM
+configuration (for example ``nsh-test``), then load and run it:
+
+.. code:: console
+
+   $ make distclean
+   $ ./tools/configure.sh nucleo-n657x0-q:nsh-test
+   $ make -j$(nproc)
+   $ ./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh
+
+This downloads the image to AXISRAM at ``0x34000400`` and starts it. The
+contents are not retained across power cycles.
+
+Standalone XSPI flash boot
+--------------------------
+
+The STM32N657X0 has no internal flash. Standalone boot therefore uses a
+two-stage image in the external XSPI NOR: an SRAM2 bootloader at
+``0x70000000`` configures XSPI2, then transfers control to the XIP
+application at ``0x70100400``. Both images require STM32 v2.3 boot headers.
+Build and program both while the board is in **DEV boot mode**.
+
+Build and flash the bootloader:
+
+.. code:: console
+
+   $ make distclean
+   $ ./tools/configure.sh nucleo-n657x0-q:bl
+   $ make -j$(nproc)
+   $ ./boards/arm/stm32n6/nucleo-n657x0-q/tools/xspiflash.sh \
+         -i bl-flash.bin -a 0x70000000
+
+Build and flash the XIP application:
+
+.. code:: console
+
+   $ make distclean
+   $ ./tools/configure.sh nucleo-n657x0-q:nsh-xspi
+   $ make -j$(nproc)
+   $ ./boards/arm/stm32n6/nucleo-n657x0-q/tools/xspiflash.sh \
+         -i nuttx-flash.bin -a 0x70100000
+
+After programming, switch to **boot-from-flash mode** and reset or
+power-cycle the board. The bootloader remains installed when updating the
+application; only re-flash it when the bootloader itself changes. See the
+board ``README.md`` for boot-switch details, prerequisites, and
+troubleshooting.
 
 Configurations
 ==============

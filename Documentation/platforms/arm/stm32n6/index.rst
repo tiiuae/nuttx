@@ -32,6 +32,7 @@ Peripheral  Support  Notes
 GPIO        Yes      GPIO-backed EXTI lines 0-15 via ``stm32_gpiosetevent()``
 PWR         Yes      Partial.
 RCC         Yes      PLL1 clock tree.
+SPI         Partial  SPI1-SPI6 polling master; board-owned chip select
 USART       Yes      USART1 only.
 
 ADC         No
@@ -50,16 +51,24 @@ RNG         No
 RTC         No
 SAI         No
 SDMMC       No
-SPI         No
 TIM         Partial  TIM1-TIM18 driver; no board PWM/DShot client yet
 USB         No
 XSPI        No
 ==========  =======  ============================================================
 
-References
-==========
+SPI Support
+===========
 
-[RM0486] STMicroelectronics, STM32N647/657xx Arm®-based 32-bit MCUs
+The STM32N6 SPI driver in ``arch/arm/src/stm32n6/stm32_spi.c`` provides
+polling, full-duplex master transfers for SPI1 through SPI6. It supports
+modes 0-3, MSB-first 8- and 16-bit frames, finite transfers up to the
+controller's transfer-size limit, and GPIO chip select through board
+callbacks. The bus must be locked around a transaction when shared.
+
+SPI DMA and interrupt-driven transfers are not implemented. Enabling an
+SPI DMA or interrupt option for STM32N6 causes a build-time error. Configure
+``CONFIG_STM32_SPI`` and the required ``CONFIG_STM32_SPIn`` option to enable
+a bus; buses not selected in the configuration remain disabled.
 
 Supported Boards
 ================
@@ -69,3 +78,8 @@ Supported Boards
    :maxdepth: 1
 
    boards/*/*
+
+References
+==========
+
+[RM0486] STMicroelectronics, STM32N647/657xx Arm®-based 32-bit MCUs
