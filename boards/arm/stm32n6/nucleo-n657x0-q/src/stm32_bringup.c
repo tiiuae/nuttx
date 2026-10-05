@@ -94,5 +94,25 @@ int stm32_bringup(void)
   syslog(LOG_INFO, "=== DMA POLICY TEST END ===\n");
 #endif
 
+#if defined(CONFIG_NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST)
+  syslog(LOG_INFO, "=== SPI5 LOOPBACK TEST BEGIN ===\n");
+  if (stm32_spi5_loopback_test() < 0)
+    {
+      syslog(LOG_ERR, "ERROR: SPI5 loopback test failed\n");
+    }
+
+  syslog(LOG_INFO, "=== SPI5 LOOPBACK TEST END ===\n");
+#endif
+
+#if defined(CONFIG_NUCLEO_N657X0_Q_SPI5_BMP280_TEST)
+  syslog(LOG_INFO, "=== SPI5 BMP280 TEST BEGIN ===\n");
+  if (stm32_spi5_bmp280_test() < 0)
+    {
+      syslog(LOG_ERR, "ERROR: SPI5 BMP280 test failed\n");
+    }
+
+  syslog(LOG_INFO, "=== SPI5 BMP280 TEST END ===\n");
+#endif
+
   return OK;
 }

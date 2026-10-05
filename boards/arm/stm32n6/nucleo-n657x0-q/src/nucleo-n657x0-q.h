@@ -98,5 +98,13 @@ int stm32_dma_policy_test(void);
 int stm32_gpio_exti_test_initialize(void);
 #endif
 
+#ifdef CONFIG_NUCLEO_N657X0_Q_SPI5_BMP280_TEST
+int stm32_spi5_bmp280_test(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST
+int stm32_spi5_loopback_test(void);
+#endif
+
 #endif /* __ASSEMBLY__ */
 #endif /* __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H */

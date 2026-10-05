@@ -85,4 +85,20 @@ config NUCLEO_N657X0_Q_GPIO_EXTI_TEST
 		blue user LED turns on while PE12 is connected to ground and off
 		when it is released.
 
+config NUCLEO_N657X0_Q_SPI5_BMP280_TEST
+	bool "Read BMP280 data over SPI5 during bringup"
+	depends on STM32_SPI5
+	---help---
+		Read the BMP280 chip ID and raw pressure and temperature ADC values
+		over SPI5 using Arduino D10 (PA3) as chip select.
+
+config NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST
+	bool "Test SPI5 MOSI-to-MISO loopback during bringup"
+	depends on STM32_SPI5 && SPI_EXCHANGE && !NUCLEO_N657X0_Q_SPI5_BMP280_TEST
+	---help---
+		Send a test pattern over SPI5 and verify the received bytes match.
+		Disconnect the BMP280 SDO from MISO, then jumper Arduino D11 (MOSI,
+		PG2) to D12 (MISO, PG1). The BMP280 chip select on D10 (PA3) stays
+		inactive during the test.
+
 endif
