@@ -309,7 +309,7 @@ int se05x_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
       return -EEXIST;
     }
 
-  priv = (FAR struct se05x_dev_s *)kmm_zalloc(sizeof(*priv));
+  priv = (FAR struct se05x_dev_s *)se05x_zalloc(config, sizeof(*priv));
   if (priv == NULL)
     {
       crypterr("ERROR: Failed to allocate instance\n");
@@ -382,7 +382,7 @@ errout_with_alloc_and_open:
 
 errout_with_alloc:
   explicit_bzero(priv, sizeof(*priv));
-  kmm_free(priv);
+  se05x_free(config, priv);
 
 errout:
   return ret;

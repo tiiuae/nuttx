@@ -164,6 +164,8 @@ struct se05x_config_s
 
   CODE bool (*set_enable_pin)(bool state);
   FAR const struct se05x_scp03_keys_s *scp03;
+  CODE FAR void *(*zalloc)(size_t size);
+  CODE void (*free)(FAR void *mem);
 };
 
 struct i2c_master_s;

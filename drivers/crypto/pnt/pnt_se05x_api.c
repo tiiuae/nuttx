@@ -152,7 +152,7 @@ static int pnt_session_open(FAR struct se05x_dev_s *se05x, bool ssd)
 {
   int ret;
 
-  se05x->pnt = kmm_zalloc(sizeof(struct pnt_handle));
+  se05x->pnt = se05x_zalloc(se05x->config, sizeof(struct pnt_handle));
 
   if (se05x->pnt == NULL)
     {
@@ -192,7 +192,7 @@ errout_with_alloc:
     }
 
   explicit_bzero(se05x->pnt, sizeof(struct pnt_handle));
-  kmm_free(se05x->pnt);
+  se05x_free(se05x->config, se05x->pnt);
   se05x->pnt = NULL;
 
 errout:
@@ -454,7 +454,7 @@ void pnt_se05x_close(FAR struct se05x_dev_s *se05x)
   Se05x_API_SessionClose(&(se05x->pnt->session));
   (void)set_enable_pin(se05x, FALSE);
   explicit_bzero(se05x->pnt, sizeof(struct pnt_handle));
-  kmm_free(se05x->pnt);
+  se05x_free(se05x->config, se05x->pnt);
   se05x->pnt = NULL;
 }
 

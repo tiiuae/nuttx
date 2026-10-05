@@ -30,6 +30,7 @@
  ****************************************************************************/
 
 #include <nuttx/crypto/se05x.h>
+#include <nuttx/kmalloc.h>
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <stdint.h>
@@ -55,5 +56,28 @@ struct se05x_dev_s
   unsigned long arg;
   int result;
 };
+
+/****************************************************************************
+ * Inline Functions
+ ****************************************************************************/
+
+static inline FAR void *se05x_zalloc(FAR const struct se05x_config_s *config,
+                                     size_t size)
+{
+  return config->zalloc != NULL ? config->zalloc(size) : kmm_zalloc(size);
+}
+
+static inline void se05x_free(FAR const struct se05x_config_s *config,
+                              FAR void *mem)
+{
+  if (config->free != NULL)
+    {
+      config->free(mem);
+    }
+  else
+    {
+      kmm_free(mem);
+    }
+}
 
 #endif /* __INCLUDE_NUTTX_DRIVERS_CRYPTO_SE05X_INTERNAL_H_ */
