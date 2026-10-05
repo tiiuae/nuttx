@@ -886,11 +886,25 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
   struct spi_deadline_s deadline;
   uint32_t cr1;
   uint32_t status;
+  int ret;
 
   cr1 = spi_getreg(priv, STM32_SPI_CR1_OFFSET);
   if ((cr1 & SPI_CR1_SPE) == 0)
     {
       spi_putreg(priv, STM32_SPI_IFCR_OFFSET, SPI_IFCR_CLEARABLE);
+
+      /* MODF clears MASTER as well as SPE (RM0486 section 67.5.2). */
+
+      ret = spi_apply_mode(priv);
+      if (ret < 0 ||
+          (spi_getreg(priv, STM32_SPI_CFG2_OFFSET) & SPI_CFG2_MASTER) == 0 ||
+          (spi_getreg(priv, STM32_SPI_SR_OFFSET) & SPI_SR_MODF) != 0)
+        {
+          priv->faulted = true;
+          spierr("ERROR: SPI%u master configuration recovery failed: %d\n",
+                 priv->bus, ret < 0 ? ret : -EIO);
+        }
+
       return;
     }
 

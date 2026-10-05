@@ -65,6 +65,10 @@ modes 0-3, MSB-first 8- and 16-bit frames, finite transfers up to the
 controller's transfer-size limit, and GPIO chip select through board
 callbacks. The bus must be locked around a transaction when shared.
 
+After a mode fault, the driver clears the fault and restores the cached
+master/mode configuration without replaying the interrupted transfer. If
+restoration fails, the bus is marked faulted and rejects subsequent transfers.
+
 SPI DMA and interrupt-driven transfers are not implemented. Enabling an
 SPI DMA or interrupt option for STM32N6 causes a build-time error. Configure
 ``CONFIG_STM32_SPI`` and the required ``CONFIG_STM32_SPIn`` option to enable
