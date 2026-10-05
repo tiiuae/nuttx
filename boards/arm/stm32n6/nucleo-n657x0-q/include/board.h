@@ -66,6 +66,20 @@
 #define STM32_PCLK1_FREQUENCY   STM32_HCLK_FREQUENCY
 #define STM32_PCLK2_FREQUENCY   STM32_HCLK_FREQUENCY
 
+/* The opt-in I2C2 route follows the Nucleo BSP pin assignment.  Bus use
+ * remains disabled by default until the attached wiring is qualified.
+ */
+
+#define GPIO_I2C2_SCL                    GPIO_I2C2_SCL_1
+#define GPIO_I2C2_SDA                    GPIO_I2C2_SDA_1
+#define BOARD_I2C2_KERNEL_CLOCK_SOURCE   RCC_CCIPR4_I2C2SEL_HSI_DIV_CK
+#define BOARD_I2C2_KERNEL_CLOCK_HZ       STM32_HSI_FREQUENCY
+/* Rise/fall are intentionally unset pending measurement on the final wiring. */
+#define BOARD_I2C2_RISE_TIME_NS          0u
+#define BOARD_I2C2_FALL_TIME_NS          0u
+#define BOARD_I2C2_DIGITAL_FILTER        0u
+#define BOARD_I2C2_ANALOG_FILTER         1
+
 /* RCC CFGR2 bus prescalers */
 
 #define STM32_RCC_CFGR2_HPRE    RCC_CFGR2_HPRE_SYSCLKd2
