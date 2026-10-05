@@ -169,7 +169,7 @@ void stm32_timer_clocktest(void)
 
   reg = getreg32(STM32_TIM1_CNT);
   reg2 = getreg32(STM32_TIM5_CNT);
-  syslog(LOG_INFO, "After 3s:");
+  syslog(LOG_INFO, "After 10ms:");
   syslog(LOG_INFO, "TIM1 CNT: %lu", reg);
   syslog(LOG_INFO, "TIM5 CNT: %lu", reg2);
   syslog(LOG_INFO, "DWT cycles: %lu",
