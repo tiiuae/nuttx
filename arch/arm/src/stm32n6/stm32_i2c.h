@@ -1,5 +1,5 @@
 /****************************************************************************
- * arch/arm/src/stm32n6/stm32.h
+ * arch/arm/src/stm32n6/stm32_i2c.h
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,30 +20,25 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_STM32N6_STM32_H
-#define __ARCH_ARM_SRC_STM32N6_STM32_H
-
-/****************************************************************************
- * Included Files
- ****************************************************************************/
+#ifndef __ARCH_ARM_SRC_STM32N6_STM32_I2C_H
+#define __ARCH_ARM_SRC_STM32N6_STM32_I2C_H
 
 #include <nuttx/config.h>
-#include <sys/types.h>
-#include <stdint.h>
-#include <stdbool.h>
 
-#include "arm_internal.h"
+#include "hardware/stm32n6xxx_i2c.h"
 
-/* Peripherals **************************************************************/
+struct i2c_master_s;
 
-#include "chip.h"
-#include "stm32_gpio.h"
-#include "stm32_lowputc.h"
-#include "stm32_pwr.h"
-#include "stm32_rcc.h"
-#include "stm32_i2c.h"
-#include "stm32_spi.h"
-#include "stm32_tim.h"
-#include "stm32_uart.h"
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-#endif /* __ARCH_ARM_SRC_STM32N6_STM32_H */
+struct i2c_master_s *stm32_i2cbus_initialize(int port);
+int stm32_i2cbus_uninitialize(struct i2c_master_s *dev);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __ARCH_ARM_SRC_STM32N6_STM32_I2C_H */

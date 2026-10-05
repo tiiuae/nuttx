@@ -50,6 +50,7 @@
 #define STM32_RCC_IC3CFGR_OFFSET      0x00cc  /* IC3 configuration register */
 #define STM32_RCC_IC6CFGR_OFFSET      0x00d8  /* IC6 configuration register */
 #define STM32_RCC_IC11CFGR_OFFSET     0x00ec  /* IC11 configuration register */
+#define STM32_RCC_CCIPR4_OFFSET       0x0150  /* Kernel clock select register 4 */
 #define STM32_RCC_CCIPR9_OFFSET       0x0164  /* Peripheral kernel clock select register 9 */
 #define STM32_RCC_CCIPR13_OFFSET      0x0174  /* Peripheral kernel clock select register 13 */
 #define STM32_RCC_AHB1RSTR_OFFSET     0x0210  /* AHB1 peripheral reset register */
@@ -125,6 +126,7 @@
 #define STM32_RCC_IC3CFGR             (STM32_RCC_BASE + STM32_RCC_IC3CFGR_OFFSET)
 #define STM32_RCC_IC6CFGR             (STM32_RCC_BASE + STM32_RCC_IC6CFGR_OFFSET)
 #define STM32_RCC_IC11CFGR            (STM32_RCC_BASE + STM32_RCC_IC11CFGR_OFFSET)
+#define STM32_RCC_CCIPR4              (STM32_RCC_BASE + STM32_RCC_CCIPR4_OFFSET)
 #define STM32_RCC_CCIPR9              (STM32_RCC_BASE + STM32_RCC_CCIPR9_OFFSET)
 #define STM32_RCC_CCIPR13             (STM32_RCC_BASE + STM32_RCC_CCIPR13_OFFSET)
 #define STM32_RCC_AHB1RSTR            (STM32_RCC_BASE + STM32_RCC_AHB1RSTR_OFFSET)
@@ -194,6 +196,45 @@
 
 #define RCC_HSICFGR_HSIDIV_SHIFT      (7)
 #define RCC_HSICFGR_HSIDIV_MASK       (0x3u << RCC_HSICFGR_HSIDIV_SHIFT)
+#define RCC_HSICFGR_HSIDIV_DIV1       (0x0u << RCC_HSICFGR_HSIDIV_SHIFT)
+#define RCC_HSICFGR_HSIDIV_DIV2       (0x1u << RCC_HSICFGR_HSIDIV_SHIFT)
+#define RCC_HSICFGR_HSIDIV_DIV4       (0x2u << RCC_HSICFGR_HSIDIV_SHIFT)
+#define RCC_HSICFGR_HSIDIV_DIV8       (0x3u << RCC_HSICFGR_HSIDIV_SHIFT)
+
+/* RCC clock configuration register 4 (RM0486 section 14.10.53). */
+
+#define RCC_CCIPR4_I2C1SEL_SHIFT      (0)
+#define RCC_CCIPR4_I2C1SEL_MASK       (0x7u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C1SEL_PCLK1      (0x0u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C1SEL_PER_CK     (0x1u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C1SEL_IC10_CK    (0x2u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C1SEL_IC15_CK    (0x3u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C1SEL_MSI_CK     (0x4u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C1SEL_HSI_DIV_CK (0x5u << RCC_CCIPR4_I2C1SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_SHIFT      (4)
+#define RCC_CCIPR4_I2C2SEL_MASK       (0x7u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_PCLK1      (0x0u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_PER_CK     (0x1u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_IC10_CK    (0x2u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_IC15_CK    (0x3u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_MSI_CK     (0x4u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C2SEL_HSI_DIV_CK (0x5u << RCC_CCIPR4_I2C2SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_SHIFT      (8)
+#define RCC_CCIPR4_I2C3SEL_MASK       (0x7u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_PCLK1      (0x0u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_PER_CK     (0x1u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_IC10_CK    (0x2u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_IC15_CK    (0x3u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_MSI_CK     (0x4u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C3SEL_HSI_DIV_CK (0x5u << RCC_CCIPR4_I2C3SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_SHIFT      (12)
+#define RCC_CCIPR4_I2C4SEL_MASK       (0x7u << RCC_CCIPR4_I2C4SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_PCLK1      (0x0u << RCC_CCIPR4_I2C4SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_PER_CK     (0x1u << RCC_CCIPR4_I2C4SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_IC10_CK    (0x2u << RCC_CCIPR4_I2C4SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_IC15_CK    (0x3u << RCC_CCIPR4_I2C4SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_MSI_CK     (0x4u << RCC_CCIPR4_I2C4SEL_SHIFT)
+#define RCC_CCIPR4_I2C4SEL_HSI_DIV_CK (0x5u << RCC_CCIPR4_I2C4SEL_SHIFT)
 
 /* Clock configuration register 1.  SYSSW = 0b11 selects three IC dividers
  * (IC2 for SYSCLK, IC6 for AHB, IC11 for APB) -- the SVD names this state
@@ -330,6 +371,9 @@
 
 /* APB1 peripheral reset register 1 */
 
+#define RCC_APB1LRSTR_I2C1RST         (1 << 21)  /* Bit 21: I2C1 reset */
+#define RCC_APB1LRSTR_I2C2RST         (1 << 22)  /* Bit 22: I2C2 reset */
+#define RCC_APB1LRSTR_I2C3RST         (1 << 23)  /* Bit 23: I2C3 reset */
 #define RCC_APB1LRSTR_TIM2RST         (1 << 0)   /* Bit 0:  TIM2 reset */
 #define RCC_APB1LRSTR_TIM3RST         (1 << 1)   /* Bit 1:  TIM3 reset */
 #define RCC_APB1LRSTR_TIM4RST         (1 << 2)   /* Bit 2:  TIM4 reset */
@@ -357,9 +401,16 @@
 #define RCC_APB1LRSTR_SPI3RST          (1 << 15)  /* Bit 15: SPI3 reset */
 #define RCC_APB1LRSTR_SPI2RST          (1 << 14)  /* Bit 14: SPI2 reset */
 #define RCC_APB4LRSTR_SPI6RST          (1 << 5)   /* Bit 5:  SPI6 reset */
+#define RCC_APB4LRSTR_I2C4RST          (1 << 7)   /* Bit 7: I2C4 reset */
 
-/* SPI peripheral reset set and clear registers */
+/* APB peripheral reset set and clear registers */
 
+#define RCC_APB1LRSTSR_I2C1RSTS        (1 << 21)  /* Bit 21: I2C1 reset set */
+#define RCC_APB1LRSTSR_I2C2RSTS        (1 << 22)  /* Bit 22: I2C2 reset set */
+#define RCC_APB1LRSTSR_I2C3RSTS        (1 << 23)  /* Bit 23: I2C3 reset set */
+#define RCC_APB1LRSTCR_I2C1RSTC        (1 << 21)  /* Bit 21: I2C1 reset clear */
+#define RCC_APB1LRSTCR_I2C2RSTC        (1 << 22)  /* Bit 22: I2C2 reset clear */
+#define RCC_APB1LRSTCR_I2C3RSTC        (1 << 23)  /* Bit 23: I2C3 reset clear */
 #define RCC_APB1LRSTSR_SPI3RSTS        (1 << 15)  /* Bit 15: SPI3 reset set */
 #define RCC_APB1LRSTSR_SPI2RSTS        (1 << 14)  /* Bit 14: SPI2 reset set */
 #define RCC_APB1LRSTCR_SPI3RSTC        (1 << 15)  /* Bit 15: SPI3 reset clear */
@@ -372,9 +423,14 @@
 #define RCC_APB2RSTCR_SPI1RSTC         (1 << 12)  /* Bit 12: SPI1 reset clear */
 #define RCC_APB4LRSTSR_SPI6RSTS        (1 << 5)   /* Bit 5:  SPI6 reset set */
 #define RCC_APB4LRSTCR_SPI6RSTC        (1 << 5)   /* Bit 5:  SPI6 reset clear */
+#define RCC_APB4LRSTSR_I2C4RSTS        (1 << 7)   /* Bit 7: I2C4 reset set */
+#define RCC_APB4LRSTCR_I2C4RSTC        (1 << 7)   /* Bit 7: I2C4 reset clear */
 
 /* APB1 peripheral clock enable register 1 */
 
+#define RCC_APB1LENR_I2C1EN           (1 << 21)  /* Bit 21: I2C1 enable */
+#define RCC_APB1LENR_I2C2EN           (1 << 22)  /* Bit 22: I2C2 enable */
+#define RCC_APB1LENR_I2C3EN           (1 << 23)  /* Bit 23: I2C3 enable */
 #define RCC_APB1LENR_TIM2EN           (1 << 0)   /* Bit 0:  TIM2 enable */
 #define RCC_APB1LENR_TIM3EN           (1 << 1)   /* Bit 1:  TIM3 enable */
 #define RCC_APB1LENR_TIM4EN           (1 << 2)   /* Bit 2:  TIM4 enable */
@@ -403,9 +459,16 @@
 #define RCC_APB1LENR_SPI3EN           (1 << 15)  /* Bit 15: SPI3 enable */
 #define RCC_APB1LENR_SPI2EN           (1 << 14)  /* Bit 14: SPI2 enable */
 #define RCC_APB4LENR_SPI6EN           (1 << 5)   /* Bit 5:  SPI6 enable */
+#define RCC_APB4LENR_I2C4EN           (1 << 7)   /* Bit 7: I2C4 enable */
 
-/* SPI peripheral clock enable set and clear registers */
+/* APB peripheral clock enable set and clear registers */
 
+#define RCC_APB1LENSR_I2C1ENS         (1 << 21)  /* Bit 21: I2C1 enable set */
+#define RCC_APB1LENSR_I2C2ENS         (1 << 22)  /* Bit 22: I2C2 enable set */
+#define RCC_APB1LENSR_I2C3ENS         (1 << 23)  /* Bit 23: I2C3 enable set */
+#define RCC_APB1LENCR_I2C1ENC         (1 << 21)  /* Bit 21: I2C1 enable clear */
+#define RCC_APB1LENCR_I2C2ENC         (1 << 22)  /* Bit 22: I2C2 enable clear */
+#define RCC_APB1LENCR_I2C3ENC         (1 << 23)  /* Bit 23: I2C3 enable clear */
 #define RCC_APB1LENSR_SPI3ENS         (1 << 15)  /* Bit 15: SPI3 enable set */
 #define RCC_APB1LENSR_SPI2ENS         (1 << 14)  /* Bit 14: SPI2 enable set */
 #define RCC_APB1LENCR_SPI3ENC         (1 << 15)  /* Bit 15: SPI3 enable clear */
@@ -418,6 +481,8 @@
 #define RCC_APB2ENCR_SPI1ENC          (1 << 12)  /* Bit 12: SPI1 enable clear */
 #define RCC_APB4LENSR_SPI6ENS         (1 << 5)   /* Bit 5:  SPI6 enable set */
 #define RCC_APB4LENCR_SPI6ENC         (1 << 5)   /* Bit 5:  SPI6 enable clear */
+#define RCC_APB4LENSR_I2C4ENS         (1 << 7)   /* Bit 7: I2C4 enable set */
+#define RCC_APB4LENCR_I2C4ENC         (1 << 7)   /* Bit 7: I2C4 enable clear */
 
 /* APB4 peripheral clock enable register 2 */
 

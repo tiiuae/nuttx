@@ -56,6 +56,7 @@
 
 #define STM32_NPORTS                  (12)   /* GPIO ports A-H (8) + N, O, P, Q (4) */
 #define STM32_NUSART                   (1)   /* USART1 */
+#define STM32_NI2C                     (4)   /* I2C1-I2C4 */
 
 /* NVIC priority levels *****************************************************/
 
