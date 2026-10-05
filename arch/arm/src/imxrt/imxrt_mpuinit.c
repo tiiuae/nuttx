@@ -234,50 +234,14 @@ void imxrt_mpu_initialize(void)
                                             * No Subregion disable       */
                        );
 
-  mpu_configure_region(IMXRT_AIPS1_BASE, 16 * 1024 * 1024,
+  mpu_configure_region(IMXRT_AIPS1_BASE,
+                       IMXRT_AIPS_M7_BASE + 1 * 1024 * 1024 - IMXRT_AIPS1_BASE,
                        IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
                        MPU_RASR_TEX_DEV    /* Device
                                             * Not Cacheable
                                             * Not Bufferable
-                                            * Not Shareable
-                                            * No Subregion disable       */
-                       );
-
-  mpu_configure_region(IMXRT_SIM_DISP_BASE, 2 * 1024 * 1024,
-                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
-                       MPU_RASR_TEX_DEV    /* Device
-                                            * Not Cacheable
-                                            * Not Bufferable
-                                            * Not Shareable
-                                            * No Subregion disable       */
-                       );
-
-  mpu_configure_region(IMXRT_SIM_M7_BASE, 1 * 1024 * 1024,
-                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
-                       MPU_RASR_TEX_DEV    /* Device
-                                            * Not Cacheable
-                                            * Not Bufferable
-                                            * Not Shareable
-                                            * No Subregion disable       */
-                       );
-
-  mpu_configure_region(IMXRT_GPU2D_BASE, 2 * 1024 * 1024,
-                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
-                       MPU_RASR_TEX_DEV    /* Device
-                                            * Not Cacheable
-                                            * Not Bufferable
-                                            * Not Shareable
-                                            * No Subregion disable       */
-                       );
-
-  mpu_configure_region(IMXRT_AIPS_M7_BASE, 1 * 1024 * 1024,
-                       IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
-                       MPU_RASR_TEX_DEV    /* Device
-                                            * Not Cacheable
-                                            * Not Bufferable
-                                            * Not Shareable
-                                            * No Subregion disable       */
-                       );
+                                            * Not Shareable              */
+                      );
 #elif !defined(CONFIG_BUILD_PROTECTED)
 
   mpu_reset();
