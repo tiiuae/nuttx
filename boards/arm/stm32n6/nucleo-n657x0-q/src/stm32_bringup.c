@@ -35,6 +35,7 @@
 #include "nucleo-n657x0-q.h"
 
 #include <arch/board/board.h>
+#include <nuttx/fs/fs.h>
 
 /****************************************************************************
  * Public Functions
@@ -56,9 +57,22 @@
 
 int stm32_bringup(void)
 {
-#if !defined(CONFIG_ARCH_LEDS) && defined(CONFIG_USERLED_LOWER)
-  int ret;
+int ret = OK;
 
+UNUSED(ret);
+
+#ifdef CONFIG_FS_PROCFS
+  /* Mount the procfs file system */
+
+  ret = nx_mount(NULL, STM32_PROCFS_MOUNTPOINT, "procfs", 0, NULL);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR,
+             "ERROR: Failed to mount the PROC filesystem: %d\n",  ret);
+    }
+#endif /* CONFIG_FS_PROCFS */
+
+#if !defined(CONFIG_ARCH_LEDS) && defined(CONFIG_USERLED_LOWER)
   /* Register the LED driver */
 
   ret = userled_lower_initialize("/dev/userleds");

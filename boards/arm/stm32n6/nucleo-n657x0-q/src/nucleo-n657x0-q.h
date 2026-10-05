@@ -37,6 +37,16 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+/* procfs File System */
+
+#ifdef CONFIG_FS_PROCFS
+#  ifdef CONFIG_NSH_PROC_MOUNTPOINT
+#    define STM32_PROCFS_MOUNTPOINT CONFIG_NSH_PROC_MOUNTPOINT
+#  else
+#    define STM32_PROCFS_MOUNTPOINT "/proc"
+#  endif
+#endif
+
 /* LED definitions **********************************************************/
 
 /* The Nucleo-N657X0-Q has three user LEDs (UM3417 silkscreen):
