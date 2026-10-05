@@ -38,6 +38,7 @@
 #include "chip.h"
 #include "stm32_gpio.h"
 #include "stm32_i2c.h"
+#include "stm32_i2c_timing.h"
 #include "hardware/stm32n6xxx_pinmap.h"
 #include "hardware/stm32n6xxx_rcc.h"
 
@@ -62,8 +63,12 @@ struct stm32_i2c_config_s
   uint32_t ccipr_mask;
   uint32_t ccipr_source;
   uint32_t kernel_clock_hz;
+  uint32_t apb_clock_hz;
+  uint32_t clock_tolerance_ppm;
   uint32_t rise_time_ns;
   uint32_t fall_time_ns;
+  uint32_t analog_filter_min_ns;
+  uint32_t analog_filter_max_ns;
   uint32_t scl_pin;
   uint32_t sda_pin;
   uint8_t digital_filter;
@@ -97,8 +102,12 @@ static const struct i2c_ops_s g_i2c_ops =
 #  if !defined(GPIO_I2C1_SCL) || !defined(GPIO_I2C1_SDA) || \
       !defined(BOARD_I2C1_KERNEL_CLOCK_SOURCE) || \
       !defined(BOARD_I2C1_KERNEL_CLOCK_HZ) || \
+      !defined(BOARD_I2C1_APB_CLOCK_HZ) || \
+      !defined(BOARD_I2C1_CLOCK_TOLERANCE_PPM) || \
       !defined(BOARD_I2C1_RISE_TIME_NS) || \
       !defined(BOARD_I2C1_FALL_TIME_NS) || \
+      !defined(BOARD_I2C1_ANALOG_FILTER_MIN_NS) || \
+      !defined(BOARD_I2C1_ANALOG_FILTER_MAX_NS) || \
       !defined(BOARD_I2C1_DIGITAL_FILTER) || \
       !defined(BOARD_I2C1_ANALOG_FILTER)
 #    error "I2C1 requires board pin, clock, and timing input definitions"
@@ -121,8 +130,12 @@ static const struct stm32_i2c_config_s g_i2c1_config =
   .ccipr_mask = RCC_CCIPR4_I2C1SEL_MASK,
   .ccipr_source = BOARD_I2C1_KERNEL_CLOCK_SOURCE,
   .kernel_clock_hz = BOARD_I2C1_KERNEL_CLOCK_HZ,
+  .apb_clock_hz = BOARD_I2C1_APB_CLOCK_HZ,
+  .clock_tolerance_ppm = BOARD_I2C1_CLOCK_TOLERANCE_PPM,
   .rise_time_ns = BOARD_I2C1_RISE_TIME_NS,
   .fall_time_ns = BOARD_I2C1_FALL_TIME_NS,
+  .analog_filter_min_ns = BOARD_I2C1_ANALOG_FILTER_MIN_NS,
+  .analog_filter_max_ns = BOARD_I2C1_ANALOG_FILTER_MAX_NS,
   .scl_pin = GPIO_I2C1_SCL,
   .sda_pin = GPIO_I2C1_SDA,
   .digital_filter = BOARD_I2C1_DIGITAL_FILTER,
@@ -144,8 +157,12 @@ static struct stm32_i2c_priv_s g_i2c1 =
 #  if !defined(GPIO_I2C2_SCL) || !defined(GPIO_I2C2_SDA) || \
       !defined(BOARD_I2C2_KERNEL_CLOCK_SOURCE) || \
       !defined(BOARD_I2C2_KERNEL_CLOCK_HZ) || \
+      !defined(BOARD_I2C2_APB_CLOCK_HZ) || \
+      !defined(BOARD_I2C2_CLOCK_TOLERANCE_PPM) || \
       !defined(BOARD_I2C2_RISE_TIME_NS) || \
       !defined(BOARD_I2C2_FALL_TIME_NS) || \
+      !defined(BOARD_I2C2_ANALOG_FILTER_MIN_NS) || \
+      !defined(BOARD_I2C2_ANALOG_FILTER_MAX_NS) || \
       !defined(BOARD_I2C2_DIGITAL_FILTER) || \
       !defined(BOARD_I2C2_ANALOG_FILTER)
 #    error "I2C2 requires board pin, clock, and timing input definitions"
@@ -168,8 +185,12 @@ static const struct stm32_i2c_config_s g_i2c2_config =
   .ccipr_mask = RCC_CCIPR4_I2C2SEL_MASK,
   .ccipr_source = BOARD_I2C2_KERNEL_CLOCK_SOURCE,
   .kernel_clock_hz = BOARD_I2C2_KERNEL_CLOCK_HZ,
+  .apb_clock_hz = BOARD_I2C2_APB_CLOCK_HZ,
+  .clock_tolerance_ppm = BOARD_I2C2_CLOCK_TOLERANCE_PPM,
   .rise_time_ns = BOARD_I2C2_RISE_TIME_NS,
   .fall_time_ns = BOARD_I2C2_FALL_TIME_NS,
+  .analog_filter_min_ns = BOARD_I2C2_ANALOG_FILTER_MIN_NS,
+  .analog_filter_max_ns = BOARD_I2C2_ANALOG_FILTER_MAX_NS,
   .scl_pin = GPIO_I2C2_SCL,
   .sda_pin = GPIO_I2C2_SDA,
   .digital_filter = BOARD_I2C2_DIGITAL_FILTER,
@@ -191,8 +212,12 @@ static struct stm32_i2c_priv_s g_i2c2 =
 #  if !defined(GPIO_I2C3_SCL) || !defined(GPIO_I2C3_SDA) || \
       !defined(BOARD_I2C3_KERNEL_CLOCK_SOURCE) || \
       !defined(BOARD_I2C3_KERNEL_CLOCK_HZ) || \
+      !defined(BOARD_I2C3_APB_CLOCK_HZ) || \
+      !defined(BOARD_I2C3_CLOCK_TOLERANCE_PPM) || \
       !defined(BOARD_I2C3_RISE_TIME_NS) || \
       !defined(BOARD_I2C3_FALL_TIME_NS) || \
+      !defined(BOARD_I2C3_ANALOG_FILTER_MIN_NS) || \
+      !defined(BOARD_I2C3_ANALOG_FILTER_MAX_NS) || \
       !defined(BOARD_I2C3_DIGITAL_FILTER) || \
       !defined(BOARD_I2C3_ANALOG_FILTER)
 #    error "I2C3 requires board pin, clock, and timing input definitions"
@@ -215,8 +240,12 @@ static const struct stm32_i2c_config_s g_i2c3_config =
   .ccipr_mask = RCC_CCIPR4_I2C3SEL_MASK,
   .ccipr_source = BOARD_I2C3_KERNEL_CLOCK_SOURCE,
   .kernel_clock_hz = BOARD_I2C3_KERNEL_CLOCK_HZ,
+  .apb_clock_hz = BOARD_I2C3_APB_CLOCK_HZ,
+  .clock_tolerance_ppm = BOARD_I2C3_CLOCK_TOLERANCE_PPM,
   .rise_time_ns = BOARD_I2C3_RISE_TIME_NS,
   .fall_time_ns = BOARD_I2C3_FALL_TIME_NS,
+  .analog_filter_min_ns = BOARD_I2C3_ANALOG_FILTER_MIN_NS,
+  .analog_filter_max_ns = BOARD_I2C3_ANALOG_FILTER_MAX_NS,
   .scl_pin = GPIO_I2C3_SCL,
   .sda_pin = GPIO_I2C3_SDA,
   .digital_filter = BOARD_I2C3_DIGITAL_FILTER,
@@ -238,8 +267,12 @@ static struct stm32_i2c_priv_s g_i2c3 =
 #  if !defined(GPIO_I2C4_SCL) || !defined(GPIO_I2C4_SDA) || \
       !defined(BOARD_I2C4_KERNEL_CLOCK_SOURCE) || \
       !defined(BOARD_I2C4_KERNEL_CLOCK_HZ) || \
+      !defined(BOARD_I2C4_APB_CLOCK_HZ) || \
+      !defined(BOARD_I2C4_CLOCK_TOLERANCE_PPM) || \
       !defined(BOARD_I2C4_RISE_TIME_NS) || \
       !defined(BOARD_I2C4_FALL_TIME_NS) || \
+      !defined(BOARD_I2C4_ANALOG_FILTER_MIN_NS) || \
+      !defined(BOARD_I2C4_ANALOG_FILTER_MAX_NS) || \
       !defined(BOARD_I2C4_DIGITAL_FILTER) || \
       !defined(BOARD_I2C4_ANALOG_FILTER)
 #    error "I2C4 requires board pin, clock, and timing input definitions"
@@ -262,8 +295,12 @@ static const struct stm32_i2c_config_s g_i2c4_config =
   .ccipr_mask = RCC_CCIPR4_I2C4SEL_MASK,
   .ccipr_source = BOARD_I2C4_KERNEL_CLOCK_SOURCE,
   .kernel_clock_hz = BOARD_I2C4_KERNEL_CLOCK_HZ,
+  .apb_clock_hz = BOARD_I2C4_APB_CLOCK_HZ,
+  .clock_tolerance_ppm = BOARD_I2C4_CLOCK_TOLERANCE_PPM,
   .rise_time_ns = BOARD_I2C4_RISE_TIME_NS,
   .fall_time_ns = BOARD_I2C4_FALL_TIME_NS,
+  .analog_filter_min_ns = BOARD_I2C4_ANALOG_FILTER_MIN_NS,
+  .analog_filter_max_ns = BOARD_I2C4_ANALOG_FILTER_MAX_NS,
   .scl_pin = GPIO_I2C4_SCL,
   .sda_pin = GPIO_I2C4_SDA,
   .digital_filter = BOARD_I2C4_DIGITAL_FILTER,
@@ -306,6 +343,85 @@ static int stm32_i2c_kernel_frequency(
       return -ERANGE;
     }
 
+  return OK;
+}
+
+static int stm32_i2c_set_timing(struct stm32_i2c_priv_s *priv,
+                                uint32_t frequency_hz)
+{
+  const struct stm32_i2c_config_s *config = priv->config;
+  struct stm32_i2c_timing_input_s input =
+  {
+    .kernel_frequency_hz = priv->kernel_frequency,
+    .apb_frequency_hz = config->apb_clock_hz,
+    .clock_tolerance_ppm = config->clock_tolerance_ppm,
+    .frequency_hz = frequency_hz,
+    .rise_time_ns = config->rise_time_ns,
+    .fall_time_ns = config->fall_time_ns,
+    .analog_filter_min_ns = config->analog_filter_min_ns,
+    .analog_filter_max_ns = config->analog_filter_max_ns,
+    .digital_filter = config->digital_filter,
+    .analog_filter = config->analog_filter
+  };
+  struct stm32_i2c_timing_result_s result;
+  uintptr_t cr1 = config->base + STM32_I2C_CR1_OFFSET;
+  uintptr_t isr = config->base + STM32_I2C_ISR_OFFSET;
+  uintptr_t timingr = config->base + STM32_I2C_TIMINGR_OFFSET;
+  uint32_t filter_mask = I2C_CR1_DNF_MASK | I2C_CR1_ANFOFF;
+  uint32_t filter_value =
+      ((uint32_t)config->digital_filter << I2C_CR1_DNF_SHIFT) |
+      (config->analog_filter ? 0 : I2C_CR1_ANFOFF);
+  int ret;
+
+  ret = stm32_i2c_calculate_timing(&input, &result);
+  if (ret < 0)
+    {
+      i2cerr("I2C%u cannot calculate %lu Hz timing: %d\n", config->port,
+             (unsigned long)frequency_hz, ret);
+      return ret;
+    }
+
+  if ((getreg32(isr) & I2C_ISR_BUSY) != 0)
+    {
+      i2cerr("I2C%u cannot configure timing while the bus is busy\n",
+             config->port);
+      return -EBUSY;
+    }
+
+  modifyreg32(cr1, I2C_CR1_PE, 0);
+  if ((getreg32(cr1) & I2C_CR1_PE) != 0)
+    {
+      i2cerr("I2C%u failed to disable the peripheral for timing setup\n",
+             config->port);
+      return -EIO;
+    }
+
+  modifyreg32(cr1, filter_mask, filter_value);
+  if ((getreg32(cr1) & filter_mask) != filter_value)
+    {
+      i2cerr("I2C%u filter configuration readback failed\n", config->port);
+      return -EIO;
+    }
+
+  putreg32(result.timingr, timingr);
+  if (getreg32(timingr) != result.timingr)
+    {
+      i2cerr("I2C%u TIMINGR readback failed\n", config->port);
+      return -EIO;
+    }
+
+  modifyreg32(cr1, 0, I2C_CR1_PE);
+  if ((getreg32(cr1) & I2C_CR1_PE) == 0)
+    {
+      i2cerr("I2C%u failed to enable the peripheral after timing setup\n",
+             config->port);
+      return -EIO;
+    }
+
+  i2cinfo("I2C%u timing %lu Hz: TIMINGR=%08lx, max=%lu Hz\n",
+          config->port, (unsigned long)frequency_hz,
+          (unsigned long)result.timingr,
+          (unsigned long)result.maximum_scl_hz);
   return OK;
 }
 
@@ -372,6 +488,12 @@ static int stm32_i2c_hardware_initialize(struct stm32_i2c_priv_s *priv)
     }
 
   ret = stm32_i2c_kernel_frequency(config, &priv->kernel_frequency);
+  if (ret < 0)
+    {
+      goto errout_clock;
+    }
+
+  ret = stm32_i2c_set_timing(priv, 100000u);
   if (ret < 0)
     {
       goto errout_clock;
