@@ -343,8 +343,8 @@ that port; early setup does not reset the running console or access unopened
 ports. Suppressed configuration enables bus/Sleep clocks but leaves inherited
 format and selector settings intact.
 
-Only USART1 is enabled by the existing board configurations. To opt into the
-checked Arduino/Morpho route, enable `CONFIG_STM32_USART3` in menuconfig and
+USART1 remains the ST-Link console. To opt into the checked Arduino/Morpho
+route, enable `CONFIG_STM32_USART3` in menuconfig and
 retain its default standard serial driver. Keep USART1 as the console.
 The resulting `CONFIG_STM32_USART3_SERIALDRIVER` and
 `CONFIG_USART3_SERIALDRIVER` select the same N6 lower half; USART3 uses
@@ -375,6 +375,63 @@ Host instance tests check sparse registration, console ordering, independent
 reset/Sleep clocks and preserving the console when another port closes.
 **Target qualification remains pending:** USART1 console and USART3 peer/
 loopback must run simultaneously on both DEV/SRAM and FSBL/XSPI boots.
+
+### Flow control and PX4 RC modes
+
+`CONFIG_SERIAL_TERMIOS` permits runtime baud/format/RTS/CTS changes.
+RTS/CTS require separately verified board `GPIO_<port>_RTS/CTS` bindings;
+the factory board bindings supplied here still define neither. Setup and
+TCSETS reject requested flow control without the relevant pin with `-EINVAL`.
+When global flow-control support is enabled, any supplied per-port bindings
+are reserved/configured at setup even if that port's initial flow flag is off,
+so termios can enable them later. No new RTS/CTS route is guessed or enabled.
+Early and full console setup share the initial flow configuration, so full
+setup does not restart the initial idle frame to add CTS/RTS. Software RTS
+initially blocks the peer until full setup releases it according to ring state.
+
+Hardware RTS asserts only when the RX FIFO is full (RM0486 section 65.5.21).
+The upper-half flow callback pauses FIFO servicing at software-ring full/
+upper-watermark and resumes at empty/lower-watermark. A peer must obey RTS.
+For earlier ring-based backpressure, explicitly enable
+`CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS` and `CONFIG_STM32_FLOWCONTROL_BROKEN`.
+Despite the inherited option name, N6 does not assume a hardware erratum:
+this policy drives RTS as a GPIO, leaves RX servicing enabled while the peer
+reacts, and requires enough spare ring capacity for the peer's response time.
+RTS is released when input flow is disabled. CTS/FIFO/DMA acceptance does
+not imply wire completion; `txempty()` still requires USART TC.
+
+Enable `CONFIG_STM32_USART_INVERT` for `TIOCSINVERT` with
+`SER_INVERT_ENABLED_RX/TX`. It changes RXINV/TXINV, not DATAINV.
+Enable `CONFIG_STM32_USART_SINGLEWIRE` for `TIOCSSINGLEWIRE`. Enabling HDSEL
+uses the TX pin for both directions; the RX pin is ignored. The ABI supports
+open-drain (default), push-pull, and no-pull/pull-up/pull-down choices.
+Disabling restores the exact board TX configuration and normal two-pin mode.
+RM0486's ordinary single-wire wiring requires open-drain and an external
+pull-up. Push-pull/inverted operation is only appropriate with a compatible
+peer/circuit, not an arbitrary shared wire. The application arbitrates the
+line and accounts for possible self-reception; no software direction machine
+or echo filtering is added. HDSEL releases the idle line as described by RM0486.
+
+Both mode ioctls require an initialized, idle port: queued/active DMA TX,
+TC=0, receiver BUSY or pending hardware RX returns `-EBUSY` without waiting
+for a blocked peer. Drain/stop the peer before changing modes. Changes share
+bounded UE/acknowledgement sequencing and register/GPIO rollback with termios;
+interrupt state and unrelated format/mode bits are preserved. Suppressed UART
+configuration returns `-ENOTSUP`. Unknown inversion flags or invalid enabled
+single-wire pull combinations return `-EINVAL`; RTS/CTS and single-wire mode
+are mutually exclusive. The legacy complement-of-enable disable argument is
+accepted. Unimplemented break, swap and RS-485 choices are hidden for N6.
+
+Host checks cover S.BUS 100000 8E2, DSM 115200 8N1, inversion flags, the
+single-wire electrical options used by PX4, missing flow pins, watermarks,
+wire-busy rejection and acknowledgement/GPIO rollback. The ARM configuration
+matrix also covers RC modes without termios, suppression, independent
+RTS/CTS selections and rejection of unsupported configuration choices.
+**Electrical/protocol qualification is still pending:** on both boot paths,
+measure CTS-blocked FIFO and DMA drain, pause readers and verify RTS prevents
+loss with the actual peer, decode S.BUS/DSM with the chosen inversion circuit,
+and exercise the selected half-duplex RC peer. TX DMA accounting remains step 5;
+host mocks do not establish wire timing, receiver interoperability or losslessness.
 
 ## Boot-time tests
 
