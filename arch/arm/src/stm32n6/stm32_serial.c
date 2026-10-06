@@ -28,6 +28,7 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <semaphore.h>
@@ -57,7 +58,8 @@
 #include "arm_internal.h"
 
 #if defined(CONFIG_SERIAL_TXDMA) && defined(CONFIG_STM32_GPDMA1) && \
-    defined(CONFIG_USART1_TXDMA)
+    defined(CONFIG_USART1_TXDMA) && \
+    defined(CONFIG_STM32_USART1_SERIALDRIVER)
 #  define STM32_USART1_TXDMA
 #endif
 
@@ -143,16 +145,7 @@ struct stm32_serial_s
 #endif
   const uint32_t    baud;      /* Configured baud */
 #endif
-  const uint8_t     irq;       /* IRQ associated with this USART */
-  const uint32_t    usartbase; /* Base address of USART registers */
-  const uint32_t    tx_gpio;   /* U[S]ART TX GPIO pin configuration */
-  const uint32_t    rx_gpio;   /* U[S]ART RX GPIO pin configuration */
-#ifdef CONFIG_SERIAL_IFLOWCONTROL
-  const uint32_t    rts_gpio;  /* U[S]ART RTS GPIO pin configuration */
-#endif
-#ifdef CONFIG_SERIAL_OFLOWCONTROL
-  const uint32_t    cts_gpio;  /* U[S]ART CTS GPIO pin configuration */
-#endif
+  const struct stm32_usart_s *config;
   const uint8_t     unconfigure; /* Unconfigure pins on close */
   spinlock_t        lock;
 
@@ -220,26 +213,41 @@ static const struct uart_ops_s g_uart_ops =
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
   .rxflowcontrol  = stm32serial_rxflowcontrol,
 #endif
-#ifdef STM32_USART1_TXDMA
-  .dmasend        = stm32serial_dmasend,
-  .dmatxavail     = stm32serial_dmatxavail,
-#endif
   .send           = stm32serial_send,
   .txint          = stm32serial_txint,
   .txready        = stm32serial_txready,
   .txempty        = stm32serial_txempty,
 };
 
-/* I/O buffers */
+#ifdef STM32_USART1_TXDMA
+static const struct uart_ops_s g_uart_dma_ops =
+{
+  .setup          = stm32serial_setup,
+  .shutdown       = stm32serial_shutdown,
+  .attach         = stm32serial_attach,
+  .detach         = stm32serial_detach,
+  .ioctl          = stm32serial_ioctl,
+  .receive        = stm32serial_receive,
+  .rxint          = stm32serial_rxint,
+  .rxavailable    = stm32serial_rxavailable,
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  .rxflowcontrol  = stm32serial_rxflowcontrol,
+#endif
+  .dmasend        = stm32serial_dmasend,
+  .dmatxavail     = stm32serial_dmatxavail,
+  .send           = stm32serial_send,
+  .txint          = stm32serial_txint,
+  .txready        = stm32serial_txready,
+  .txempty        = stm32serial_txempty,
+};
+#endif
+
+/* Each enabled hardware instance owns its software buffers/state. */
 
 #ifdef CONFIG_STM32_USART1_SERIALDRIVER
 static char g_usart1rxbuffer[CONFIG_USART1_RXBUFSIZE];
 static char g_usart1txbuffer[CONFIG_USART1_TXBUFSIZE];
-#endif
 
-/* This describes the state of the STM32N6 USART1 port. */
-
-#ifdef CONFIG_STM32_USART1_SERIALDRIVER
 static struct stm32_serial_s g_usart1priv =
 {
   .dev =
@@ -247,58 +255,493 @@ static struct stm32_serial_s g_usart1priv =
 #  if CONSOLE_UART == 1
       .isconsole = true,
 #  endif
-      .recv      =
-      {
-        .size    = CONFIG_USART1_RXBUFSIZE,
-        .buffer  = g_usart1rxbuffer,
-      },
-      .xmit      =
-      {
-        .size    = CONFIG_USART1_TXBUFSIZE,
-        .buffer  = g_usart1txbuffer,
-      },
-      .ops       = &g_uart_ops,
-      .priv      = &g_usart1priv,
+      .recv =
+        {
+          .size = CONFIG_USART1_RXBUFSIZE,
+          .buffer = g_usart1rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_USART1_TXBUFSIZE,
+          .buffer = g_usart1txbuffer
+        },
+#ifdef STM32_USART1_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
+      .ops = &g_uart_ops,
+#endif
+      .priv = &g_usart1priv
     },
-
-  .irq           = STM32_IRQ_USART1,
-  .parity        = CONFIG_USART1_PARITY,
-  .bits          = CONFIG_USART1_BITS,
-  .stopbits2     = CONFIG_USART1_2STOP,
-  .baud          = CONFIG_USART1_BAUD,
-  .usartbase     = STM32_USART1_BASE,
-  .tx_gpio       = GPIO_USART1_TX,
-  .rx_gpio       = GPIO_USART1_RX,
+  .config = &g_usart_config[0],
+  .parity = CONFIG_USART1_PARITY,
+  .bits = CONFIG_USART1_BITS,
+  .stopbits2 = CONFIG_USART1_2STOP,
+  .baud = CONFIG_USART1_BAUD,
 #  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART1_OFLOWCONTROL)
-  .oflow         = true,
-  .cts_gpio      = GPIO_USART1_CTS,
+  .oflow = true,
 #  endif
 #  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART1_IFLOWCONTROL)
-  .iflow         = true,
-  .rts_gpio      = GPIO_USART1_RTS,
+  .iflow = true,
 #  endif
-
-  .lock               = SP_UNLOCKED,
-  .unconfigure        = 0
-#if defined(CONFIG_USART1_UNCONFIG_RX_ON_CLOSE)
-                      |
-                      USART_UNCONFIGURE_RX
-#endif
-#if defined(CONFIG_USART1_UNCONFIG_TX_ON_CLOSE)
-                      |
-                      USART_UNCONFIGURE_TX
-#endif
-      ,
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_USART1_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_USART1_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
 };
 #endif
 
-/* This table lets us iterate over the configured USARTs */
+#ifdef CONFIG_STM32_USART2_SERIALDRIVER
+static char g_usart2rxbuffer[CONFIG_USART2_RXBUFSIZE];
+static char g_usart2txbuffer[CONFIG_USART2_TXBUFSIZE];
+
+static struct stm32_serial_s g_usart2priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 2
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_USART2_RXBUFSIZE,
+          .buffer = g_usart2rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_USART2_TXBUFSIZE,
+          .buffer = g_usart2txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_usart2priv
+    },
+  .config = &g_usart_config[1],
+  .parity = CONFIG_USART2_PARITY,
+  .bits = CONFIG_USART2_BITS,
+  .stopbits2 = CONFIG_USART2_2STOP,
+  .baud = CONFIG_USART2_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART2_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART2_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_USART2_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_USART2_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_USART3_SERIALDRIVER
+static char g_usart3rxbuffer[CONFIG_USART3_RXBUFSIZE];
+static char g_usart3txbuffer[CONFIG_USART3_TXBUFSIZE];
+
+static struct stm32_serial_s g_usart3priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 3
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_USART3_RXBUFSIZE,
+          .buffer = g_usart3rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_USART3_TXBUFSIZE,
+          .buffer = g_usart3txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_usart3priv
+    },
+  .config = &g_usart_config[2],
+  .parity = CONFIG_USART3_PARITY,
+  .bits = CONFIG_USART3_BITS,
+  .stopbits2 = CONFIG_USART3_2STOP,
+  .baud = CONFIG_USART3_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART3_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART3_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_USART3_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_USART3_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_UART4_SERIALDRIVER
+static char g_uart4rxbuffer[CONFIG_UART4_RXBUFSIZE];
+static char g_uart4txbuffer[CONFIG_UART4_TXBUFSIZE];
+
+static struct stm32_serial_s g_uart4priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 4
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_UART4_RXBUFSIZE,
+          .buffer = g_uart4rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_UART4_TXBUFSIZE,
+          .buffer = g_uart4txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_uart4priv
+    },
+  .config = &g_usart_config[3],
+  .parity = CONFIG_UART4_PARITY,
+  .bits = CONFIG_UART4_BITS,
+  .stopbits2 = CONFIG_UART4_2STOP,
+  .baud = CONFIG_UART4_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART4_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART4_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_UART4_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_UART4_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_UART5_SERIALDRIVER
+static char g_uart5rxbuffer[CONFIG_UART5_RXBUFSIZE];
+static char g_uart5txbuffer[CONFIG_UART5_TXBUFSIZE];
+
+static struct stm32_serial_s g_uart5priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 5
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_UART5_RXBUFSIZE,
+          .buffer = g_uart5rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_UART5_TXBUFSIZE,
+          .buffer = g_uart5txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_uart5priv
+    },
+  .config = &g_usart_config[4],
+  .parity = CONFIG_UART5_PARITY,
+  .bits = CONFIG_UART5_BITS,
+  .stopbits2 = CONFIG_UART5_2STOP,
+  .baud = CONFIG_UART5_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART5_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART5_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_UART5_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_UART5_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_USART6_SERIALDRIVER
+static char g_usart6rxbuffer[CONFIG_USART6_RXBUFSIZE];
+static char g_usart6txbuffer[CONFIG_USART6_TXBUFSIZE];
+
+static struct stm32_serial_s g_usart6priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 6
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_USART6_RXBUFSIZE,
+          .buffer = g_usart6rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_USART6_TXBUFSIZE,
+          .buffer = g_usart6txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_usart6priv
+    },
+  .config = &g_usart_config[5],
+  .parity = CONFIG_USART6_PARITY,
+  .bits = CONFIG_USART6_BITS,
+  .stopbits2 = CONFIG_USART6_2STOP,
+  .baud = CONFIG_USART6_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART6_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART6_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_USART6_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_USART6_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_UART7_SERIALDRIVER
+static char g_uart7rxbuffer[CONFIG_UART7_RXBUFSIZE];
+static char g_uart7txbuffer[CONFIG_UART7_TXBUFSIZE];
+
+static struct stm32_serial_s g_uart7priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 7
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_UART7_RXBUFSIZE,
+          .buffer = g_uart7rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_UART7_TXBUFSIZE,
+          .buffer = g_uart7txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_uart7priv
+    },
+  .config = &g_usart_config[6],
+  .parity = CONFIG_UART7_PARITY,
+  .bits = CONFIG_UART7_BITS,
+  .stopbits2 = CONFIG_UART7_2STOP,
+  .baud = CONFIG_UART7_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART7_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART7_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_UART7_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_UART7_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_UART8_SERIALDRIVER
+static char g_uart8rxbuffer[CONFIG_UART8_RXBUFSIZE];
+static char g_uart8txbuffer[CONFIG_UART8_TXBUFSIZE];
+
+static struct stm32_serial_s g_uart8priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 8
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_UART8_RXBUFSIZE,
+          .buffer = g_uart8rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_UART8_TXBUFSIZE,
+          .buffer = g_uart8txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_uart8priv
+    },
+  .config = &g_usart_config[7],
+  .parity = CONFIG_UART8_PARITY,
+  .bits = CONFIG_UART8_BITS,
+  .stopbits2 = CONFIG_UART8_2STOP,
+  .baud = CONFIG_UART8_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART8_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART8_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_UART8_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_UART8_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_UART9_SERIALDRIVER
+static char g_uart9rxbuffer[CONFIG_UART9_RXBUFSIZE];
+static char g_uart9txbuffer[CONFIG_UART9_TXBUFSIZE];
+
+static struct stm32_serial_s g_uart9priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 9
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_UART9_RXBUFSIZE,
+          .buffer = g_uart9rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_UART9_TXBUFSIZE,
+          .buffer = g_uart9txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_uart9priv
+    },
+  .config = &g_usart_config[8],
+  .parity = CONFIG_UART9_PARITY,
+  .bits = CONFIG_UART9_BITS,
+  .stopbits2 = CONFIG_UART9_2STOP,
+  .baud = CONFIG_UART9_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART9_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART9_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_UART9_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_UART9_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+#ifdef CONFIG_STM32_USART10_SERIALDRIVER
+static char g_usart10rxbuffer[CONFIG_USART10_RXBUFSIZE];
+static char g_usart10txbuffer[CONFIG_USART10_TXBUFSIZE];
+
+static struct stm32_serial_s g_usart10priv =
+{
+  .dev =
+    {
+#  if CONSOLE_UART == 10
+      .isconsole = true,
+#  endif
+      .recv =
+        {
+          .size = CONFIG_USART10_RXBUFSIZE,
+          .buffer = g_usart10rxbuffer
+        },
+      .xmit =
+        {
+          .size = CONFIG_USART10_TXBUFSIZE,
+          .buffer = g_usart10txbuffer
+        },
+      .ops = &g_uart_ops,
+      .priv = &g_usart10priv
+    },
+  .config = &g_usart_config[9],
+  .parity = CONFIG_USART10_PARITY,
+  .bits = CONFIG_USART10_BITS,
+  .stopbits2 = CONFIG_USART10_2STOP,
+  .baud = CONFIG_USART10_BAUD,
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART10_OFLOWCONTROL)
+  .oflow = true,
+#  endif
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART10_IFLOWCONTROL)
+  .iflow = true,
+#  endif
+  .lock = SP_UNLOCKED,
+  .unconfigure = 0
+#  ifdef CONFIG_USART10_UNCONFIG_RX_ON_CLOSE
+                 | USART_UNCONFIGURE_RX
+#  endif
+#  ifdef CONFIG_USART10_UNCONFIG_TX_ON_CLOSE
+                 | USART_UNCONFIGURE_TX
+#  endif
+};
+#endif
+
+/* Hardware numbers remain sparse; tty minors are assigned later. */
 
 static struct stm32_serial_s * const
-  g_uart_devs[STM32_NUSART] =
+  g_uart_devs[STM32_NUSART + STM32_NUART] =
 {
 #ifdef CONFIG_STM32_USART1_SERIALDRIVER
   [0] = &g_usart1priv,
+#endif
+#ifdef CONFIG_STM32_USART2_SERIALDRIVER
+  [1] = &g_usart2priv,
+#endif
+#ifdef CONFIG_STM32_USART3_SERIALDRIVER
+  [2] = &g_usart3priv,
+#endif
+#ifdef CONFIG_STM32_UART4_SERIALDRIVER
+  [3] = &g_uart4priv,
+#endif
+#ifdef CONFIG_STM32_UART5_SERIALDRIVER
+  [4] = &g_uart5priv,
+#endif
+#ifdef CONFIG_STM32_USART6_SERIALDRIVER
+  [5] = &g_usart6priv,
+#endif
+#ifdef CONFIG_STM32_UART7_SERIALDRIVER
+  [6] = &g_uart7priv,
+#endif
+#ifdef CONFIG_STM32_UART8_SERIALDRIVER
+  [7] = &g_uart8priv,
+#endif
+#ifdef CONFIG_STM32_UART9_SERIALDRIVER
+  [8] = &g_uart9priv,
+#endif
+#ifdef CONFIG_STM32_USART10_SERIALDRIVER
+  [9] = &g_usart10priv,
 #endif
 };
 
@@ -320,7 +763,7 @@ static struct pm_callback_s g_serialpm =
 static inline
 uint32_t stm32serial_getreg(struct stm32_serial_s *priv, int offset)
 {
-  return getreg32(priv->usartbase + offset);
+  return getreg32(priv->config->base + offset);
 }
 
 /****************************************************************************
@@ -331,7 +774,7 @@ static inline
 void stm32serial_putreg(struct stm32_serial_s *priv,
                           int offset, uint32_t value)
 {
-  putreg32(value, priv->usartbase + offset);
+  putreg32(value, priv->config->base + offset);
 }
 
 /****************************************************************************
@@ -480,38 +923,8 @@ static void stm32serial_setapbclock(struct uart_dev_s *dev, bool on)
 {
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
-  uint32_t rcc_en;
-  uint32_t regaddr_set;
-  uint32_t regaddr_clr;
 
-  /* Determine which USART to configure */
-
-  switch (priv->usartbase)
-    {
-    default:
-      return;
-#ifdef CONFIG_STM32_USART1_SERIALDRIVER
-    case STM32_USART1_BASE:
-      rcc_en = RCC_APB2ENR_USART1EN;
-      regaddr_set = STM32_RCC_APB2ENSR;
-      regaddr_clr = STM32_RCC_APB2ENCR;
-      break;
-#endif
-    }
-
-  /* Enable/disable APB 1/2 clock for USART.
-   * Use atomic SET/CLEAR registers (ENSR/ENCR) instead of read-modify-write
-   * on ENR because the RCC's internal RIF security may block ENR access.
-   */
-
-  if (on)
-    {
-      putreg32(rcc_en, regaddr_set);
-    }
-  else
-    {
-      putreg32(rcc_en, regaddr_clr);
-    }
+  stm32_usart_setclock(priv->config, on);
 }
 
 /****************************************************************************
@@ -543,27 +956,35 @@ static int stm32serial_setup(struct uart_dev_s *dev)
     }
 
 #ifndef CONFIG_SUPPRESS_UART_CONFIG
-  ret = stm32_usart_format(stm32_usart_clock(), priv->baud, priv->bits,
+  ret = stm32_usart_format(stm32_usart_clock(priv->config),
+                           priv->baud, priv->bits,
                            priv->parity, priv->stopbits2, &format);
   if (ret < 0)
     {
       goto out;
     }
 
-  stm32serial_setapbclock(dev, true);
+#endif
 
-  if (priv->tx_gpio != 0)
+  ret = stm32_usart_initialize(priv->config, !dev->isconsole);
+  if (ret < 0)
     {
-      ret = stm32_configgpio(priv->tx_gpio);
+      goto out;
+    }
+
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  if (priv->config->tx_gpio != 0)
+    {
+      ret = stm32_configgpio(priv->config->tx_gpio);
       if (ret < 0)
         {
           goto out;
         }
     }
 
-  if (priv->rx_gpio != 0)
+  if (priv->config->rx_gpio != 0)
     {
-      ret = stm32_configgpio(priv->rx_gpio);
+      ret = stm32_configgpio(priv->config->rx_gpio);
       if (ret < 0)
         {
           goto out;
@@ -571,9 +992,9 @@ static int stm32serial_setup(struct uart_dev_s *dev)
     }
 
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
-  if (priv->cts_gpio != 0)
+  if (priv->config->cts_gpio != 0)
     {
-      ret = stm32_configgpio(priv->cts_gpio);
+      ret = stm32_configgpio(priv->config->cts_gpio);
       if (ret < 0)
         {
           goto out;
@@ -587,9 +1008,9 @@ static int stm32serial_setup(struct uart_dev_s *dev)
 #endif
 
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
-  if (priv->rts_gpio != 0)
+  if (priv->config->rts_gpio != 0)
     {
-      uint32_t config = priv->rts_gpio;
+      uint32_t config = priv->config->rts_gpio;
 
 #ifdef CONFIG_STM32_FLOWCONTROL_BROKEN
       /* Instead of letting hw manage this pin, we will bitbang */
@@ -611,7 +1032,7 @@ static int stm32serial_setup(struct uart_dev_s *dev)
     }
 #endif
 
-  ret = stm32_usart_configure(priv->usartbase, &format, flow);
+  ret = stm32_usart_configure(priv->config->base, &format, flow);
   if (ret < 0)
     {
       goto out;
@@ -689,7 +1110,7 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
       _warn("WARNING: USART close discarding unfinished wire TX\n");
     }
 
-  ret = stm32_usart_disable(priv->usartbase);
+  ret = stm32_usart_disable(priv->config->base);
   if (ret < 0)
     {
       _err("ERROR: USART disable failed: %d\n", ret);
@@ -711,27 +1132,29 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
    * not, then this may need to be a configuration option.
    */
 
-  if ((priv->unconfigure & USART_UNCONFIGURE_TX) && (priv->tx_gpio != 0))
+  if ((priv->unconfigure & USART_UNCONFIGURE_TX) &&
+      (priv->config->tx_gpio != 0))
     {
-      stm32_unconfiggpio(priv->tx_gpio);
+      stm32_unconfiggpio(priv->config->tx_gpio);
     }
 
-  if ((priv->unconfigure & USART_UNCONFIGURE_RX) && (priv->rx_gpio != 0))
+  if ((priv->unconfigure & USART_UNCONFIGURE_RX) &&
+      (priv->config->rx_gpio != 0))
     {
-      stm32_unconfiggpio(priv->rx_gpio);
+      stm32_unconfiggpio(priv->config->rx_gpio);
     }
 
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
-  if (priv->cts_gpio != 0)
+  if (priv->config->cts_gpio != 0)
     {
-      stm32_unconfiggpio(priv->cts_gpio);
+      stm32_unconfiggpio(priv->config->cts_gpio);
     }
 #endif
 
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
-  if (priv->rts_gpio != 0)
+  if (priv->config->rts_gpio != 0)
     {
-      stm32_unconfiggpio(priv->rts_gpio);
+      stm32_unconfiggpio(priv->config->rts_gpio);
     }
 #endif
 }
@@ -761,7 +1184,7 @@ static int stm32serial_attach(struct uart_dev_s *dev)
 #ifdef STM32_USART1_TXDMA
   /* Early serial setup runs before arm_dma_initialize(). */
 
-  if (priv->txdma == NULL)
+  if (dev->ops != &g_uart_ops && priv->txdma == NULL)
     {
       stm32serial_dmainitialize(priv);
     }
@@ -769,7 +1192,7 @@ static int stm32serial_attach(struct uart_dev_s *dev)
 
   /* Attach and enable the IRQ */
 
-  ret = irq_attach(priv->irq, stm32serial_interrupt, priv);
+  ret = irq_attach(priv->config->irq, stm32serial_interrupt, priv);
 
   if (ret == OK)
     {
@@ -777,7 +1200,7 @@ static int stm32serial_attach(struct uart_dev_s *dev)
        * in the USART
        */
 
-      up_enable_irq(priv->irq);
+      up_enable_irq(priv->config->irq);
     }
 
   return ret;
@@ -797,8 +1220,9 @@ static void stm32serial_detach(struct uart_dev_s *dev)
 {
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
-  up_disable_irq(priv->irq);
-  irq_detach(priv->irq);
+
+  up_disable_irq(priv->config->irq);
+  irq_detach(priv->config->irq);
 }
 
 /****************************************************************************
@@ -1008,12 +1432,14 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
         if (((termiosp->c_cflag & CSIZE) != CS7 &&
              (termiosp->c_cflag & CSIZE) != CS8)
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
-            || ((termiosp->c_cflag & CCTS_OFLOW) && (priv->cts_gpio == 0))
+            || ((termiosp->c_cflag & CCTS_OFLOW) &&
+                (priv->config->cts_gpio == 0))
 #else
             || (termiosp->c_cflag & CCTS_OFLOW) != 0
 #endif
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
-            || ((termiosp->c_cflag & CRTS_IFLOW) && (priv->rts_gpio == 0))
+            || ((termiosp->c_cflag & CRTS_IFLOW) &&
+                (priv->config->rts_gpio == 0))
 #else
             || (termiosp->c_cflag & CRTS_IFLOW) != 0
 #endif
@@ -1030,7 +1456,8 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
         baud = cfgetispeed(termiosp);
 
         flags = spin_lock_irqsave(&priv->lock);
-        ret = stm32_usart_format(stm32_usart_clock(), baud, bits, parity,
+        ret = stm32_usart_format(stm32_usart_clock(priv->config),
+                                 baud, bits, parity,
                                  stopbits2, &format);
         if (ret < 0)
           {
@@ -1063,7 +1490,7 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
 
         ie = priv->ie;
         stm32serial_setusartint(priv, 0);
-        ret = stm32_usart_configure(priv->usartbase, &format, flow);
+        ret = stm32_usart_configure(priv->config->base, &format, flow);
         if (ret == OK)
           {
             priv->baud = baud;
@@ -1225,11 +1652,11 @@ static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
 
 #if defined(CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS) && \
     defined(CONFIG_STM32_FLOWCONTROL_BROKEN)
-  if (priv->iflow && (priv->rts_gpio != 0))
+  if (priv->iflow && (priv->config->rts_gpio != 0))
     {
       /* Assert/de-assert nRTS set it high resume/stop sending */
 
-      stm32_gpiowrite(priv->rts_gpio, upper);
+      stm32_gpiowrite(priv->config->rts_gpio, upper);
 
       if (upper)
         {
@@ -1329,8 +1756,8 @@ static void stm32serial_dmainitialize(struct stm32_serial_s *priv)
     {
       .controller = STM32_DMA_CONTROLLER_GPDMA1,
       .direction = STM32_DMA_MEMORY_TO_PERIPHERAL,
-      .request = STM32_DMA_REQ_USART1_TX,
-      .peripheral_address = priv->usartbase + STM32_USART_TDR_OFFSET
+      .request = priv->config->txrequest,
+      .peripheral_address = priv->config->base + STM32_USART_TDR_OFFSET
     };
     int ret;
 
@@ -1384,7 +1811,7 @@ static void stm32serial_dmasend(struct uart_dev_s *dev)
 
   config.source_address = priv->txdma_buffer;
   config.destination_address =
-    priv->usartbase + STM32_USART_TDR_OFFSET;
+    priv->config->base + STM32_USART_TDR_OFFSET;
   config.nbytes = priv->txdma_length;
   config.width = 1;
   config.priority = 1;
@@ -1671,7 +2098,7 @@ static int stm32serial_pmprepare(struct pm_callback_s *cb, int domain,
       return -EINVAL;
     }
 
-  for (n = 0; n < STM32_NUSART; n++)
+  for (n = 0; n < (STM32_NUSART + STM32_NUART); n++)
     {
       struct stm32_serial_s *priv = g_uart_devs[n];
 
@@ -1731,36 +2158,33 @@ static int stm32serial_pmprepare(struct pm_callback_s *cb, int domain,
 #ifdef USE_EARLYSERIALINIT
 void arm_earlyserialinit(void)
 {
-#ifdef HAVE_UART
-  unsigned i;
+#if defined(HAVE_UART) && CONSOLE_UART > 0
+  int ret;
 
-  /* Disable all USART interrupts */
+  /* Non-console peripherals remain untouched until their first open. */
 
-  for (i = 0; i < STM32_NUSART; i++)
+  ret = stm32serial_setup(&g_uart_devs[CONSOLE_UART - 1]->dev);
+  if (ret < 0)
     {
-      if (g_uart_devs[i])
-        {
-          stm32serial_disableusartint(g_uart_devs[i], NULL);
-        }
+      _err("ERROR: Early serial setup failed: %d\n", ret);
+      PANIC();
     }
-
-  /* Configure whichever one is the console */
-
-#if CONSOLE_UART > 0
-  {
-    int ret = stm32serial_setup(&g_uart_devs[CONSOLE_UART - 1]->dev);
-
-    if (ret < 0)
-      {
-        _err("ERROR: Early serial setup failed: %d\n", ret);
-        PANIC();
-      }
-  }
 #endif
-
-#endif /* HAVE UART */
 }
 #endif /* USE_EARLYSERIALINIT */
+
+#ifdef HAVE_UART
+static void stm32serial_register(const char *path,
+                                 struct stm32_serial_s *priv)
+{
+  int ret = uart_register(path, &priv->dev);
+
+  if (ret < 0)
+    {
+      _err("ERROR: Serial registration %s failed: %d\n", path, ret);
+    }
+}
+#endif
 
 /****************************************************************************
  * Name: arm_serialinit
@@ -1777,29 +2201,29 @@ void arm_serialinit(void)
   char devname[16];
   unsigned i;
   unsigned minor = 0;
-#ifdef CONFIG_PM
   int ret;
-#endif
 
   /* Register to receive power management callbacks */
 
 #ifdef CONFIG_PM
   ret = pm_register(&g_serialpm);
-  DEBUGASSERT(ret == OK);
-  UNUSED(ret);
+  if (ret < 0)
+    {
+      _err("ERROR: Serial PM registration failed: %d\n", ret);
+    }
 #endif
 
   /* Register the console */
 
 #if CONSOLE_UART > 0
-  uart_register("/dev/console", &g_uart_devs[CONSOLE_UART - 1]->dev);
+  stm32serial_register("/dev/console", g_uart_devs[CONSOLE_UART - 1]);
 
 #ifndef CONFIG_STM32_SERIAL_DISABLE_REORDERING
   /* If not disabled, register the console UART to ttyS0 and exclude
    * it from initializing it further down
    */
 
-  uart_register("/dev/ttyS0", &g_uart_devs[CONSOLE_UART - 1]->dev);
+  stm32serial_register("/dev/ttyS0", g_uart_devs[CONSOLE_UART - 1]);
   minor = 1;
 #endif
 
@@ -1807,9 +2231,7 @@ void arm_serialinit(void)
 
   /* Register all remaining USARTs */
 
-  strlcpy(devname, "/dev/ttySx", sizeof(devname));
-
-  for (i = 0; i < STM32_NUSART; i++)
+  for (i = 0; i < (STM32_NUSART + STM32_NUART); i++)
     {
       /* Don't create a device for non-configured ports. */
 
@@ -1829,8 +2251,14 @@ void arm_serialinit(void)
 
       /* Register USARTs as devices in increasing order */
 
-      devname[9] = '0' + minor++;
-      uart_register(devname, &g_uart_devs[i]->dev);
+      ret = snprintf(devname, sizeof(devname), "/dev/ttyS%u", minor++);
+      if (ret < 0 || (size_t)ret >= sizeof(devname))
+        {
+          _err("ERROR: Serial device name formatting failed: %d\n", ret);
+          continue;
+        }
+
+      stm32serial_register(devname, g_uart_devs[i]);
     }
 #endif /* HAVE UART */
 }

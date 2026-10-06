@@ -41,27 +41,69 @@
 #include "stm32_rcc.h"
 #include "stm32_gpio.h"
 #include "stm32_uart.h"
+#include "hardware/stm32n6xxx_dmasigmap.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Select USART parameters for the selected console.  Only USART1 is
- * supported in this initial port.
- */
+/* Select the configured console's initial line format. */
 
 #ifdef HAVE_CONSOLE
-#  if defined(CONFIG_USART1_SERIAL_CONSOLE)
-#    define STM32N6_CONSOLE_BASE     STM32_USART1_BASE
-#    define STM32N6_CONSOLE_APBREG   STM32_RCC_APB2ENSR
-#    define STM32N6_CONSOLE_APBEN    RCC_APB2ENR_USART1EN
-#    define STM32N6_CONSOLE_BAUD     CONFIG_USART1_BAUD
-#    define STM32N6_CONSOLE_BITS     CONFIG_USART1_BITS
-#    define STM32N6_CONSOLE_PARITY   CONFIG_USART1_PARITY
-#    define STM32N6_CONSOLE_2STOP    CONFIG_USART1_2STOP
-#    define STM32N6_CONSOLE_TX       GPIO_USART1_TX
-#    define STM32N6_CONSOLE_RX       GPIO_USART1_RX
+#  if CONSOLE_UART == 1
+#    define STM32N6_CONSOLE_BAUD CONFIG_USART1_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_USART1_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_USART1_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_USART1_2STOP
+#  elif CONSOLE_UART == 2
+#    define STM32N6_CONSOLE_BAUD CONFIG_USART2_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_USART2_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_USART2_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_USART2_2STOP
+#  elif CONSOLE_UART == 3
+#    define STM32N6_CONSOLE_BAUD CONFIG_USART3_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_USART3_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_USART3_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_USART3_2STOP
+#  elif CONSOLE_UART == 4
+#    define STM32N6_CONSOLE_BAUD CONFIG_UART4_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_UART4_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_UART4_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_UART4_2STOP
+#  elif CONSOLE_UART == 5
+#    define STM32N6_CONSOLE_BAUD CONFIG_UART5_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_UART5_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_UART5_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_UART5_2STOP
+#  elif CONSOLE_UART == 6
+#    define STM32N6_CONSOLE_BAUD CONFIG_USART6_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_USART6_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_USART6_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_USART6_2STOP
+#  elif CONSOLE_UART == 7
+#    define STM32N6_CONSOLE_BAUD CONFIG_UART7_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_UART7_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_UART7_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_UART7_2STOP
+#  elif CONSOLE_UART == 8
+#    define STM32N6_CONSOLE_BAUD CONFIG_UART8_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_UART8_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_UART8_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_UART8_2STOP
+#  elif CONSOLE_UART == 9
+#    define STM32N6_CONSOLE_BAUD CONFIG_UART9_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_UART9_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_UART9_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_UART9_2STOP
+#  elif CONSOLE_UART == 10
+#    define STM32N6_CONSOLE_BAUD CONFIG_USART10_BAUD
+#    define STM32N6_CONSOLE_BITS CONFIG_USART10_BITS
+#    define STM32N6_CONSOLE_PARITY CONFIG_USART10_PARITY
+#    define STM32N6_CONSOLE_2STOP CONFIG_USART10_2STOP
 #  endif
+
+#  define STM32N6_CONSOLE (&g_usart_config[CONSOLE_UART - 1])
+#  define STM32N6_CONSOLE_BASE (STM32N6_CONSOLE->base)
 
 #  if STM32N6_CONSOLE_BITS != 7 && STM32N6_CONSOLE_BITS != 8
 #    error "STM32N6 serial supports only 7-bit and 8-bit payloads"
@@ -84,6 +126,291 @@
 /****************************************************************************
  * Public Data
  ****************************************************************************/
+
+const struct stm32_usart_s
+  g_usart_config[STM32_NUSART + STM32_NUART] =
+{
+#ifdef CONFIG_STM32_USART1_SERIALDRIVER
+  [0] =
+    {
+      .base       = STM32_USART1_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_USART1,
+      .tx_gpio    = GPIO_USART1_TX,
+      .rx_gpio    = GPIO_USART1_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART1_IFLOWCONTROL)
+      .rts_gpio   = GPIO_USART1_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART1_OFLOWCONTROL)
+      .cts_gpio   = GPIO_USART1_CTS,
+#  endif
+      .enable     = STM32_RCC_APB2ENSR,
+      .disable    = STM32_RCC_APB2ENCR,
+      .resetset   = STM32_RCC_APB2RSTSR,
+      .resetclear = STM32_RCC_APB2RSTCR,
+      .lpen       = STM32_RCC_APB2LPENSR,
+      .lpdisable  = STM32_RCC_APB2LPENCR,
+      .rcc_bit    = RCC_APB2ENR_USART1EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_USART1SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_USART1SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_USART1_RX,
+      .txrequest  = STM32_DMA_REQ_USART1_TX
+    },
+#endif
+#ifdef CONFIG_STM32_USART2_SERIALDRIVER
+  [1] =
+    {
+      .base       = STM32_USART2_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_USART2,
+      .tx_gpio    = GPIO_USART2_TX,
+      .rx_gpio    = GPIO_USART2_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART2_IFLOWCONTROL)
+      .rts_gpio   = GPIO_USART2_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART2_OFLOWCONTROL)
+      .cts_gpio   = GPIO_USART2_CTS,
+#  endif
+      .enable     = STM32_RCC_APB1LENSR,
+      .disable    = STM32_RCC_APB1LENCR,
+      .resetset   = STM32_RCC_APB1LRSTSR,
+      .resetclear = STM32_RCC_APB1LRSTCR,
+      .lpen       = STM32_RCC_APB1LLPENSR,
+      .lpdisable  = STM32_RCC_APB1LLPENCR,
+      .rcc_bit    = RCC_APB1LENR_USART2EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_USART2SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_USART2SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_USART2_RX,
+      .txrequest  = STM32_DMA_REQ_USART2_TX
+    },
+#endif
+#ifdef CONFIG_STM32_USART3_SERIALDRIVER
+  [2] =
+    {
+      .base       = STM32_USART3_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_USART3,
+      .tx_gpio    = GPIO_USART3_TX,
+      .rx_gpio    = GPIO_USART3_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART3_IFLOWCONTROL)
+      .rts_gpio   = GPIO_USART3_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART3_OFLOWCONTROL)
+      .cts_gpio   = GPIO_USART3_CTS,
+#  endif
+      .enable     = STM32_RCC_APB1LENSR,
+      .disable    = STM32_RCC_APB1LENCR,
+      .resetset   = STM32_RCC_APB1LRSTSR,
+      .resetclear = STM32_RCC_APB1LRSTCR,
+      .lpen       = STM32_RCC_APB1LLPENSR,
+      .lpdisable  = STM32_RCC_APB1LLPENCR,
+      .rcc_bit    = RCC_APB1LENR_USART3EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_USART3SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_USART3SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_USART3_RX,
+      .txrequest  = STM32_DMA_REQ_USART3_TX
+    },
+#endif
+#ifdef CONFIG_STM32_UART4_SERIALDRIVER
+  [3] =
+    {
+      .base       = STM32_UART4_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_UART4,
+      .tx_gpio    = GPIO_UART4_TX,
+      .rx_gpio    = GPIO_UART4_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART4_IFLOWCONTROL)
+      .rts_gpio   = GPIO_UART4_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART4_OFLOWCONTROL)
+      .cts_gpio   = GPIO_UART4_CTS,
+#  endif
+      .enable     = STM32_RCC_APB1LENSR,
+      .disable    = STM32_RCC_APB1LENCR,
+      .resetset   = STM32_RCC_APB1LRSTSR,
+      .resetclear = STM32_RCC_APB1LRSTCR,
+      .lpen       = STM32_RCC_APB1LLPENSR,
+      .lpdisable  = STM32_RCC_APB1LLPENCR,
+      .rcc_bit    = RCC_APB1LENR_UART4EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_UART4SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_UART4SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_UART4_RX,
+      .txrequest  = STM32_DMA_REQ_UART4_TX
+    },
+#endif
+#ifdef CONFIG_STM32_UART5_SERIALDRIVER
+  [4] =
+    {
+      .base       = STM32_UART5_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_UART5,
+      .tx_gpio    = GPIO_UART5_TX,
+      .rx_gpio    = GPIO_UART5_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART5_IFLOWCONTROL)
+      .rts_gpio   = GPIO_UART5_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART5_OFLOWCONTROL)
+      .cts_gpio   = GPIO_UART5_CTS,
+#  endif
+      .enable     = STM32_RCC_APB1LENSR,
+      .disable    = STM32_RCC_APB1LENCR,
+      .resetset   = STM32_RCC_APB1LRSTSR,
+      .resetclear = STM32_RCC_APB1LRSTCR,
+      .lpen       = STM32_RCC_APB1LLPENSR,
+      .lpdisable  = STM32_RCC_APB1LLPENCR,
+      .rcc_bit    = RCC_APB1LENR_UART5EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_UART5SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_UART5SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_UART5_RX,
+      .txrequest  = STM32_DMA_REQ_UART5_TX
+    },
+#endif
+#ifdef CONFIG_STM32_USART6_SERIALDRIVER
+  [5] =
+    {
+      .base       = STM32_USART6_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_USART6,
+      .tx_gpio    = GPIO_USART6_TX,
+      .rx_gpio    = GPIO_USART6_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART6_IFLOWCONTROL)
+      .rts_gpio   = GPIO_USART6_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART6_OFLOWCONTROL)
+      .cts_gpio   = GPIO_USART6_CTS,
+#  endif
+      .enable     = STM32_RCC_APB2ENSR,
+      .disable    = STM32_RCC_APB2ENCR,
+      .resetset   = STM32_RCC_APB2RSTSR,
+      .resetclear = STM32_RCC_APB2RSTCR,
+      .lpen       = STM32_RCC_APB2LPENSR,
+      .lpdisable  = STM32_RCC_APB2LPENCR,
+      .rcc_bit    = RCC_APB2ENR_USART6EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_USART6SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_USART6SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_USART6_RX,
+      .txrequest  = STM32_DMA_REQ_USART6_TX
+    },
+#endif
+#ifdef CONFIG_STM32_UART7_SERIALDRIVER
+  [6] =
+    {
+      .base       = STM32_UART7_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_UART7,
+      .tx_gpio    = GPIO_UART7_TX,
+      .rx_gpio    = GPIO_UART7_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART7_IFLOWCONTROL)
+      .rts_gpio   = GPIO_UART7_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART7_OFLOWCONTROL)
+      .cts_gpio   = GPIO_UART7_CTS,
+#  endif
+      .enable     = STM32_RCC_APB1LENSR,
+      .disable    = STM32_RCC_APB1LENCR,
+      .resetset   = STM32_RCC_APB1LRSTSR,
+      .resetclear = STM32_RCC_APB1LRSTCR,
+      .lpen       = STM32_RCC_APB1LLPENSR,
+      .lpdisable  = STM32_RCC_APB1LLPENCR,
+      .rcc_bit    = RCC_APB1LENR_UART7EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_UART7SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_UART7SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_UART7_RX,
+      .txrequest  = STM32_DMA_REQ_UART7_TX
+    },
+#endif
+#ifdef CONFIG_STM32_UART8_SERIALDRIVER
+  [7] =
+    {
+      .base       = STM32_UART8_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_UART8,
+      .tx_gpio    = GPIO_UART8_TX,
+      .rx_gpio    = GPIO_UART8_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART8_IFLOWCONTROL)
+      .rts_gpio   = GPIO_UART8_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART8_OFLOWCONTROL)
+      .cts_gpio   = GPIO_UART8_CTS,
+#  endif
+      .enable     = STM32_RCC_APB1LENSR,
+      .disable    = STM32_RCC_APB1LENCR,
+      .resetset   = STM32_RCC_APB1LRSTSR,
+      .resetclear = STM32_RCC_APB1LRSTCR,
+      .lpen       = STM32_RCC_APB1LLPENSR,
+      .lpdisable  = STM32_RCC_APB1LLPENCR,
+      .rcc_bit    = RCC_APB1LENR_UART8EN,
+      .selector   = STM32_RCC_CCIPR13,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR13_UART8SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR13_UART8SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_UART8_RX,
+      .txrequest  = STM32_DMA_REQ_UART8_TX
+    },
+#endif
+#ifdef CONFIG_STM32_UART9_SERIALDRIVER
+  [8] =
+    {
+      .base       = STM32_UART9_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_UART9,
+      .tx_gpio    = GPIO_UART9_TX,
+      .rx_gpio    = GPIO_UART9_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_UART9_IFLOWCONTROL)
+      .rts_gpio   = GPIO_UART9_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_UART9_OFLOWCONTROL)
+      .cts_gpio   = GPIO_UART9_CTS,
+#  endif
+      .enable     = STM32_RCC_APB2ENSR,
+      .disable    = STM32_RCC_APB2ENCR,
+      .resetset   = STM32_RCC_APB2RSTSR,
+      .resetclear = STM32_RCC_APB2RSTCR,
+      .lpen       = STM32_RCC_APB2LPENSR,
+      .lpdisable  = STM32_RCC_APB2LPENCR,
+      .rcc_bit    = RCC_APB2ENR_UART9EN,
+      .selector   = STM32_RCC_CCIPR14,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR14_UART9SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR14_UART9SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_UART9_RX,
+      .txrequest  = STM32_DMA_REQ_UART9_TX
+    },
+#endif
+#ifdef CONFIG_STM32_USART10_SERIALDRIVER
+  [9] =
+    {
+      .base       = STM32_USART10_BASE,
+      .clock      = STM32_HSI_FREQUENCY,
+      .irq        = STM32_IRQ_USART10,
+      .tx_gpio    = GPIO_USART10_TX,
+      .rx_gpio    = GPIO_USART10_RX,
+#  if defined(CONFIG_SERIAL_IFLOWCONTROL) && defined(CONFIG_USART10_IFLOWCONTROL)
+      .rts_gpio   = GPIO_USART10_RTS,
+#  endif
+#  if defined(CONFIG_SERIAL_OFLOWCONTROL) && defined(CONFIG_USART10_OFLOWCONTROL)
+      .cts_gpio   = GPIO_USART10_CTS,
+#  endif
+      .enable     = STM32_RCC_APB2ENSR,
+      .disable    = STM32_RCC_APB2ENCR,
+      .resetset   = STM32_RCC_APB2RSTSR,
+      .resetclear = STM32_RCC_APB2RSTCR,
+      .lpen       = STM32_RCC_APB2LPENSR,
+      .lpdisable  = STM32_RCC_APB2LPENCR,
+      .rcc_bit    = RCC_APB2ENR_USART10EN,
+      .selector   = STM32_RCC_CCIPR14,
+      .selmask    = RCC_USARTSEL_MASK(RCC_CCIPR14_USART10SEL_SHIFT),
+      .selsource  = RCC_USARTSEL_HSI(RCC_CCIPR14_USART10SEL_SHIFT),
+      .rxrequest  = STM32_DMA_REQ_USART10_RX,
+      .txrequest  = STM32_DMA_REQ_USART10_TX
+    },
+#endif
+};
 
 /****************************************************************************
  * Private Variables
@@ -123,12 +450,68 @@ static int stm32_usart_waitack(uint32_t base, uint32_t expected)
  *
  ****************************************************************************/
 
-uint32_t stm32_usart_clock(void)
+uint32_t stm32_usart_clock(const struct stm32_usart_s *config)
 {
   uint32_t hsidiv = (getreg32(STM32_RCC_HSICFGR) &
                     RCC_HSICFGR_HSIDIV_MASK) >> RCC_HSICFGR_HSIDIV_SHIFT;
 
-  return STM32_HSI_FREQUENCY >> hsidiv;
+  return config->clock >> hsidiv;
+}
+
+void stm32_usart_setclock(const struct stm32_usart_s *config, bool on)
+{
+  if (on)
+    {
+      putreg32(config->rcc_bit, config->enable);
+      putreg32(config->rcc_bit, config->lpen);
+    }
+  else
+    {
+      putreg32(config->rcc_bit, config->lpdisable);
+      putreg32(config->rcc_bit, config->disable);
+    }
+}
+
+int stm32_usart_initialize(const struct stm32_usart_s *config, bool reset)
+{
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  int ret;
+#endif
+
+  stm32_usart_setclock(config, true);
+
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  if (reset)
+    {
+      putreg32(config->rcc_bit, config->resetset);
+      putreg32(config->rcc_bit, config->resetclear);
+    }
+  else if ((getreg32(config->selector) & config->selmask) !=
+           config->selsource)
+    {
+      /* Preserve a running console; the previous stage must quiesce TX. */
+
+      if ((getreg32(config->base + STM32_USART_CR1_OFFSET) &
+           USART_CR1_UE) != 0 &&
+          (getreg32(config->base + STM32_USART_ISR_OFFSET) &
+           USART_ISR_TC) == 0)
+        {
+          return -EBUSY;
+        }
+
+      ret = stm32_usart_disable(config->base);
+      if (ret < 0)
+        {
+          return ret;
+        }
+    }
+
+  modifyreg32(config->selector, config->selmask, config->selsource);
+#else
+  UNUSED(reset);
+#endif
+
+  return OK;
 }
 
 int stm32_usart_disable(uint32_t base)
@@ -285,12 +668,15 @@ void arm_lowputc(char ch)
 
 void stm32_lowsetup(void)
 {
-#if defined(HAVE_UART)
-#if defined(HAVE_CONSOLE) && !defined(CONFIG_SUPPRESS_UART_CONFIG)
+#ifdef HAVE_CONSOLE
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
   struct stm32_usart_format_s format;
+#endif
   int ret;
 
-  ret = stm32_usart_format(stm32_usart_clock(), STM32N6_CONSOLE_BAUD,
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  ret = stm32_usart_format(stm32_usart_clock(STM32N6_CONSOLE),
+                           STM32N6_CONSOLE_BAUD,
                            STM32N6_CONSOLE_BITS, STM32N6_CONSOLE_PARITY,
                            STM32N6_CONSOLE_2STOP != 0, &format);
   if (ret < 0)
@@ -300,22 +686,28 @@ void stm32_lowsetup(void)
     }
 #endif
 
-#if defined(HAVE_CONSOLE)
-  /* Use the write-1-to-set ENSR alias rather than RMW on ENR so we do
-   * not race other producers of the clock-enable bitmap.
-   */
+  ret = stm32_usart_initialize(STM32N6_CONSOLE, false);
+  if (ret < 0)
+    {
+      _err("ERROR: Console clock setup failed: %d\n", ret);
+      PANIC();
+    }
 
-  putreg32(STM32N6_CONSOLE_APBEN, STM32N6_CONSOLE_APBREG);
-#endif
+  ret = stm32_configgpio(STM32N6_CONSOLE->tx_gpio);
+  if (ret < 0)
+    {
+      _err("ERROR: Console TX GPIO setup failed: %d\n", ret);
+      PANIC();
+    }
 
-#ifdef STM32N6_CONSOLE_TX
-  stm32_configgpio(STM32N6_CONSOLE_TX);
-#endif
-#ifdef STM32N6_CONSOLE_RX
-  stm32_configgpio(STM32N6_CONSOLE_RX);
-#endif
+  ret = stm32_configgpio(STM32N6_CONSOLE->rx_gpio);
+  if (ret < 0)
+    {
+      _err("ERROR: Console RX GPIO setup failed: %d\n", ret);
+      PANIC();
+    }
 
-#if defined(HAVE_CONSOLE) && !defined(CONFIG_SUPPRESS_UART_CONFIG)
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
   ret = stm32_usart_configure(STM32N6_CONSOLE_BASE, &format, 0);
   if (ret < 0)
     {

@@ -205,9 +205,6 @@ void __start_c(void)
            STM32_RCC_BUSLPENSR);
   putreg32(RCC_MEMLPENR_ALLAXISRAM | RCC_MEMLPENR_CACHEAXIRAMLPEN,
            STM32_RCC_MEMLPENSR);
-#ifdef CONFIG_STM32_USART1
-  putreg32(RCC_APB2LPENR_USART1LPEN, STM32_RCC_APB2LPENSR);
-#endif
 
   /* Configure the board's I/O voltage ranges and mark selected I/O domains
    * supply-valid before any GPIO pad is driven. Board policy is provided by
@@ -232,21 +229,6 @@ void __start_c(void)
   /* Read-back to ensure prior SYSCFG writes complete */
 
   (void)getreg32(STM32_SYSCFG_VDDCCCR);
-
-#ifdef CONFIG_STM32_USART1
-  /* A previous boot stage may have left the console enabled. */
-
-#ifndef CONFIG_SUPPRESS_UART_CONFIG
-  modifyreg32(STM32_USART1_CR1, USART_CR1_UE, 0);
-#endif
-
-  /* Route USART1 to hsi_div_ck without changing other kernel selectors
-   * or the global HSI divider.
-   */
-
-  modifyreg32(STM32_RCC_CCIPR13, RCC_CCIPR13_USART1SEL_MASK,
-              RCC_CCIPR13_USART1SEL_HSI);
-#endif
 
   stm32_lowsetup();
 
