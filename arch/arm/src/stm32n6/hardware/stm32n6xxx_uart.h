@@ -263,6 +263,8 @@
 
 #define USART_CR2_LINEN           (1 << 14) /* Bit 14: LIN mode enable */
 #define USART_CR2_SWAP            (1 << 15) /* Bit 15: Swap TX/RX pins */
+#define USART_CR2_RXINV           (1 << 16) /* Bit 16: RX pin inversion */
+#define USART_CR2_TXINV           (1 << 17) /* Bit 17: TX pin inversion */
 #define USART_CR2_RXINV           (1 << 16) /* Bit 16: RX pin active level inversion */
 #define USART_CR2_TXINV           (1 << 17) /* Bit 17: TX pin active level inversion */
 #define USART_CR2_DATAINV         (1 << 18) /* Bit 18: Binary data inversion */

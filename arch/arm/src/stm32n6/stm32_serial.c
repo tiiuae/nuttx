@@ -148,6 +148,12 @@ struct stm32_serial_s
   const struct stm32_usart_s *config;
   const uint8_t     unconfigure; /* Unconfigure pins on close */
   spinlock_t        lock;
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  bool              rxthrottled;
+#endif
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+  uint32_t          sw_gpio;
+#endif
 
 #ifdef STM32_USART1_TXDMA
   DMA_HANDLE        txdma;
@@ -176,6 +182,9 @@ static bool stm32serial_rxavailable(struct uart_dev_s *dev);
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
 static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
                                         unsigned int nbuffered, bool upper);
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+static void stm32serial_setflow(struct stm32_serial_s *priv);
+#endif
 #endif
 static void stm32serial_send(struct uart_dev_s *dev, int ch);
 static void stm32serial_txint(struct uart_dev_s *dev, bool enable);
@@ -885,8 +894,11 @@ static void stm32serial_disableusartint(struct stm32_serial_s *priv,
  *
  ****************************************************************************/
 
-#if defined(CONFIG_PM) || (defined(CONFIG_SERIAL_TERMIOS) && \
-                          !defined(CONFIG_SUPPRESS_UART_CONFIG))
+#if defined(CONFIG_PM) || \
+    (!defined(CONFIG_SUPPRESS_UART_CONFIG) && \
+     (defined(CONFIG_SERIAL_TERMIOS) || \
+      defined(CONFIG_STM32_USART_INVERT) || \
+      defined(CONFIG_STM32_USART_SINGLEWIRE)))
 static bool stm32serial_busy(struct stm32_serial_s *priv)
 {
   uint32_t sr;
@@ -946,6 +958,8 @@ static int stm32serial_setup(struct uart_dev_s *dev)
 #ifndef CONFIG_SUPPRESS_UART_CONFIG
   struct stm32_usart_format_s format;
   uint32_t flow = 0;
+  bool iflow = false;
+  bool oflow = false;
 #endif
 
   flags = spin_lock_irqsave(&priv->lock);
@@ -954,6 +968,23 @@ static int stm32serial_setup(struct uart_dev_s *dev)
       ret = priv->shutdown_error;
       goto out;
     }
+
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  if (priv->iflow && priv->config->rts_gpio == 0)
+    {
+      ret = -EINVAL;
+      goto out;
+    }
+
+#endif
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+  if (priv->oflow && priv->config->cts_gpio == 0)
+    {
+      ret = -EINVAL;
+      goto out;
+    }
+
+#endif
 
 #ifndef CONFIG_SUPPRESS_UART_CONFIG
   ret = stm32_usart_format(stm32_usart_clock(priv->config),
@@ -992,45 +1023,16 @@ static int stm32serial_setup(struct uart_dev_s *dev)
     }
 
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
-  if (priv->config->cts_gpio != 0)
-    {
-      ret = stm32_configgpio(priv->config->cts_gpio);
-      if (ret < 0)
-        {
-          goto out;
-        }
-
-      if (priv->oflow)
-        {
-          flow |= USART_CR3_CTSE;
-        }
-    }
+  oflow = priv->oflow;
 #endif
-
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
-  if (priv->config->rts_gpio != 0)
+  iflow = priv->iflow;
+#endif
+  ret = stm32_usart_flowcontrol(priv->config, iflow, oflow, &flow);
+  if (ret < 0)
     {
-      uint32_t config = priv->config->rts_gpio;
-
-#ifdef CONFIG_STM32_FLOWCONTROL_BROKEN
-      /* Instead of letting hw manage this pin, we will bitbang */
-
-      config = (config & ~GPIO_MODE_MASK) | GPIO_OUTPUT;
-#endif
-      ret = stm32_configgpio(config);
-      if (ret < 0)
-        {
-          goto out;
-        }
-
-#ifndef CONFIG_STM32_FLOWCONTROL_BROKEN
-      if (priv->iflow)
-        {
-          flow |= USART_CR3_RTSE;
-        }
-#endif
+      goto out;
     }
-#endif
 
   ret = stm32_usart_configure(priv->config->base, &format, flow);
   if (ret < 0)
@@ -1048,11 +1050,47 @@ static int stm32serial_setup(struct uart_dev_s *dev)
 
   priv->initialized = true;
   priv->shutdown_error = OK;
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+  priv->sw_gpio = priv->config->tx_gpio;
+#endif
 
 out:
   spin_unlock_irqrestore(&priv->lock, flags);
+#if defined(CONFIG_SERIAL_IFLOWCONTROL) && \
+    !defined(CONFIG_SUPPRESS_UART_CONFIG)
+  if (ret == OK)
+    {
+      stm32serial_setflow(priv);
+    }
+
+#endif
   return ret;
 }
+
+#if defined(CONFIG_SERIAL_IFLOWCONTROL) && \
+    !defined(CONFIG_SUPPRESS_UART_CONFIG)
+static void stm32serial_setflow(struct stm32_serial_s *priv)
+{
+  struct uart_buffer_s *recv = &priv->dev.recv;
+  irqstate_t flags = enter_critical_section();
+  unsigned int buffered = recv->head >= recv->tail ?
+                          recv->head - recv->tail :
+                          recv->head + recv->size - recv->tail;
+  bool upper;
+
+#ifdef CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS
+  upper = buffered >= recv->size *
+          CONFIG_SERIAL_IFLOWCONTROL_UPPER_WATERMARK / 100 ||
+          (priv->rxthrottled && buffered > recv->size *
+           CONFIG_SERIAL_IFLOWCONTROL_LOWER_WATERMARK / 100);
+#else
+  upper = buffered >= recv->size - 1 ||
+          (priv->rxthrottled && buffered != 0);
+#endif
+  stm32serial_rxflowcontrol(&priv->dev, buffered, upper);
+  leave_critical_section(flags);
+}
+#endif
 
 /****************************************************************************
  * Name: stm32serial_shutdown
@@ -1334,6 +1372,112 @@ static int stm32serial_interrupt(int irq, void *context, void *arg)
   return OK;
 }
 
+#if defined(CONFIG_STM32_USART_INVERT) || \
+    defined(CONFIG_STM32_USART_SINGLEWIRE)
+static int stm32serial_setmode(struct stm32_serial_s *priv, int cmd,
+                               unsigned long arg)
+{
+#ifdef CONFIG_SUPPRESS_UART_CONFIG
+  return -ENOTSUP;
+#else
+  irqstate_t flags;
+  uint32_t cr2;
+  uint32_t cr3;
+  uint32_t oldgpio = 0;
+  uint32_t newgpio = 0;
+  uint16_t ie;
+  int ret;
+
+  flags = spin_lock_irqsave(&priv->lock);
+  if (!priv->initialized || stm32serial_busy(priv))
+    {
+      ret = -EBUSY;
+      goto out;
+    }
+
+  cr2 = stm32serial_getreg(priv, STM32_USART_CR2_OFFSET);
+  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+#ifdef CONFIG_STM32_USART_INVERT
+  if (cmd == TIOCSINVERT)
+    {
+      if ((arg & ~(SER_INVERT_ENABLED_RX | SER_INVERT_ENABLED_TX)) != 0)
+        {
+          ret = -EINVAL;
+          goto out;
+        }
+
+      cr2 &= ~(USART_CR2_RXINV | USART_CR2_TXINV);
+      cr2 |= (arg & SER_INVERT_ENABLED_RX) != 0 ? USART_CR2_RXINV : 0;
+      cr2 |= (arg & SER_INVERT_ENABLED_TX) != 0 ? USART_CR2_TXINV : 0;
+    }
+
+#endif
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+  if (cmd == TIOCSSINGLEWIRE)
+    {
+      oldgpio = priv->sw_gpio;
+      newgpio = priv->config->tx_gpio;
+      if (newgpio == 0)
+        {
+          ret = -EINVAL;
+          goto out;
+        }
+
+      if ((arg & SER_SINGLEWIRE_ENABLED) != 0)
+        {
+          if ((arg & ~(SER_SINGLEWIRE_ENABLED | SER_SINGLEWIRE_PULL_MASK |
+                       SER_SINGLEWIRE_PUSHPULL)) != 0 ||
+              (arg & SER_SINGLEWIRE_PULL_MASK) == SER_SINGLEWIRE_PULL_MASK ||
+              (cr3 & (USART_CR3_RTSE | USART_CR3_CTSE)) != 0)
+            {
+              ret = -EINVAL;
+              goto out;
+            }
+
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+          if (priv->iflow)
+            {
+              ret = -EINVAL;
+              goto out;
+            }
+
+#endif
+          newgpio &= ~(GPIO_PUPD_MASK | GPIO_OPENDRAIN);
+          newgpio |= (arg & SER_SINGLEWIRE_PUSHPULL) != 0 ?
+                     GPIO_PUSHPULL : GPIO_OPENDRAIN;
+          newgpio |= (arg & SER_SINGLEWIRE_PULL_MASK) ==
+                     SER_SINGLEWIRE_PULLUP ? GPIO_PULLUP :
+                     (arg & SER_SINGLEWIRE_PULL_MASK) ==
+                     SER_SINGLEWIRE_PULLDOWN ? GPIO_PULLDOWN : GPIO_FLOAT;
+          cr3 |= USART_CR3_HDSEL;
+        }
+      else
+        {
+          cr3 &= ~USART_CR3_HDSEL;
+        }
+    }
+
+#endif
+  ie = priv->ie;
+  stm32serial_setusartint(priv, 0);
+  cr3 &= ~USART_CR3_ALLINTS;
+  ret = stm32_usart_setmode(priv->config->base, cr2, cr3, oldgpio, newgpio);
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+  if (ret == OK && cmd == TIOCSSINGLEWIRE)
+    {
+      priv->sw_gpio = newgpio;
+    }
+
+#endif
+  stm32serial_setusartint(priv, ie);
+
+out:
+  spin_unlock_irqrestore(&priv->lock, flags);
+  return ret;
+#endif
+}
+#endif
+
 /****************************************************************************
  * Name: stm32serial_ioctl
  *
@@ -1353,6 +1497,21 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
   UNUSED(inode);
   UNUSED(dev);
   UNUSED(priv);
+
+#ifdef CONFIG_STM32_USART_INVERT
+  if (cmd == TIOCSINVERT)
+    {
+      return stm32serial_setmode(priv, cmd, arg);
+    }
+
+#endif
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+  if (cmd == TIOCSSINGLEWIRE)
+    {
+      return stm32serial_setmode(priv, cmd, arg);
+    }
+
+#endif
 
   switch (cmd)
     {
@@ -1470,6 +1629,14 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
             goto format_out;
           }
 
+        if ((termiosp->c_cflag & (CCTS_OFLOW | CRTS_IFLOW)) != 0 &&
+            (stm32serial_getreg(priv, STM32_USART_CR3_OFFSET) &
+             USART_CR3_HDSEL) != 0)
+          {
+            ret = -EINVAL;
+            goto format_out;
+          }
+
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
         if ((termiosp->c_cflag & CCTS_OFLOW) != 0)
           {
@@ -1488,6 +1655,8 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
          * frames arriving at the UE-disable boundary cannot be preserved.
          */
 
+        flow |= stm32serial_getreg(priv, STM32_USART_CR3_OFFSET) &
+                USART_CR3_HDSEL;
         ie = priv->ie;
         stm32serial_setusartint(priv, 0);
         ret = stm32_usart_configure(priv->config->base, &format, flow);
@@ -1509,6 +1678,12 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
 
 format_out:
         spin_unlock_irqrestore(&priv->lock, flags);
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+        if (ret == OK)
+          {
+            stm32serial_setflow(priv);
+          }
+#endif
 #endif
       }
       break;
@@ -1649,31 +1824,25 @@ static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
 {
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
+  irqstate_t flags = enter_critical_section();
+  bool previous = priv->rxthrottled;
+
+  UNUSED(nbuffered);
+  UNUSED(previous);
+  priv->rxthrottled = upper && priv->iflow;
 
 #if defined(CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS) && \
     defined(CONFIG_STM32_FLOWCONTROL_BROKEN)
-  if (priv->iflow && (priv->config->rts_gpio != 0))
+  if (priv->config->rts_gpio != 0)
     {
       /* Assert/de-assert nRTS set it high resume/stop sending */
 
-      stm32_gpiowrite(priv->config->rts_gpio, upper);
+      stm32_gpiowrite(priv->config->rts_gpio, priv->rxthrottled);
 
-      if (upper)
-        {
-          /* With heavy Rx traffic, RXNE might be set and data pending.
-           * Returning 'true' in such case would cause RXNE left unhandled
-           * and causing interrupt storm. Sending end might be also be slow
-           * to react on nRTS, and returning 'true' here would prevent
-           * processing that data.
-           *
-           * Therefore, return 'false' so input data is still being processed
-           * until sending end reacts on nRTS signal and stops sending more.
-           */
+      /* Keep servicing RX while the peer reacts to the watermark. */
 
-          return false;
-        }
-
-      return upper;
+      leave_critical_section(flags);
+      return false;
     }
 
 #else
@@ -1696,12 +1865,13 @@ static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
            */
 
           uart_disablerxint(dev);
+          leave_critical_section(flags);
           return true;
         }
 
       /* No.. The RX buffer is empty */
 
-      else
+      else if (previous)
         {
           /* We might leave Rx interrupt disabled if full recv buffer was
            * read empty.  Enable Rx interrupt to make sure that more input is
@@ -1711,8 +1881,13 @@ static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
           uart_enablerxint(dev);
         }
     }
+  else if (previous)
+    {
+      uart_enablerxint(dev);
+    }
 #endif
 
+  leave_critical_section(flags);
   return false;
 }
 #endif

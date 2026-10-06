@@ -179,10 +179,20 @@ EXTERN const struct stm32_usart_s
 
 uint32_t stm32_usart_clock(const struct stm32_usart_s *config);
 
+#if defined(CONFIG_STM32_USART_INVERT) || \
+    defined(CONFIG_STM32_USART_SINGLEWIRE)
+int stm32_usart_setmode(uint32_t base, uint32_t cr2, uint32_t cr3,
+                        uint32_t oldgpio, uint32_t newgpio);
+#endif
+
 void stm32_usart_setclock(const struct stm32_usart_s *config, bool on);
 int stm32_usart_initialize(const struct stm32_usart_s *config, bool reset);
+int stm32_usart_flowcontrol(const struct stm32_usart_s *config,
+                            bool iflow, bool oflow, uint32_t *flow);
 
-/* The caller must exclude IRQ/debug output and quiesce DMA and wire TX. */
+/* The caller must exclude IRQ/debug output and quiesce DMA and wire TX.
+ * flow carries RTSE/CTSE and optional HDSEL; initial setup uses two pins.
+ */
 
 int stm32_usart_configure(uint32_t base,
                           const struct stm32_usart_format_s *format,

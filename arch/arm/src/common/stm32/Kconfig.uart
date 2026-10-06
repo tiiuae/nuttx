@@ -606,6 +606,7 @@ config STM32_USART10_SERIALDRIVER
 
 config USART1_RS485
 	bool "RS-485 on USART1"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_USART1 && USART1_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on USART1. Your board config will have to
@@ -626,6 +627,7 @@ endif # USART1_RS485
 
 config USART2_RS485
 	bool "RS-485 on USART2"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_USART2 && USART2_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on USART2. Your board config will have to
@@ -646,6 +648,7 @@ endif # USART2_RS485
 
 config USART3_RS485
 	bool "RS-485 on USART3"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_USART3 && USART3_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on USART3. Your board config will have to
@@ -666,6 +669,7 @@ endif # USART3_RS485
 
 config UART4_RS485
 	bool "RS-485 on UART4"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_UART4 && UART4_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on UART4. Your board config will have to
@@ -686,6 +690,7 @@ endif # UART4_RS485
 
 config UART5_RS485
 	bool "RS-485 on UART5"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_UART5 && UART5_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on UART5. Your board config will have to
@@ -706,6 +711,7 @@ endif # UART5_RS485
 
 config USART6_RS485
 	bool "RS-485 on USART6"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_USART6 && USART6_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on USART6. Your board config will have to
@@ -726,6 +732,7 @@ endif # USART6_RS485
 
 config UART7_RS485
 	bool "RS-485 on UART7"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_UART7 && UART7_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on UART7. Your board config will have to
@@ -746,6 +753,7 @@ endif # UART7_RS485
 
 config UART8_RS485
 	bool "RS-485 on UART8"
+	depends on !ARCH_CHIP_STM32N6
 	depends on STM32_UART8 && UART8_SERIALDRIVER
 	---help---
 		Enable RS-485 interface on UART8. Your board config will have to
@@ -768,6 +776,7 @@ if UART9_SERIALDRIVER
 
 config UART9_RS485
 	bool "RS-485 on UART9"
+	depends on !ARCH_CHIP_STM32N6
 	default n
 	depends on STM32_UART9
 	---help---
@@ -797,6 +806,7 @@ if USART10_SERIALDRIVER
 
 config USART10_RS485
 	bool "RS-485 on USART10"
+	depends on !ARCH_CHIP_STM32N6
 	default n
 	depends on STM32_USART10
 	---help---
@@ -896,15 +906,19 @@ config STM32_SERIAL_RXDMA_BUFFER_SIZE
 config STM32_FLOWCONTROL_BROKEN
 	bool "Use Software UART RTS flow control"
 	depends on STM32_USART
+	depends on !ARCH_CHIP_STM32N6 || SERIAL_IFLOWCONTROL_WATERMARKS
 	---help---
 		Enable UART RTS flow control using Software. Because STM
 		Current STM32 have broken HW based RTS behavior (they assert
 		nRTS after every byte received)  Enable this setting workaround
 		this issue by using software based management of RTS
 
+		On STM32N6 this is an opt-in software-ring watermark policy, not
+		a hardware erratum workaround. RX watermarks must be enabled.
+
 config STM32_USART_BREAKS
 	bool "Add TIOxSBRK to support sending Breaks"
-	depends on STM32_USART
+	depends on STM32_USART && !ARCH_CHIP_STM32N6
 	---help---
 		Add TIOCxBRK routines to send a line break per the STM32 manual, the
 		break will be a pulse based on the value M. This is not a BSD compatible
@@ -927,6 +941,10 @@ config STM32_USART_SINGLEWIRE
 	---help---
 		Enable single wire UART support.  The option enables support for the
 		TIOCSSINGLEWIRE ioctl in the STM32 serial driver.
+
+		STM32N6 changes modes only when idle and rejects RTS/CTS in
+		single-wire mode. Open-drain operation needs an external pull-up;
+		push-pull/inverted operation requires a compatible peer circuit.
 
 config STM32_PM_SERIAL_ACTIVITY
 	int "PM serial activity"
@@ -1256,11 +1274,11 @@ config STM32_USART_INVERT
 	depends on STM32_USART
 	---help---
 		Enable signal inversion UART support. The option enables support for the
-		TIOCSINVERT ioctl in the STM32F7 serial driver.
+		TIOCSINVERT ioctl, including RX/TX pin inversion on STM32N6.
 
 config STM32_USART_SWAP
 	bool "Swap RX/TX pins support"
-	depends on STM32_USART
+	depends on STM32_USART && !ARCH_CHIP_STM32N6
 	---help---
 		Enable RX/TX pin swapping support. The option enables support for the
 		TIOCSSWAP ioctl in the STM32F7 serial driver.
