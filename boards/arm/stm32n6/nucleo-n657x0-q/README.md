@@ -197,8 +197,8 @@ protocol or RS-232/RS-485 connection needs separately qualified inversion or
 external interface circuitry; none is present on these test-port nets.
 
 For later loopback, connect CN13 pin 2 to pin 1 (or CN15 pin 35 to pin 37).
-Do not add this jumper until USART3 driver support and its opt-in configuration
-exist. For a peer, cross board TX to peer RX and board RX to peer TX.
+Enable USART3 explicitly and stop conflicting D0/D1 users before adding this
+jumper. For a peer, cross board TX to peer RX and board RX to peer TX.
 
 PD8/PD9 do not overlap the existing XSPI2 boot pins, SPI5 PE15/PG1/PG2
 (or its PA3 chip select), I2C2 PB10/PB11, LEDs PG10/PG0/PG8, or the PC13
@@ -210,9 +210,9 @@ concurrently.
 ### Kernel clock and boot handoff
 
 USART1 uses `RCC_CCIPR13.USART1SEL=6` (**hsi_div_ck**, not undivided HSI).
-Startup changes only that selector field and preserves the other fields.
-USART3 will use the same source through its own selector when implemented;
-step 1 does not write its selector or enable/reset its peripheral.
+Console setup changes only its selector field and preserves the other fields.
+Each additional port selects the same source through its own selector when
+first opened; enabling USART3 does not change the console's selector.
 
 Early console setup and the full serial driver both call
 `stm32_usart_clock()` to read `RCC_HSICFGR.HSIDIV[8:7]` and derive the nominal
@@ -256,9 +256,9 @@ the secure privileged CPU/DMA accesses used here. That reset policy is not
 proof of an arbitrary FSBL's configuration. Do not silently relax isolation
 or substitute nonsecure aliases when access is denied.
 
-Ordinary WFI uses Sleep, not Stop: startup retains AXI SRAM and USART1 clocks
-through the existing LPEN set aliases. USART3 will need its own APB1L enable
-and LPEN handling later. This contract does not qualify Stop-mode reception.
+Ordinary WFI uses Sleep, not Stop: startup retains AXI SRAM clocks, and serial
+setup retains each opened port's clock through its APB1L/APB2 LPEN set alias.
+This contract does not qualify Stop-mode reception.
 
 **Target qualification still required:** on each boot path record
 `RCC_HSICFGR`, `RCC_CCIPR13`, USART1 `PRESC/BRR/CR1`, and relevant LPEN
@@ -332,6 +332,49 @@ clock-deviation tolerance on both boot paths, inject parity/framing/noise/
 overrun errors, exercise FIFO bursts and close/reopen, and verify busy/
 CTS-blocked PM rejection using separately qualified flow-control wiring.
 No second port or RTS/CTS board route is enabled by these changes.
+
+### Multiple USART/UART instances
+
+The driver supports conditional instances for USART1/2/3/6/10 and
+UART4/5/7/8/9. Each port has independent buffers, interrupt state, GPIO
+bindings and RCC enable/reset/kernel-selector/Sleep-clock metadata. All
+use the inherited HSIDIV-derived HSI clock. Non-console setup resets only
+that port; early setup does not reset the running console or access unopened
+ports. Suppressed configuration enables bus/Sleep clocks but leaves inherited
+format and selector settings intact.
+
+Only USART1 is enabled by the existing board configurations. To opt into the
+checked Arduino/Morpho route, enable `CONFIG_STM32_USART3` in menuconfig and
+retain its default standard serial driver. Keep USART1 as the console.
+The resulting `CONFIG_STM32_USART3_SERIALDRIVER` and
+`CONFIG_USART3_SERIALDRIVER` select the same N6 lower half; USART3 uses
+`GPIO_USART3_TX/RX` bound to PD8/PD9 AF7. USART2 and the other ports require
+separately checked board TX/RX bindings before enabling them; no pin routes
+are guessed for those instances. Dedicated 1-Wire and HCI-UART drivers are
+not selectable for N6.
+
+By default the console is `/dev/ttyS0`; with USART1 console plus USART3,
+USART3 is `/dev/ttyS1`. `CONFIG_STM32_SERIAL_DISABLE_REORDERING` assigns
+minors in increasing enabled hardware-instance order instead, without moving
+the console to the front. Sparse hardware numbers do not leave minor-number
+gaps. `/dev/console` still aliases the selected console. Registration failures
+are logged and device names use bounded full-number formatting.
+
+USART3 and the other new ports use interrupt I/O. The existing USART1 TX DMA
+path has separate operations so enabling it does not attach DMA callbacks
+to interrupt-only ports; DMA menu reachability and additional-port DMA are
+deferred to step 5. Step 2's deep-PM veto remains unchanged.
+
+In addition to `check-serial`, run
+`make -C arch/arm/src/stm32n6/tests/host check-serial-build` with an existing
+N6 configuration, `kconfig-conf` and `arm-none-eabi-gcc`. This generates
+isolated configurations and compiles every port/console plus combinations
+without replacing the active build configuration. Ports without board
+bindings use compile-only GPIO fixtures, not qualified physical routes.
+Host instance tests check sparse registration, console ordering, independent
+reset/Sleep clocks and preserving the console when another port closes.
+**Target qualification remains pending:** USART1 console and USART3 peer/
+loopback must run simultaneously on both DEV/SRAM and FSBL/XSPI boots.
 
 ## Boot-time tests
 

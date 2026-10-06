@@ -211,6 +211,9 @@
 #define GPIO_USART1_TX   GPIO_USART1_TX_1
 #define GPIO_USART1_RX   GPIO_USART1_RX_1
 
+#define GPIO_USART3_TX   GPIO_USART3_TX_1
+#define GPIO_USART3_RX   GPIO_USART3_RX_1
+
 /* SPI5 is routed to the Arduino D11-D13 pins and Morpho CN15 pins 11, 13,
  * and 15.  Chip select remains a board/client-owned GPIO (Arduino D10/PA3).
  */
