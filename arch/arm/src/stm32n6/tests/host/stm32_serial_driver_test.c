@@ -18,6 +18,7 @@
 #define CONFIG_STM32_PM_SERIAL_ACTIVITY 0
 #define CONSOLE_UART 1
 #define STM32_NUSART 1
+#define STM32_NUART 0
 #define STM32_HSI_FREQUENCY 64000000
 #define USART_CR1_USED_INTS \
   (USART_CR1_RXNEIE | USART_CR1_TXEIE | USART_CR1_PEIE)
@@ -70,6 +71,7 @@ struct uart_dev_s
   struct uart_buffer_s recv;
   struct uart_buffer_s xmit;
   void *priv;
+  bool isconsole;
 };
 
 struct inode
@@ -112,6 +114,26 @@ static void uart_xmitchars(struct uart_dev_s *dev);
 
 static char g_rxbuffer[512];
 static char g_txbuffer[512];
+static const struct stm32_usart_s g_config =
+{
+  .base = STM32_USART1_BASE,
+  .clock = STM32_HSI_FREQUENCY,
+  .tx_gpio = 10,
+  .rx_gpio = 11,
+  .rts_gpio = 12,
+  .cts_gpio = 13,
+  .enable = STM32_RCC_APB2ENSR,
+  .disable = STM32_RCC_APB2ENCR,
+  .resetset = STM32_RCC_APB2RSTSR,
+  .resetclear = STM32_RCC_APB2RSTCR,
+  .lpen = STM32_RCC_APB2LPENSR,
+  .lpdisable = STM32_RCC_APB2LPENCR,
+  .rcc_bit = RCC_APB2ENR_USART1EN,
+  .selector = STM32_RCC_CCIPR13,
+  .selmask = RCC_CCIPR13_USART1SEL_MASK,
+  .selsource = RCC_CCIPR13_USART1SEL_HSI
+};
+
 static struct stm32_serial_s g_priv =
 {
   .dev =
@@ -126,19 +148,12 @@ static struct stm32_serial_s g_priv =
           .size = sizeof(g_txbuffer),
           .buffer = g_txbuffer
         },
-      .priv = &g_priv
+      .priv = &g_priv,
+      .isconsole = true
     },
   .bits = 8,
   .baud = 115200,
-  .usartbase = STM32_USART1_BASE,
-  .tx_gpio = 10,
-  .rx_gpio = 11,
-#ifdef CONFIG_SERIAL_IFLOWCONTROL
-  .rts_gpio = 12,
-#endif
-#ifdef CONFIG_SERIAL_OFLOWCONTROL
-  .cts_gpio = 13,
-#endif
+  .config = &g_config,
   .unconfigure = USART_UNCONFIGURE_RX | USART_UNCONFIGURE_TX
 };
 
@@ -149,6 +164,7 @@ static struct stm32_serial_s *g_uart_devs[] =
 
 static uint32_t g_regs[12];
 static uint32_t g_hsi;
+static uint32_t g_selector;
 static unsigned int g_delays;
 static unsigned int g_errors;
 static unsigned int g_writes;
@@ -221,6 +237,11 @@ static uint32_t getreg32(uint32_t address)
       return g_hsi;
     }
 
+  if (address == STM32_RCC_CCIPR13)
+    {
+      return g_selector;
+    }
+
   assert(g_clocked);
   assert(address >= STM32_USART1_BASE);
   offset = address - STM32_USART1_BASE;
@@ -245,6 +266,21 @@ static void putreg32(uint32_t value, uint32_t address)
   unsigned int offset;
 
   g_writes++;
+  if (address == STM32_RCC_CCIPR13)
+    {
+      assert((oldcr1 & USART_CR1_UE) == 0 ||
+             (value & g_config.selmask) == (g_selector & g_config.selmask));
+      g_selector = value;
+      return;
+    }
+
+  if (address == STM32_RCC_APB2LPENSR ||
+      address == STM32_RCC_APB2LPENCR)
+    {
+      assert(value == RCC_APB2ENR_USART1EN);
+      return;
+    }
+
   if (address == STM32_RCC_APB2ENSR)
     {
       assert(value == RCC_APB2ENR_USART1EN);
@@ -328,6 +364,15 @@ static void putreg32(uint32_t value, uint32_t address)
 }
 
 #ifndef CONFIG_SUPPRESS_UART_CONFIG
+static void modifyreg32(uint32_t address, uint32_t clear, uint32_t set)
+{
+  putreg32((getreg32(address) & ~clear) | set, address);
+}
+#endif
+
+int stm32_usart_disable(uint32_t base);
+
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
 static int stm32_configgpio(uint32_t pin)
 {
   assert(pin != 0);
@@ -409,6 +454,7 @@ static void reset(void)
   memset(g_fifoerrors, 0, sizeof(g_fifoerrors));
   g_regs[STM32_USART_ISR_OFFSET / 4] = USART_ISR_TC | USART_ISR_TXE;
   g_hsi = 0;
+  g_selector = g_config.selsource;
   g_clocked = true;
   g_disable_failure = false;
   g_enable_failure = 0;
@@ -456,9 +502,11 @@ static void configure(void)
 {
   struct stm32_usart_format_s format;
 
-  assert(stm32_usart_format(stm32_usart_clock(), g_priv.baud, g_priv.bits,
+  assert(stm32_usart_initialize(g_priv.config, false) == 0);
+  assert(stm32_usart_format(stm32_usart_clock(g_priv.config),
+                            g_priv.baud, g_priv.bits,
                             g_priv.parity, g_priv.stopbits2, &format) == 0);
-  assert(stm32_usart_configure(g_priv.usartbase, &format, 0) == 0);
+  assert(stm32_usart_configure(g_priv.config->base, &format, 0) == 0);
   assert(stm32serial_setup(&g_priv.dev) == 0);
   g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
 }
@@ -472,7 +520,7 @@ static void test_handoff(void)
   for (unsigned int divider = 0; divider < 4; divider++)
     {
       g_hsi = divider << RCC_HSICFGR_HSIDIV_SHIFT;
-      assert(stm32_usart_clock() == (64000000u >> divider));
+      assert(stm32_usart_clock(g_priv.config) == (64000000u >> divider));
     }
 
   g_regs[STM32_USART_CR1_OFFSET / 4] =
@@ -485,17 +533,19 @@ static void test_handoff(void)
   assert(g_regs[STM32_USART_CR1_OFFSET / 4] & USART_CR1_FIFOEN);
   assert(g_regs[STM32_USART_PRESC_OFFSET / 4] == 0);
   assert(g_regs[STM32_USART_BRR_OFFSET / 4] == 69);
-  assert(stm32_usart_format(stm32_usart_clock(), 115200, 8, 0, false,
+  assert(stm32_usart_format(stm32_usart_clock(g_priv.config),
+                            115200, 8, 0, false,
                             &format) == 0);
   g_regs[STM32_USART_ISR_OFFSET / 4] &= ~USART_ISR_TC;
   disables = g_disable_count;
-  assert(stm32_usart_configure(g_priv.usartbase, &format, 0) == 0);
+  assert(stm32_usart_configure(g_priv.config->base, &format, 0) == 0);
   assert(stm32serial_setup(&g_priv.dev) == 0);
   assert(g_disable_count == disables);
   g_regs[STM32_USART_ISR_OFFSET / 4] &=
     ~(USART_ISR_TEACK | USART_ISR_REACK);
   g_delays = 0;
-  assert(stm32_usart_configure(g_priv.usartbase, &format, 0) == -ETIMEDOUT);
+  assert(stm32_usart_configure(g_priv.config->base, &format, 0) ==
+         -ETIMEDOUT);
   assert(g_delays == USART_ACK_TIMEOUT_US);
   assert(g_disable_count == disables);
 }
