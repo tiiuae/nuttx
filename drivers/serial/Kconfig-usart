@@ -53,6 +53,11 @@ config USART9_SERIALDRIVER
 	default n
 	select MCU_SERIAL
 
+config USART10_SERIALDRIVER
+	bool
+	default n
+	select MCU_SERIAL
+
 menu "USART0 Configuration"
 	depends on USART0_SERIALDRIVER
 
@@ -849,5 +854,49 @@ config USART9_TXDMA
 	select SERIAL_TXDMA
 	---help---
 		Enable Tx DMA transfers on USART9
+
+endmenu
+
+menu "USART10 Configuration"
+	depends on USART10_SERIALDRIVER
+
+config USART10_RXBUFSIZE
+	int "Receive buffer size"
+	default 252
+
+config USART10_TXBUFSIZE
+	int "Transmit buffer size"
+	default 252
+
+config USART10_BAUD
+	int "BAUD rate"
+	default 115200
+
+config USART10_BITS
+	int "Character size"
+	default 8
+	range 7 8
+
+config USART10_PARITY
+	int "Parity setting"
+	default 0
+	range 0 2
+	---help---
+		0=no parity, 1=odd parity, 2=even parity
+
+config USART10_2STOP
+	int "Uses 2 stop bits"
+	default 0
+	range 0 1
+
+config USART10_IFLOWCONTROL
+	bool "USART10 RTS flow control"
+	default n
+	select SERIAL_IFLOWCONTROL
+
+config USART10_OFLOWCONTROL
+	bool "USART10 CTS flow control"
+	default n
+	select SERIAL_OFLOWCONTROL
 
 endmenu

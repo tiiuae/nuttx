@@ -359,12 +359,13 @@ config STM32_USART1_SERIALDRIVER
 
 config STM32_USART1_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 config STM32_USART1_HCIUART
 	bool "Bluetooth HCI-UART"
 	select STM32_HCIUART
-	depends on WIRELESS_BLUETOOTH
+	depends on WIRELESS_BLUETOOTH && !ARCH_CHIP_STM32N6
 
 endchoice # USART1 Driver Configuration
 
@@ -381,12 +382,13 @@ config STM32_USART2_SERIALDRIVER
 
 config STM32_USART2_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 config STM32_USART2_HCIUART
 	bool "Bluetooth HCI-UART"
 	select STM32_HCIUART
-	depends on WIRELESS_BLUETOOTH
+	depends on WIRELESS_BLUETOOTH && !ARCH_CHIP_STM32N6
 
 endchoice # USART2 Driver Configuration
 
@@ -403,12 +405,13 @@ config STM32_USART3_SERIALDRIVER
 
 config STM32_USART3_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 config STM32_USART3_HCIUART
 	bool "Bluetooth HCI-UART"
 	select STM32_HCIUART
-	depends on WIRELESS_BLUETOOTH
+	depends on WIRELESS_BLUETOOTH && !ARCH_CHIP_STM32N6
 
 endchoice # USART3 Driver Configuration
 
@@ -425,6 +428,7 @@ config STM32_UART4_SERIALDRIVER
 
 config STM32_UART4_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 endchoice # UART1 Driver Configuration
@@ -442,6 +446,7 @@ config STM32_UART5_SERIALDRIVER
 
 config STM32_UART5_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 endchoice # UART5 Driver Configuration
@@ -459,12 +464,13 @@ config STM32_USART6_SERIALDRIVER
 
 config STM32_USART6_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 config STM32_USART6_HCIUART
 	bool "Bluetooth HCI-UART"
 	select STM32_HCIUART
-	depends on WIRELESS_BLUETOOTH
+	depends on WIRELESS_BLUETOOTH && !ARCH_CHIP_STM32N6
 
 endchoice # USART6 Driver Configuration
 
@@ -538,7 +544,7 @@ endchoice # USART8 Driver Configuration
 
 choice
 	prompt "UART7 Driver Configuration"
-	depends on (STM32_HAVE_IP_USART || STM32_HAVE_USART_H5) && STM32_UART7
+	depends on (STM32_HAVE_IP_USART || STM32_HAVE_USART_H5 || ARCH_CHIP_STM32N6) && STM32_UART7
 	default STM32_UART7_SERIALDRIVER
 
 config STM32_UART7_SERIALDRIVER
@@ -549,18 +555,19 @@ config STM32_UART7_SERIALDRIVER
 
 config STM32_UART7_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 config STM32_UART7_HCIUART
 	bool "Bluetooth HCI-UART"
 	select STM32_HCIUART
-	depends on WIRELESS_BLUETOOTH
+	depends on WIRELESS_BLUETOOTH && !ARCH_CHIP_STM32N6
 
 endchoice # UART7 Driver Configuration
 
 choice
 	prompt "UART8 Driver Configuration"
-	depends on (STM32_HAVE_IP_USART || STM32_HAVE_USART_H5) && STM32_UART8
+	depends on (STM32_HAVE_IP_USART || STM32_HAVE_USART_H5 || ARCH_CHIP_STM32N6) && STM32_UART8
 	default STM32_UART8_SERIALDRIVER
 
 config STM32_UART8_SERIALDRIVER
@@ -571,14 +578,31 @@ config STM32_UART8_SERIALDRIVER
 
 config STM32_UART8_1WIREDRIVER
 	bool "1-Wire driver"
+	depends on !ARCH_CHIP_STM32N6
 	select STM32_1WIREDRIVER
 
 config STM32_UART8_HCIUART
 	bool "Bluetooth HCI-UART"
 	select STM32_HCIUART
-	depends on WIRELESS_BLUETOOTH
+	depends on WIRELESS_BLUETOOTH && !ARCH_CHIP_STM32N6
 
 endchoice # UART8 Driver Configuration
+
+config STM32_UART9_SERIALDRIVER
+	bool "UART9 standard serial driver"
+	depends on ARCH_CHIP_STM32N6 && STM32_UART9
+	default y
+	select UART9_SERIALDRIVER
+	select ARCH_HAVE_SERIAL_TERMIOS
+	select STM32_SERIALDRIVER
+
+config STM32_USART10_SERIALDRIVER
+	bool "USART10 standard serial driver"
+	depends on ARCH_CHIP_STM32N6 && STM32_USART10
+	default y
+	select USART10_SERIALDRIVER
+	select ARCH_HAVE_SERIAL_TERMIOS
+	select STM32_SERIALDRIVER
 
 config USART1_RS485
 	bool "RS-485 on USART1"
