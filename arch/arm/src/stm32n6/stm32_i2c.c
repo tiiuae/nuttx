@@ -33,6 +33,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/signal.h>
 
 #include <arch/board/board.h>
 
@@ -606,6 +607,7 @@ static int stm32_i2c_reset_controller(struct stm32_i2c_priv_s *priv,
       return -EIO;
     }
 
+  priv->configured_frequency = 0;
   putreg32(config->reset_mask, config->rcc_reset_set);
   if ((getreg32(config->rcc_reset) & config->reset_mask) == 0)
     {
@@ -629,7 +631,6 @@ static int stm32_i2c_reset_controller(struct stm32_i2c_priv_s *priv,
       return -EIO;
     }
 
-  priv->configured_frequency = 0;
   ret = stm32_i2c_set_timing(priv, frequency_hz);
   if (ret < 0)
     {
@@ -1069,6 +1070,7 @@ static int stm32_i2c_hardware_initialize(struct stm32_i2c_priv_s *priv)
       goto errout;
     }
 
+  priv->configured_frequency = 0;
   putreg32(config->reset_mask, config->rcc_reset_set);
   if ((getreg32(config->rcc_reset) & config->reset_mask) == 0)
     {
@@ -1740,6 +1742,8 @@ static int stm32_i2c_cleanup_stop(struct stm32_i2c_priv_s *priv)
   clock_t timeout =
       stm32_i2c_timeout_from_ms(STM32_I2C_STOP_TIMEOUT_MS);
   uint32_t status;
+  uint32_t cr2;
+  int ret;
 
   if (priv->transfer_result == -EAGAIN)
     {
@@ -1747,14 +1751,27 @@ static int stm32_i2c_cleanup_stop(struct stm32_i2c_priv_s *priv)
     }
 
   status = getreg32(priv->config->base + STM32_I2C_ISR_OFFSET);
-  if ((status & I2C_ISR_BUSY) == 0)
+  if ((status & I2C_ISR_ARLO) != 0)
     {
       return OK;
     }
 
-  if (priv->transfer_result != -EAGAIN &&
-      (getreg32(priv->config->base + STM32_I2C_CR2_OFFSET) &
-       I2C_CR2_STOP) == 0)
+  cr2 = getreg32(priv->config->base + STM32_I2C_CR2_OFFSET);
+  if ((cr2 & I2C_CR2_START) != 0)
+    {
+      /* Writing START = 0 cannot cancel a pending request. */
+
+      return stm32_i2c_reset_controller(priv, priv->configured_frequency);
+    }
+
+  if ((status & I2C_ISR_BUSY) == 0)
+    {
+      return (cr2 & I2C_CR2_STOP) != 0 ?
+             stm32_i2c_reset_controller(priv, priv->configured_frequency) :
+             OK;
+    }
+
+  if ((cr2 & I2C_CR2_STOP) == 0)
     {
       modifyreg32(priv->config->base + STM32_I2C_CR2_OFFSET,
                   0, I2C_CR2_STOP);
@@ -1764,18 +1781,35 @@ static int stm32_i2c_cleanup_stop(struct stm32_i2c_priv_s *priv)
   do
     {
       status = getreg32(priv->config->base + STM32_I2C_ISR_OFFSET);
+      if ((status & I2C_ISR_ARLO) != 0)
+        {
+          return OK;
+        }
+
       if ((status & I2C_ISR_STOPF) != 0)
         {
           stm32_i2c_clear_flags(priv, I2C_ISR_STOPF);
-          return OK;
         }
 
       if ((status & I2C_ISR_BUSY) == 0)
         {
-          return OK;
+          cr2 = getreg32(priv->config->base + STM32_I2C_CR2_OFFSET);
+          return (cr2 & (I2C_CR2_START | I2C_CR2_STOP)) != 0 ?
+                 stm32_i2c_reset_controller(priv,
+                                            priv->configured_frequency) :
+                 OK;
         }
 
-      up_udelay(10);
+      if (stm32_i2c_deadline_expired(start, timeout))
+        {
+          break;
+        }
+
+      ret = nxsig_usleep(100);
+      if (ret < 0 && ret != -EINTR)
+        {
+          return ret;
+        }
     }
   while (!stm32_i2c_deadline_expired(start, timeout));
 
@@ -1785,6 +1819,13 @@ static int stm32_i2c_cleanup_stop(struct stm32_i2c_priv_s *priv)
 static void stm32_i2c_clear_transfer_status(struct stm32_i2c_priv_s *priv)
 {
   uint32_t status = getreg32(priv->config->base + STM32_I2C_ISR_OFFSET);
+
+  if ((status & I2C_ISR_TXE) == 0)
+    {
+      /* Writing TXE flushes TXDR without generating a bus condition. */
+
+      putreg32(I2C_ISR_TXE, priv->config->base + STM32_I2C_ISR_OFFSET);
+    }
 
   if ((status & I2C_ISR_RXNE) != 0)
     {
