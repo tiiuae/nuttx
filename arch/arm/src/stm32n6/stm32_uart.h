@@ -33,6 +33,7 @@
 #include "chip.h"
 
 #include "hardware/stm32n6xxx_uart.h"
+#include "stm32_serial_format.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -87,11 +88,19 @@ extern "C"
  * Public Function Prototypes
  ****************************************************************************/
 
-/* USART kernel clock with CCIPR13 selecting hsi_div_ck and PRESC=/1.
+/* USART kernel clock before PRESC, with CCIPR13 selecting hsi_div_ck.
  * The global HSI divider must remain unchanged while serial is in use.
  */
 
 uint32_t stm32_usart_clock(void);
+
+/* The caller must exclude IRQ/debug output and quiesce DMA and wire TX. */
+
+int stm32_usart_configure(uint32_t base,
+                          const struct stm32_usart_format_s *format,
+                          uint32_t flow);
+
+int stm32_usart_disable(uint32_t base);
 
 #undef EXTERN
 #if defined(__cplusplus)

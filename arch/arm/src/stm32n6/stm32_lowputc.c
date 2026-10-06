@@ -27,6 +27,10 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
+#include <debug.h>
+
+#include <nuttx/arch.h>
 
 #include <arch/board/board.h>
 
@@ -59,64 +63,15 @@
 #    define STM32N6_CONSOLE_RX       GPIO_USART1_RX
 #  endif
 
-  /* CR1 settings */
-
-#  if STM32N6_CONSOLE_BITS == 9
-#    define USART_CR1_M0_VALUE USART_CR1_M0
-#    define USART_CR1_M1_VALUE 0
-#  elif STM32N6_CONSOLE_BITS == 7
-#    define USART_CR1_M0_VALUE 0
-#    define USART_CR1_M1_VALUE USART_CR1_M1
-#  else /* 8 bits */
-#    define USART_CR1_M0_VALUE 0
-#    define USART_CR1_M1_VALUE 0
+#  if STM32N6_CONSOLE_BITS != 7 && STM32N6_CONSOLE_BITS != 8
+#    error "STM32N6 serial supports only 7-bit and 8-bit payloads"
 #  endif
-
-#  if STM32N6_CONSOLE_PARITY == 1 /* odd parity */
-#    define USART_CR1_PARITY_VALUE (USART_CR1_PCE|USART_CR1_PS)
-#  elif STM32N6_CONSOLE_PARITY == 2 /* even parity */
-#    define USART_CR1_PARITY_VALUE USART_CR1_PCE
-#  else /* no parity */
-#    define USART_CR1_PARITY_VALUE 0
+#  if STM32N6_CONSOLE_BAUD <= 0 || STM32N6_CONSOLE_PARITY > 2
+#    error "Invalid STM32N6 console line configuration"
 #  endif
-
-#  define USART_CR1_CLRBITS \
-    (USART_CR1_UE | USART_CR1_UESM | USART_CR1_RE | USART_CR1_TE | USART_CR1_PS | \
-     USART_CR1_PCE | USART_CR1_WAKE | USART_CR1_M0 | USART_CR1_M1 | \
-     USART_CR1_MME | USART_CR1_OVER8 | USART_CR1_DEDT_MASK | \
-     USART_CR1_DEAT_MASK | USART_CR1_ALLINTS)
-
-#  define USART_CR1_SETBITS (USART_CR1_M0_VALUE|USART_CR1_M1_VALUE|USART_CR1_PARITY_VALUE)
-
-  /* CR2 settings */
-
-#  if STM32N6_CONSOLE_2STOP != 0
-#    define USART_CR2_STOP2_VALUE USART_CR2_STOP2
-#  else
-#    define USART_CR2_STOP2_VALUE 0
-#  endif
-
-#  define USART_CR2_CLRBITS \
-    (USART_CR2_ADDM7 | USART_CR2_LBDL | USART_CR2_LBDIE | USART_CR2_LBCL | \
-     USART_CR2_CPHA | USART_CR2_CPOL | USART_CR2_CLKEN | USART_CR2_STOP_MASK | \
-     USART_CR2_LINEN | USART_CR2_SWAP | USART_CR2_RXINV | USART_CR2_TXINV | \
-     USART_CR2_DATAINV | USART_CR2_MSBFIRST | USART_CR2_ABREN | \
-     USART_CR2_ABRMOD_MASK | USART_CR2_RTOEN | USART_CR2_ADD_MASK)
-
-#  define USART_CR2_SETBITS USART_CR2_STOP2_VALUE
-
-  /* CR3 settings */
-
-#  define USART_CR3_CLRBITS \
-    (USART_CR3_EIE | USART_CR3_IREN | USART_CR3_IRLP | USART_CR3_HDSEL | \
-     USART_CR3_NACK | USART_CR3_SCEN | USART_CR3_DMAR | USART_CR3_DMAT | \
-     USART_CR3_RTSE | USART_CR3_CTSE | USART_CR3_CTSIE | USART_CR3_ONEBIT | \
-     USART_CR3_OVRDIS | USART_CR3_DDRE | USART_CR3_DEM | USART_CR3_DEP | \
-     USART_CR3_SCARCNT2_MASK | USART_CR3_WUS_MASK | USART_CR3_WUFIE)
-
-#  define USART_CR3_SETBITS 0
-
 #endif /* HAVE_CONSOLE */
+
+#define USART_ACK_TIMEOUT_US 100
 
 /****************************************************************************
  * Private Types
@@ -138,6 +93,24 @@
  * Private Functions
  ****************************************************************************/
 
+static int stm32_usart_waitack(uint32_t base, uint32_t expected)
+{
+  unsigned int i;
+
+  for (i = 0; i < USART_ACK_TIMEOUT_US; i++)
+    {
+      if ((getreg32(base + STM32_USART_ISR_OFFSET) &
+           (USART_ISR_TEACK | USART_ISR_REACK)) == expected)
+        {
+          return OK;
+        }
+
+      up_udelay(1);
+    }
+
+  return -ETIMEDOUT;
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -156,6 +129,130 @@ uint32_t stm32_usart_clock(void)
                     RCC_HSICFGR_HSIDIV_MASK) >> RCC_HSICFGR_HSIDIV_SHIFT;
 
   return STM32_HSI_FREQUENCY >> hsidiv;
+}
+
+int stm32_usart_disable(uint32_t base)
+{
+  uint32_t cr1 = getreg32(base + STM32_USART_CR1_OFFSET);
+  uint32_t expected = 0;
+  int ret;
+
+  putreg32(cr1 & ~(USART_CR1_UE | USART_CR1_TE | USART_CR1_RE),
+           base + STM32_USART_CR1_OFFSET);
+  ret = stm32_usart_waitack(base, 0);
+  if (ret < 0)
+    {
+      putreg32(cr1, base + STM32_USART_CR1_OFFSET);
+      if ((cr1 & USART_CR1_UE) != 0)
+        {
+          expected = (cr1 & USART_CR1_TE) != 0 ? USART_ISR_TEACK : 0;
+          expected |= (cr1 & USART_CR1_RE) != 0 ? USART_ISR_REACK : 0;
+        }
+
+      if (stm32_usart_waitack(base, expected) < 0)
+        {
+          return -EIO;
+        }
+    }
+
+  return ret;
+}
+
+/****************************************************************************
+ * Name: stm32_usart_configure
+ *
+ * Description:
+ *   Apply a validated asynchronous format with DMA and wire TX quiescent.
+ *   FIFOEN, format and PRESC are programmed with UE=0.  Restore the old
+ *   registers if an acknowledgement times out.
+ *
+ ****************************************************************************/
+
+int stm32_usart_configure(uint32_t base,
+                          const struct stm32_usart_format_s *format,
+                          uint32_t flow)
+{
+  uint32_t cr1 = getreg32(base + STM32_USART_CR1_OFFSET);
+  uint32_t cr2 = getreg32(base + STM32_USART_CR2_OFFSET);
+  uint32_t cr3 = getreg32(base + STM32_USART_CR3_OFFSET);
+  uint32_t brr = getreg32(base + STM32_USART_BRR_OFFSET);
+  uint32_t presc = getreg32(base + STM32_USART_PRESC_OFFSET);
+  uint32_t enables = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
+  uint32_t newcr1;
+  uint32_t newcr2;
+  uint32_t newcr3;
+  uint32_t expected;
+  int ret;
+
+  newcr1 = (cr1 & ~(enables | USART_CR1_FORMAT_MASK | USART_CR1_ALLINTS |
+                   USART_CR1_UESM | USART_CR1_MME)) |
+           format->cr1 | USART_CR1_FIFOEN;
+  newcr2 = (cr2 & ~(USART_CR2_STOP_MASK | USART_CR2_CLKEN |
+                   USART_CR2_CPOL | USART_CR2_CPHA | USART_CR2_LBCL |
+                   USART_CR2_LINEN | USART_CR2_LBDIE | USART_CR2_ABREN |
+                   USART_CR2_RTOEN)) | format->cr2;
+  newcr3 = (cr3 & ~(USART_CR3_RTSE | USART_CR3_CTSE | USART_CR3_ALLINTS |
+                   USART_CR3_DMAR | USART_CR3_DMAT | USART_CR3_SCEN |
+                   USART_CR3_IREN | USART_CR3_IRLP | USART_CR3_OVRDIS |
+                   USART_CR3_DDRE | USART_CR3_ONEBIT)) | flow;
+
+  /* Early and full console setup may request the same format while the
+   * initial idle frame is still being transmitted.  Do not restart it.
+   */
+
+  if ((cr1 & ~USART_CR1_ALLINTS) == (newcr1 | enables) &&
+      cr2 == newcr2 && (cr3 & ~USART_CR3_ALLINTS) == newcr3 &&
+      brr == format->brr && presc == format->presc)
+    {
+      putreg32(newcr1 | enables, base + STM32_USART_CR1_OFFSET);
+      putreg32(newcr3, base + STM32_USART_CR3_OFFSET);
+      return stm32_usart_waitack(base, USART_ISR_TEACK | USART_ISR_REACK);
+    }
+
+  if ((cr1 & USART_CR1_UE) != 0 &&
+      (getreg32(base + STM32_USART_ISR_OFFSET) & USART_ISR_TC) == 0)
+    {
+      return -EBUSY;
+    }
+
+  ret = stm32_usart_disable(base);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  putreg32(newcr1, base + STM32_USART_CR1_OFFSET);
+  putreg32(newcr2, base + STM32_USART_CR2_OFFSET);
+  putreg32(format->presc, base + STM32_USART_PRESC_OFFSET);
+  putreg32(format->brr, base + STM32_USART_BRR_OFFSET);
+  putreg32(newcr3, base + STM32_USART_CR3_OFFSET);
+  putreg32(newcr1 | enables, base + STM32_USART_CR1_OFFSET);
+
+  ret = stm32_usart_waitack(base, USART_ISR_TEACK | USART_ISR_REACK);
+  if (ret < 0)
+    {
+      putreg32(newcr1, base + STM32_USART_CR1_OFFSET);
+      putreg32(cr2, base + STM32_USART_CR2_OFFSET);
+      putreg32(presc, base + STM32_USART_PRESC_OFFSET);
+      putreg32(brr, base + STM32_USART_BRR_OFFSET);
+      putreg32(cr3, base + STM32_USART_CR3_OFFSET);
+      putreg32(cr1 & ~USART_CR1_UE, base + STM32_USART_CR1_OFFSET);
+      putreg32(cr1, base + STM32_USART_CR1_OFFSET);
+
+      expected = 0;
+      if ((cr1 & USART_CR1_UE) != 0)
+        {
+          expected = (cr1 & USART_CR1_TE) != 0 ? USART_ISR_TEACK : 0;
+          expected |= (cr1 & USART_CR1_RE) != 0 ? USART_ISR_REACK : 0;
+        }
+
+      if (stm32_usart_waitack(base, expected) < 0)
+        {
+          return -EIO;
+        }
+    }
+
+  return ret;
 }
 
 /****************************************************************************
@@ -190,10 +287,17 @@ void stm32_lowsetup(void)
 {
 #if defined(HAVE_UART)
 #if defined(HAVE_CONSOLE) && !defined(CONFIG_SUPPRESS_UART_CONFIG)
-  uint32_t cr;
-  uint32_t clock;
-  uint32_t usartdiv8;
-  uint32_t brr;
+  struct stm32_usart_format_s format;
+  int ret;
+
+  ret = stm32_usart_format(stm32_usart_clock(), STM32N6_CONSOLE_BAUD,
+                           STM32N6_CONSOLE_BITS, STM32N6_CONSOLE_PARITY,
+                           STM32N6_CONSOLE_2STOP != 0, &format);
+  if (ret < 0)
+    {
+      _err("ERROR: Invalid console format: %d\n", ret);
+      PANIC();
+    }
 #endif
 
 #if defined(HAVE_CONSOLE)
@@ -212,47 +316,12 @@ void stm32_lowsetup(void)
 #endif
 
 #if defined(HAVE_CONSOLE) && !defined(CONFIG_SUPPRESS_UART_CONFIG)
-  modifyreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET,
-              USART_CR1_UE, 0);
-
-  cr  = getreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR2_OFFSET);
-  cr &= ~USART_CR2_CLRBITS;
-  cr |= USART_CR2_SETBITS;
-  putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR2_OFFSET);
-
-  cr  = getreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
-  cr &= ~USART_CR1_CLRBITS;
-  cr |= USART_CR1_SETBITS;
-  putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
-
-  cr  = getreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR3_OFFSET);
-  cr &= ~USART_CR3_CLRBITS;
-  cr |= USART_CR3_SETBITS;
-  putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR3_OFFSET);
-
-  putreg32(USART_PRESC_DIV1,
-           STM32N6_CONSOLE_BASE + STM32_USART_PRESC_OFFSET);
-
-  clock = stm32_usart_clock();
-  usartdiv8 = ((clock << 1) + (STM32N6_CONSOLE_BAUD >> 1)) /
-              STM32N6_CONSOLE_BAUD;
-  cr  = getreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
-  if (usartdiv8 > 2000)
+  ret = stm32_usart_configure(STM32N6_CONSOLE_BASE, &format, 0);
+  if (ret < 0)
     {
-      brr = (clock + (STM32N6_CONSOLE_BAUD >> 1)) /
-            STM32N6_CONSOLE_BAUD;
+      _err("ERROR: Console configuration failed: %d\n", ret);
+      PANIC();
     }
-  else
-    {
-      brr = (usartdiv8 & 0xfff0) | ((usartdiv8 & 0x000f) >> 1);
-      cr |= USART_CR1_OVER8;
-    }
-
-  putreg32(brr, STM32N6_CONSOLE_BASE + STM32_USART_BRR_OFFSET);
-  putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
-
-  cr |= (USART_CR1_UE | USART_CR1_TE | USART_CR1_RE);
-  putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
 #endif
 #endif
 }

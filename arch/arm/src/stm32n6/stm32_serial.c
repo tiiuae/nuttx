@@ -110,19 +110,11 @@ struct stm32_serial_s
 {
   struct uart_dev_s dev;       /* Generic UART device */
   uint16_t          ie;        /* Saved interrupt mask bits value */
-  uint16_t          sr;        /* Saved status bits */
 
   /* Has been initialized and HW is setup. */
 
   bool              initialized;
-
-#ifdef CONFIG_PM
-  bool              suspended; /* UART device has been suspended. */
-
-  /* Interrupt mask value stored before suspending for stop mode. */
-
-  uint16_t          suspended_ie;
-#endif
+  int               shutdown_error;
 
   /* If termios are supported, then the following fields may vary at
    * runtime.
@@ -135,6 +127,9 @@ struct stm32_serial_s
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
   bool              oflow;     /* output flow control (CTS) enabled */
 #endif
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  bool              iflow;     /* input flow control (RTS) enabled */
+#endif
   uint32_t          baud;      /* Configured baud */
 #else
   const uint8_t     parity;    /* 0=none, 1=odd, 2=even */
@@ -142,6 +137,9 @@ struct stm32_serial_s
   const bool        stopbits2; /* True: Configure with 2 stop bits instead of 1 */
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
   const bool        oflow;     /* output flow control (CTS) enabled */
+#endif
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  const bool        iflow;     /* input flow control (RTS) enabled */
 #endif
   const uint32_t    baud;      /* Configured baud */
 #endif
@@ -155,8 +153,6 @@ struct stm32_serial_s
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
   const uint32_t    cts_gpio;  /* U[S]ART CTS GPIO pin configuration */
 #endif
-  const bool        iflow;     /* input flow control (RTS) enabled */
-
   const uint8_t     unconfigure; /* Unconfigure pins on close */
   spinlock_t        lock;
 
@@ -173,9 +169,6 @@ struct stm32_serial_s
  * Private Function Prototypes
  ****************************************************************************/
 
-#ifndef CONFIG_SUPPRESS_UART_CONFIG
-static void stm32serial_setformat(struct uart_dev_s *dev);
-#endif
 static int  stm32serial_setup(struct uart_dev_s *dev);
 static void stm32serial_shutdown(struct uart_dev_s *dev);
 static int  stm32serial_attach(struct uart_dev_s *dev);
@@ -206,10 +199,6 @@ static void stm32serial_dmafallback(struct stm32_serial_s *priv, int error);
 #endif
 
 #ifdef CONFIG_PM
-static void stm32serial_setsuspend(struct uart_dev_s *dev, bool suspend);
-static void stm32serial_pm_setsuspend(bool suspend);
-static void stm32serial_pmnotify(struct pm_callback_s *cb, int domain,
-                                   enum pm_state_e pmstate);
 static int  stm32serial_pmprepare(struct pm_callback_s *cb, int domain,
                                     enum pm_state_e pmstate);
 #endif
@@ -314,17 +303,9 @@ static struct stm32_serial_s * const
 };
 
 #ifdef CONFIG_PM
-struct serialpm_s
+static struct pm_callback_s g_serialpm =
 {
-  struct pm_callback_s pm_cb;
-  bool serial_suspended;
-};
-
-static struct serialpm_s g_serialpm =
-{
-  .pm_cb.notify  = stm32serial_pmnotify,
-  .pm_cb.prepare = stm32serial_pmprepare,
-  .serial_suspended = false
+  .prepare = stm32serial_pmprepare
 };
 #endif
 
@@ -454,235 +435,32 @@ static void stm32serial_disableusartint(struct stm32_serial_s *priv,
 }
 
 /****************************************************************************
- * Name: stm32serial_setformat
+ * Name: stm32serial_busy
  *
  * Description:
- *   Set the serial line format and speed.
+ *   Called with IRQs excluded before changing an active peripheral.
  *
  ****************************************************************************/
 
-#ifndef CONFIG_SUPPRESS_UART_CONFIG
-static void stm32serial_setformat(struct uart_dev_s *dev)
+#if defined(CONFIG_PM) || (defined(CONFIG_SERIAL_TERMIOS) && \
+                          !defined(CONFIG_SUPPRESS_UART_CONFIG))
+static bool stm32serial_busy(struct stm32_serial_s *priv)
 {
-  struct stm32_serial_s *priv =
-    (struct stm32_serial_s *)dev->priv;
-  uint32_t regval;
-  uint32_t brr;
-  uint32_t cr1;
-  uint32_t usartdiv8;
-  uint32_t clock = stm32_usart_clock();
+  uint32_t sr;
 
-  /* In case of oversampling by 8, the equation is:
-   *
-   *   baud      = 2 * fCK / usartdiv8
-   *   usartdiv8 = 2 * fCK / baud
-   */
-
-  usartdiv8 = ((clock << 1) + (priv->baud >> 1)) / priv->baud;
-
-  /* Baud rate for standard USART (SPI mode included):
-   *
-   * In case of oversampling by 16, the equation is:
-   *   baud       = fCK / usartdiv16
-   *   usartdiv16 = fCK / baud
-   *              = 2 * usartdiv8
-   */
-
-  /* Use oversampling by 8 only if divisor is small. But what is small? */
-
-  cr1 = stm32serial_getreg(priv, STM32_USART_CR1_OFFSET);
-  if (usartdiv8 > 2000)
+#ifdef STM32_USART1_TXDMA
+  if (priv->txdma_active)
     {
-      /* Use usartdiv16 */
-
-      brr  = (usartdiv8 + 1) >> 1;
-
-      /* Clear oversampling by 8 to enable oversampling by 16 */
-
-      cr1 &= ~USART_CR1_OVER8;
-    }
-  else
-    {
-      DEBUGASSERT(usartdiv8 >= 8);
-
-      /* Perform mysterious operations on bits 0-3 */
-
-      brr  = ((usartdiv8 & 0xfff0) | ((usartdiv8 & 0x000f) >> 1));
-
-      /* Set oversampling by 8 */
-
-      cr1 |= USART_CR1_OVER8;
-    }
-
-  stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, cr1);
-  stm32serial_putreg(priv, STM32_USART_BRR_OFFSET, brr);
-
-  /* Configure parity mode */
-
-  regval  = stm32serial_getreg(priv, STM32_USART_CR1_OFFSET);
-  regval &= ~(USART_CR1_PCE | USART_CR1_PS | USART_CR1_M0 | USART_CR1_M1);
-
-  if (priv->parity == 1)       /* Odd parity */
-    {
-      regval |= (USART_CR1_PCE | USART_CR1_PS);
-    }
-  else if (priv->parity == 2)  /* Even parity */
-    {
-      regval |= USART_CR1_PCE;
-    }
-
-  /* Configure word length (parity uses one of configured bits)
-   *
-   * Default: 1 start, 8 data (no parity), n stop, OR
-   *          1 start, 7 data + parity, n stop
-   */
-
-  if (priv->bits == 9 || (priv->bits == 8 && priv->parity != 0))
-    {
-      /* Select: 1 start, 8 data + parity, n stop, OR
-       *         1 start, 9 data (no parity), n stop.
-       */
-
-      regval |= USART_CR1_M0;
-    }
-  else if (priv->bits == 7 && priv->parity == 0)
-    {
-      /* Select: 1 start, 7 data (no parity), n stop */
-
-      regval |= USART_CR1_M1;
-    }
-
-  /* Else Select: 1 start, 7 data + parity, n stop, OR
-   *              1 start, 8 data (no parity), n stop.
-   */
-
-  stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, regval);
-
-  /* Configure STOP bits */
-
-  regval = stm32serial_getreg(priv, STM32_USART_CR2_OFFSET);
-  regval &= ~(USART_CR2_STOP_MASK);
-
-  if (priv->stopbits2)
-    {
-      regval |= USART_CR2_STOP2;
-    }
-
-  stm32serial_putreg(priv, STM32_USART_CR2_OFFSET, regval);
-
-  /* Configure hardware flow control */
-
-  regval  = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
-  regval &= ~(USART_CR3_CTSE | USART_CR3_RTSE);
-
-#if defined(CONFIG_SERIAL_IFLOWCONTROL) && !defined(CONFIG_STM32_FLOWCONTROL_BROKEN)
-  if (priv->iflow && (priv->rts_gpio != 0))
-    {
-      regval |= USART_CR3_RTSE;
+      return true;
     }
 #endif
 
-#ifdef CONFIG_SERIAL_OFLOWCONTROL
-  if (priv->oflow && (priv->cts_gpio != 0))
-    {
-      regval |= USART_CR3_CTSE;
-    }
-#endif
-
-  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, regval);
-}
-#endif /* CONFIG_SUPPRESS_UART_CONFIG */
-
-/****************************************************************************
- * Name: stm32serial_setsuspend
- *
- * Description:
- *   Suspend or resume serial peripheral.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_PM
-static void stm32serial_setsuspend(struct uart_dev_s *dev, bool suspend)
-{
-  struct stm32_serial_s *priv = (struct stm32_serial_s *)dev->priv;
-
-  if (priv->suspended == suspend)
-    {
-      return;
-    }
-
-  priv->suspended = suspend;
-
-  if (suspend)
-    {
-#ifdef CONFIG_SERIAL_IFLOWCONTROL
-      if (priv->iflow)
-        {
-          /* Force RTS high to prevent further Rx. */
-
-          stm32_configgpio((priv->rts_gpio & ~GPIO_MODE_MASK)
-                             | (GPIO_OUTPUT | GPIO_OUTPUT_SET));
-        }
-#endif
-
-      /* Disable interrupts to prevent Tx. */
-
-      stm32serial_disableusartint(priv, &priv->suspended_ie);
-
-      /* Wait last Tx to complete. */
-
-      while ((stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) &
-              USART_ISR_TC) == 0);
-    }
-  else
-    {
-      /* Re-enable interrupts to resume Tx. */
-
-      stm32serial_restoreusartint(priv, priv->suspended_ie);
-
-#ifdef CONFIG_SERIAL_IFLOWCONTROL
-      if (priv->iflow)
-        {
-          /* Restore peripheral RTS control. */
-
-          stm32_configgpio(priv->rts_gpio);
-        }
-#endif
-    }
-}
-#endif
-
-/****************************************************************************
- * Name: stm32serial_pm_setsuspend
- *
- * Description:
- *   Suspend or resume serial peripherals for/from deep-sleep/stop modes.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_PM
-static void stm32serial_pm_setsuspend(bool suspend)
-{
-  int n;
-
-  /* Already in desired state? */
-
-  if (suspend == g_serialpm.serial_suspended)
-    return;
-
-  g_serialpm.serial_suspended = suspend;
-
-  for (n = 0; n < STM32_NUSART; n++)
-    {
-      struct stm32_serial_s *priv = g_uart_devs[n];
-
-      if (!priv || !priv->initialized)
-        {
-          continue;
-        }
-
-      stm32serial_setsuspend(&priv->dev, suspend);
-    }
+  sr = stm32serial_getreg(priv, STM32_USART_ISR_OFFSET);
+  return priv->dev.xmit.head != priv->dev.xmit.tail ||
+         (sr & USART_ISR_TC) == 0 ||
+         (sr & (USART_ISR_RXNE | USART_ISR_BUSY)) != 0 ||
+         (stm32serial_getreg(priv, STM32_USART_CR3_OFFSET) &
+          (USART_CR3_DMAT | USART_CR3_DMAR)) != 0;
 }
 #endif
 
@@ -749,34 +527,62 @@ static int stm32serial_setup(struct uart_dev_s *dev)
 {
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
+  irqstate_t flags;
+  int ret = OK;
 
 #ifndef CONFIG_SUPPRESS_UART_CONFIG
-  uint32_t regval;
+  struct stm32_usart_format_s format;
+  uint32_t flow = 0;
+#endif
 
-  /* Note: The logic here depends on the fact that that the USART module
-   * was enabled in stm32_lowsetup().
-   */
+  flags = spin_lock_irqsave(&priv->lock);
+  if (priv->initialized)
+    {
+      ret = priv->shutdown_error;
+      goto out;
+    }
 
-  /* Enable USART APB1/2 clock */
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  ret = stm32_usart_format(stm32_usart_clock(), priv->baud, priv->bits,
+                           priv->parity, priv->stopbits2, &format);
+  if (ret < 0)
+    {
+      goto out;
+    }
 
   stm32serial_setapbclock(dev, true);
 
-  /* Configure pins for USART use */
-
   if (priv->tx_gpio != 0)
     {
-      stm32_configgpio(priv->tx_gpio);
+      ret = stm32_configgpio(priv->tx_gpio);
+      if (ret < 0)
+        {
+          goto out;
+        }
     }
 
   if (priv->rx_gpio != 0)
     {
-      stm32_configgpio(priv->rx_gpio);
+      ret = stm32_configgpio(priv->rx_gpio);
+      if (ret < 0)
+        {
+          goto out;
+        }
     }
 
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
   if (priv->cts_gpio != 0)
     {
-      stm32_configgpio(priv->cts_gpio);
+      ret = stm32_configgpio(priv->cts_gpio);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+      if (priv->oflow)
+        {
+          flow |= USART_CR3_CTSE;
+        }
     }
 #endif
 
@@ -790,60 +596,26 @@ static int stm32serial_setup(struct uart_dev_s *dev)
 
       config = (config & ~GPIO_MODE_MASK) | GPIO_OUTPUT;
 #endif
-      stm32_configgpio(config);
+      ret = stm32_configgpio(config);
+      if (ret < 0)
+        {
+          goto out;
+        }
+
+#ifndef CONFIG_STM32_FLOWCONTROL_BROKEN
+      if (priv->iflow)
+        {
+          flow |= USART_CR3_RTSE;
+        }
+#endif
     }
 #endif
 
-  /* Configure CR2 */
-
-  /* Clear STOP, CLKEN, CPOL, CPHA, LBCL, and interrupt enable bits */
-
-  regval  = stm32serial_getreg(priv, STM32_USART_CR2_OFFSET);
-  regval &= ~(USART_CR2_STOP_MASK | USART_CR2_CLKEN | USART_CR2_CPOL |
-              USART_CR2_CPHA | USART_CR2_LBCL | USART_CR2_LBDIE);
-
-  /* Configure STOP bits */
-
-  if (priv->stopbits2)
+  ret = stm32_usart_configure(priv->usartbase, &format, flow);
+  if (ret < 0)
     {
-      regval |= USART_CR2_STOP2;
+      goto out;
     }
-
-  stm32serial_putreg(priv, STM32_USART_CR2_OFFSET, regval);
-
-  /* Configure CR1 */
-
-  /* Clear UE, TE, RE, and all interrupt enable bits.
-   * UE must be cleared so FIFOEN can be set when re-enabling.
-   */
-
-  regval  = stm32serial_getreg(priv, STM32_USART_CR1_OFFSET);
-  regval &= ~(USART_CR1_UE | USART_CR1_TE | USART_CR1_RE |
-              USART_CR1_ALLINTS);
-
-  stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, regval);
-
-  /* Configure CR3 */
-
-  /* Clear CTSE, RTSE, and all interrupt enable bits */
-
-  regval  = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
-  regval &= ~(USART_CR3_CTSIE | USART_CR3_CTSE | USART_CR3_RTSE |
-              USART_CR3_EIE);
-
-  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, regval);
-
-  /* Configure the USART line format and speed. */
-
-  stm32serial_putreg(priv, STM32_USART_PRESC_OFFSET, USART_PRESC_DIV1);
-  stm32serial_setformat(dev);
-
-  /* Enable Rx, Tx, and the USART */
-
-  regval      = stm32serial_getreg(priv, STM32_USART_CR1_OFFSET);
-  regval     |= (USART_CR1_UE | USART_CR1_TE | USART_CR1_RE |
-                 USART_CR1_FIFOEN);
-  stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, regval);
 
 #endif /* CONFIG_SUPPRESS_UART_CONFIG */
 
@@ -854,8 +626,11 @@ static int stm32serial_setup(struct uart_dev_s *dev)
   /* Mark device as initialized. */
 
   priv->initialized = true;
+  priv->shutdown_error = OK;
 
-  return OK;
+out:
+  spin_unlock_irqrestore(&priv->lock, flags);
+  return ret;
 }
 
 /****************************************************************************
@@ -871,11 +646,7 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
 {
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
-  uint32_t regval;
-
-  /* Mark device as uninitialized. */
-
-  priv->initialized = false;
+  int ret;
 
   /* Disable all interrupts */
 
@@ -885,8 +656,6 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
   if (priv->txdma != NULL)
     {
       uint32_t cr3;
-      int ret;
-
       cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
       stm32serial_putreg(priv, STM32_USART_CR3_OFFSET,
                          cr3 & ~USART_CR3_DMAT);
@@ -895,6 +664,7 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
       if (ret < 0)
         {
           _err("ERROR: USART TX DMA stop failed: %d\n", ret);
+          priv->shutdown_error = ret;
           return;
         }
 
@@ -912,15 +682,26 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
     }
 #endif
 
-  /* Disable USART APB1/2 clock */
+  /* A nonblocking close or upper-half drain timeout may discard wire TX. */
+
+  if ((stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) & USART_ISR_TC) == 0)
+    {
+      _warn("WARNING: USART close discarding unfinished wire TX\n");
+    }
+
+  ret = stm32_usart_disable(priv->usartbase);
+  if (ret < 0)
+    {
+      _err("ERROR: USART disable failed: %d\n", ret);
+      priv->shutdown_error = ret;
+      return;
+    }
+
+  /* Disable the peripheral before removing its register bus clock. */
 
   stm32serial_setapbclock(dev, false);
-
-  /* Disable Rx, Tx, and the UART */
-
-  regval  = stm32serial_getreg(priv, STM32_USART_CR1_OFFSET);
-  regval &= ~(USART_CR1_UE | USART_CR1_TE | USART_CR1_RE);
-  stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, regval);
+  priv->initialized = false;
+  priv->shutdown_error = OK;
 
   /* Release pins. "If the serial-attached device is powered down, the TX
    * pin causes back-powering, potentially confusing the device to the point
@@ -1037,6 +818,8 @@ static int stm32serial_interrupt(int irq, void *context, void *arg)
   struct stm32_serial_s *priv = (struct stm32_serial_s *)arg;
   int  passes;
   bool handled;
+  uint32_t sr;
+
   DEBUGASSERT(priv != NULL);
 
   /* Report serial activity to the power management logic */
@@ -1056,7 +839,7 @@ static int stm32serial_interrupt(int irq, void *context, void *arg)
 
       /* Get the masked USART status word. */
 
-      priv->sr = stm32serial_getreg(priv, STM32_USART_ISR_OFFSET);
+      sr = stm32serial_getreg(priv, STM32_USART_ISR_OFFSET);
 
       /* USART interrupts:
        *
@@ -1084,7 +867,7 @@ static int stm32serial_interrupt(int irq, void *context, void *arg)
 
       /* Handle incoming, receive bytes. */
 
-      if ((priv->sr & USART_ISR_RXNE) != 0 &&
+      if ((sr & USART_ISR_RXNE) != 0 &&
           (priv->ie & USART_CR1_RXNEIE) != 0)
         {
           /* Received data ready... process incoming bytes.  NOTE the check
@@ -1100,21 +883,21 @@ static int stm32serial_interrupt(int irq, void *context, void *arg)
        * error conditions.
        */
 
-      else if ((priv->sr & (USART_ISR_ORE | USART_ISR_NF | USART_ISR_FE))
-               != 0)
+      else if ((sr & USART_ISR_RXNE) == 0 &&
+               (sr & USART_ISR_ERRORS) != 0)
         {
           /* These errors are cleared by writing the corresponding bit to the
            * interrupt clear register (ICR).
            */
 
           stm32serial_putreg(priv, STM32_USART_ICR_OFFSET,
-                               (USART_ICR_NCF | USART_ICR_ORECF |
-                                USART_ICR_FECF));
+                             sr & USART_ISR_ERRORS);
+          handled = true;
         }
 
       /* Handle outgoing, transmit bytes */
 
-      if ((priv->sr & USART_ISR_TXE) != 0 &&
+      if ((sr & USART_ISR_TXE) != 0 &&
           (priv->ie & USART_CR1_TXEIE) != 0)
         {
           /* Transmit data register empty ... process outgoing bytes */
@@ -1172,6 +955,7 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
     case TCGETS:
       {
         struct termios *termiosp = (struct termios *)arg;
+        irqstate_t flags;
 
         if (!termiosp)
           {
@@ -1179,11 +963,9 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
             break;
           }
 
+        flags = spin_lock_irqsave(&priv->lock);
         cfsetispeed(termiosp, priv->baud);
-
-        /* Note that since we only support 8/9 bit modes and
-         * there is no way to report 9-bit mode, we always claim 8.
-         */
+        cfsetospeed(termiosp, priv->baud);
 
         termiosp->c_cflag =
           ((priv->parity != 0) ? PARENB : 0) |
@@ -1195,13 +977,25 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
           ((priv->iflow) ? CRTS_IFLOW : 0) |
 #endif
-          CS8;
+          (priv->bits == 7 ? CS7 : CS8);
+        spin_unlock_irqrestore(&priv->lock, flags);
       }
       break;
 
     case TCSETS:
       {
+#ifdef CONFIG_SUPPRESS_UART_CONFIG
+        ret = -ENOTSUP;
+#else
         struct termios *termiosp = (struct termios *)arg;
+        struct stm32_usart_format_s format;
+        irqstate_t flags;
+        uint32_t baud;
+        uint32_t flow = 0;
+        uint8_t bits;
+        uint8_t parity;
+        uint16_t ie;
+        bool stopbits2;
 
         if (!termiosp)
           {
@@ -1211,12 +1005,17 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
 
         /* Perform some sanity checks before accepting any changes */
 
-        if (((termiosp->c_cflag & CSIZE) != CS8)
+        if (((termiosp->c_cflag & CSIZE) != CS7 &&
+             (termiosp->c_cflag & CSIZE) != CS8)
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
             || ((termiosp->c_cflag & CCTS_OFLOW) && (priv->cts_gpio == 0))
+#else
+            || (termiosp->c_cflag & CCTS_OFLOW) != 0
 #endif
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
             || ((termiosp->c_cflag & CRTS_IFLOW) && (priv->rts_gpio == 0))
+#else
+            || (termiosp->c_cflag & CRTS_IFLOW) != 0
 #endif
            )
           {
@@ -1224,39 +1023,66 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
             break;
           }
 
-        if (termiosp->c_cflag & PARENB)
+        bits = (termiosp->c_cflag & CSIZE) == CS7 ? 7 : 8;
+        parity = (termiosp->c_cflag & PARENB) == 0 ? 0 :
+                 (termiosp->c_cflag & PARODD) != 0 ? 1 : 2;
+        stopbits2 = (termiosp->c_cflag & CSTOPB) != 0;
+        baud = cfgetispeed(termiosp);
+
+        flags = spin_lock_irqsave(&priv->lock);
+        ret = stm32_usart_format(stm32_usart_clock(), baud, bits, parity,
+                                 stopbits2, &format);
+        if (ret < 0)
           {
-            priv->parity = (termiosp->c_cflag & PARODD) ? 1 : 2;
-          }
-        else
-          {
-            priv->parity = 0;
+            goto format_out;
           }
 
-        priv->stopbits2 = (termiosp->c_cflag & CSTOPB) != 0;
+        if (!priv->initialized || stm32serial_busy(priv))
+          {
+            ret = -EBUSY;
+            goto format_out;
+          }
+
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
-        priv->oflow = (termiosp->c_cflag & CCTS_OFLOW) != 0;
+        if ((termiosp->c_cflag & CCTS_OFLOW) != 0)
+          {
+            flow |= USART_CR3_CTSE;
+          }
+
+#endif
+#if defined(CONFIG_SERIAL_IFLOWCONTROL) && !defined(CONFIG_STM32_FLOWCONTROL_BROKEN)
+        if ((termiosp->c_cflag & CRTS_IFLOW) != 0)
+          {
+            flow |= USART_CR3_RTSE;
+          }
+#endif
+
+        /* The upper half implements drain/flush.  Preserve its RX ring;
+         * frames arriving at the UE-disable boundary cannot be preserved.
+         */
+
+        ie = priv->ie;
+        stm32serial_setusartint(priv, 0);
+        ret = stm32_usart_configure(priv->usartbase, &format, flow);
+        if (ret == OK)
+          {
+            priv->baud = baud;
+            priv->bits = bits;
+            priv->parity = parity;
+            priv->stopbits2 = stopbits2;
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+            priv->oflow = (termiosp->c_cflag & CCTS_OFLOW) != 0;
 #endif
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
-        priv->iflow = (termiosp->c_cflag & CRTS_IFLOW) != 0;
+            priv->iflow = (termiosp->c_cflag & CRTS_IFLOW) != 0;
 #endif
+          }
 
-        /* Note that since there is no way to request 9-bit mode
-         * and no way to support 5/6/7-bit modes, we ignore them
-         * all here.
-         */
+        stm32serial_setusartint(priv, ie);
 
-        /* Note that only cfgetispeed is used because we have knowledge
-         * that only one speed is supported.
-         */
-
-        priv->baud = cfgetispeed(termiosp);
-
-        /* Effect the changes immediately - note that we do not implement
-         * TCSADRAIN / TCSAFLUSH
-         */
-
-        stm32serial_setformat(dev);
+format_out:
+        spin_unlock_irqrestore(&priv->lock, flags);
+#endif
       }
       break;
 #endif /* CONFIG_SERIAL_TERMIOS */
@@ -1285,19 +1111,23 @@ static int stm32serial_receive(struct uart_dev_s *dev,
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
   uint32_t rdr;
+  uint32_t sr;
 
-  /* Get the Rx byte */
+  /* FIFO errors belong to the head character.  Clear before popping RDR,
+   * otherwise an ICR write could clear the following character's errors.
+   */
 
-  rdr      = stm32serial_getreg(priv, STM32_USART_RDR_OFFSET);
+  sr = stm32serial_getreg(priv, STM32_USART_ISR_OFFSET);
+  if ((sr & USART_ISR_ERRORS) != 0)
+    {
+      stm32serial_putreg(priv, STM32_USART_ICR_OFFSET,
+                         sr & USART_ISR_ERRORS);
+    }
 
-  /* Get the Rx byte plus error information.  Return those in status */
+  rdr = stm32serial_getreg(priv, STM32_USART_RDR_OFFSET);
+  *status = (sr & 0xffff) << 16 | rdr;
 
-  *status  = priv->sr << 16 | rdr;
-  priv->sr = 0;
-
-  /* Then return the actual received byte */
-
-  return rdr & 0xff;
+  return rdr & (priv->bits == 7 ? 0x7f : 0xff);
 }
 
 /****************************************************************************
@@ -1473,7 +1303,8 @@ static void stm32serial_send(struct uart_dev_s *dev, int ch)
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
 
-  stm32serial_putreg(priv, STM32_USART_TDR_OFFSET, (uint32_t)ch);
+  stm32serial_putreg(priv, STM32_USART_TDR_OFFSET,
+                     (uint32_t)ch & (priv->bits == 7 ? 0x7f : 0xff));
 }
 
 #ifdef STM32_USART1_TXDMA
@@ -1808,54 +1639,6 @@ static bool stm32serial_txempty(struct uart_dev_s *dev)
 }
 
 /****************************************************************************
- * Name: stm32serial_pmnotify
- *
- * Description:
- *   Notify the driver of new power state. This callback is called after
- *   all drivers have had the opportunity to prepare for the new power state.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_PM
-static void stm32serial_pmnotify(struct pm_callback_s *cb, int domain,
-                                   enum pm_state_e pmstate)
-{
-  switch (pmstate)
-    {
-      case PM_NORMAL:
-        {
-          stm32serial_pm_setsuspend(false);
-        }
-        break;
-
-      case PM_IDLE:
-        {
-          stm32serial_pm_setsuspend(false);
-        }
-        break;
-
-      case PM_STANDBY:
-        {
-          stm32serial_pm_setsuspend(true);
-        }
-        break;
-
-      case PM_SLEEP:
-        {
-          stm32serial_pm_setsuspend(true);
-        }
-        break;
-
-      default:
-
-        /* Should not get here */
-
-        break;
-    }
-}
-#endif
-
-/****************************************************************************
  * Name: stm32serial_pmprepare
  *
  * Description:
@@ -1872,62 +1655,57 @@ static int stm32serial_pmprepare(struct pm_callback_s *cb, int domain,
                                    enum pm_state_e pmstate)
 {
   int n;
+  int ret = OK;
+  irqstate_t flags;
 
-  /* Logic to prepare for a reduced power state goes here. */
+  UNUSED(cb);
 
-  switch (pmstate)
+  if (domain != PM_IDLE_DOMAIN ||
+      pmstate == PM_NORMAL || pmstate == PM_IDLE)
     {
-    case PM_NORMAL:
-    case PM_IDLE:
-      break;
-
-    case PM_STANDBY:
-    case PM_SLEEP:
-
-      /* Check if any of the active ports have data pending on Tx/Rx
-       * buffers.
-       */
-
-      for (n = 0; n < STM32_NUSART; n++)
-        {
-          struct stm32_serial_s *priv = g_uart_devs[n];
-
-          if (!priv || !priv->initialized)
-            {
-              /* Not active, skip. */
-
-              continue;
-            }
-
-          if (priv->suspended)
-            {
-              /* Port already suspended, skip. */
-
-              continue;
-            }
-
-          /* Check if port has data pending (Rx & Tx). */
-
-          if (priv->dev.xmit.head != priv->dev.xmit.tail)
-            {
-              return ERROR;
-            }
-
-          if (priv->dev.recv.head != priv->dev.recv.tail)
-            {
-              return ERROR;
-            }
-        }
-      break;
-
-    default:
-
-      /* Should not get here */
-
-      break;
+      return OK;
     }
 
-  return OK;
+  if (pmstate != PM_STANDBY && pmstate != PM_SLEEP)
+    {
+      return -EINVAL;
+    }
+
+  for (n = 0; n < STM32_NUSART; n++)
+    {
+      struct stm32_serial_s *priv = g_uart_devs[n];
+
+      if (priv == NULL)
+        {
+          continue;
+        }
+
+      flags = spin_lock_irqsave(&priv->lock);
+      if (priv->initialized)
+        {
+          if (stm32serial_busy(priv) ||
+              priv->dev.recv.head != priv->dev.recv.tail)
+            {
+              ret = -EBUSY;
+            }
+          else
+            {
+              /* Stop clocks, DMA retention and RX wakeup are not supported.
+               * Do not stop service in a void notify callback.
+               */
+
+              ret = -ENOTSUP;
+            }
+        }
+
+      spin_unlock_irqrestore(&priv->lock, flags);
+      if (ret != OK)
+        {
+          return ret;
+        }
+    }
+
+  return ret;
 }
 #endif
 
@@ -1969,7 +1747,15 @@ void arm_earlyserialinit(void)
   /* Configure whichever one is the console */
 
 #if CONSOLE_UART > 0
-  stm32serial_setup(&g_uart_devs[CONSOLE_UART - 1]->dev);
+  {
+    int ret = stm32serial_setup(&g_uart_devs[CONSOLE_UART - 1]->dev);
+
+    if (ret < 0)
+      {
+        _err("ERROR: Early serial setup failed: %d\n", ret);
+        PANIC();
+      }
+  }
 #endif
 
 #endif /* HAVE UART */
@@ -1998,7 +1784,7 @@ void arm_serialinit(void)
   /* Register to receive power management callbacks */
 
 #ifdef CONFIG_PM
-  ret = pm_register(&g_serialpm.pm_cb);
+  ret = pm_register(&g_serialpm);
   DEBUGASSERT(ret == OK);
   UNUSED(ret);
 #endif
@@ -2061,9 +1847,12 @@ void up_putc(int ch)
 {
 #if CONSOLE_UART > 0
   struct stm32_serial_s *priv = g_uart_devs[CONSOLE_UART - 1];
+  irqstate_t flags;
   uint16_t ie;
 
-  stm32serial_disableusartint(priv, &ie);
+  flags = spin_lock_irqsave(&priv->lock);
+  ie = priv->ie;
+  stm32serial_setusartint(priv, 0);
 
   /* Check for LF */
 
@@ -2075,7 +1864,8 @@ void up_putc(int ch)
     }
 
   arm_lowputc(ch);
-  stm32serial_restoreusartint(priv, ie);
+  stm32serial_setusartint(priv, ie);
+  spin_unlock_irqrestore(&priv->lock, flags);
 #endif
 }
 

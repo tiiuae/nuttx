@@ -102,7 +102,12 @@
 #define USART_CR1_ALLINTS         (USART_CR1_IDLEIE|USART_CR1_RXNEIE| \
                                    USART_CR1_TCIE|USART_CR1_TXEIE| \
                                    USART_CR1_PEIE|USART_CR1_CMIE| \
-                                   USART_CR1_RTOIE|USART_CR1_EOBIE)
+                                   USART_CR1_RTOIE|USART_CR1_EOBIE| \
+                                   USART_CR1_TXFEIE|USART_CR1_RXFFIE)
+
+#define USART_CR1_FORMAT_MASK     (USART_CR1_PS | USART_CR1_PCE | \
+                                   USART_CR1_M0 | USART_CR1_M1 | \
+                                   USART_CR1_OVER8)
 
 /* Control register 2 */
 
@@ -167,6 +172,12 @@
 #define USART_CR3_WUS_START       (2 << USART_CR3_WUS_SHIFT) /* 10: WUF active on Start bit detection */
 #define USART_CR3_WUS_RXNE        (3 << USART_CR3_WUS_SHIFT) /* 11: WUF active on RXNE */
 #define USART_CR3_WUFIE           (1 << 22)                  /* Bit 22: Wakeup from Stop mode interrupt enable */
+#define USART_CR3_TXFTIE          (1 << 23)                  /* Bit 23: TXFIFO threshold interrupt enable */
+#define USART_CR3_RXFTIE          (1 << 28)                  /* Bit 28: RXFIFO threshold interrupt enable */
+
+#define USART_CR3_ALLINTS         (USART_CR3_EIE | USART_CR3_CTSIE | \
+                                   USART_CR3_WUFIE | USART_CR3_TXFTIE | \
+                                   USART_CR3_RXFTIE)
 
 /* Baud Rate Register */
 
@@ -215,6 +226,9 @@
 #define USART_ISR_WUF             (1 << 20) /* Bit 20: Wakeup from Stop mode Flag */
 #define USART_ISR_TEACK           (1 << 21) /* Bit 21: Transmit enable acknowledge Flag */
 #define USART_ISR_REACK           (1 << 22) /* Bit 22: Receive enable acknowledge Flag */
+
+#define USART_ISR_ERRORS          (USART_ISR_PE | USART_ISR_FE | \
+                                   USART_ISR_NF | USART_ISR_ORE)
 
 /* ICR */
 
