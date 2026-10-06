@@ -55,7 +55,8 @@
 #define STM32_SRAM_SIZE         (4 * 1024 * 1024)  /* 4194304 bytes (4 MiB) */
 
 #define STM32_NPORTS                  (12)   /* GPIO ports A-H (8) + N, O, P, Q (4) */
-#define STM32_NUSART                   (1)   /* USART1 */
+#define STM32_NUSART                   (5)   /* USART1/2/3/6/10 */
+#define STM32_NUART                    (5)   /* UART4/5/7/8/9 */
 #define STM32_NI2C                     (4)   /* I2C1-I2C4 */
 
 /* NVIC priority levels *****************************************************/

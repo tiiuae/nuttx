@@ -53,6 +53,7 @@
 #define STM32_RCC_CCIPR4_OFFSET       0x0150  /* Kernel clock select register 4 */
 #define STM32_RCC_CCIPR9_OFFSET       0x0164  /* Peripheral kernel clock select register 9 */
 #define STM32_RCC_CCIPR13_OFFSET      0x0174  /* Peripheral kernel clock select register 13 */
+#define STM32_RCC_CCIPR14_OFFSET      0x0178  /* Peripheral kernel clock select register 14 */
 #define STM32_RCC_AHB1RSTR_OFFSET     0x0210  /* AHB1 peripheral reset register */
 #define STM32_RCC_AHB5RSTR_OFFSET     0x0220  /* AHB5 peripheral reset register */
 #define STM32_RCC_APB1LRSTR_OFFSET    0x0224  /* APB1L peripheral reset register */
@@ -108,6 +109,8 @@
 #define STM32_RCC_APB4LRSTCR_OFFSET   0x1234  /* APB4L peripheral reset clear register */
 #define STM32_RCC_APB1LENCR_OFFSET    0x1264  /* APB1L clock enable clear register */
 #define STM32_RCC_APB2ENCR_OFFSET     0x126c  /* APB2 clock enable clear register */
+#define STM32_RCC_APB1LLPENCR_OFFSET  0x12a4  /* APB1L low-power clock enable clear register */
+#define STM32_RCC_APB2LPENCR_OFFSET   0x12ac  /* APB2 low-power clock enable clear register */
 #define STM32_RCC_APB4LENCR_OFFSET   0x1274  /* APB4L clock enable clear register */
 
 #define STM32_RCC_CSR_OFFSET          0x0800  /* Clock status (set) register */
@@ -129,6 +132,7 @@
 #define STM32_RCC_CCIPR4              (STM32_RCC_BASE + STM32_RCC_CCIPR4_OFFSET)
 #define STM32_RCC_CCIPR9              (STM32_RCC_BASE + STM32_RCC_CCIPR9_OFFSET)
 #define STM32_RCC_CCIPR13             (STM32_RCC_BASE + STM32_RCC_CCIPR13_OFFSET)
+#define STM32_RCC_CCIPR14             (STM32_RCC_BASE + STM32_RCC_CCIPR14_OFFSET)
 #define STM32_RCC_AHB1RSTR            (STM32_RCC_BASE + STM32_RCC_AHB1RSTR_OFFSET)
 #define STM32_RCC_AHB5RSTR            (STM32_RCC_BASE + STM32_RCC_AHB5RSTR_OFFSET)
 #define STM32_RCC_APB1LRSTR           (STM32_RCC_BASE + STM32_RCC_APB1LRSTR_OFFSET)
@@ -176,6 +180,8 @@
 #define STM32_RCC_MEMLPENSR           (STM32_RCC_BASE + STM32_RCC_MEMLPENSR_OFFSET)
 #define STM32_RCC_APB1LLPENSR         (STM32_RCC_BASE + STM32_RCC_APB1LLPENSR_OFFSET)
 #define STM32_RCC_APB2LPENSR          (STM32_RCC_BASE + STM32_RCC_APB2LPENSR_OFFSET)
+#define STM32_RCC_APB1LLPENCR         (STM32_RCC_BASE + STM32_RCC_APB1LLPENCR_OFFSET)
+#define STM32_RCC_APB2LPENCR          (STM32_RCC_BASE + STM32_RCC_APB2LPENCR_OFFSET)
 
 #define STM32_RCC_CCR                 (STM32_RCC_BASE + STM32_RCC_CCR_OFFSET)
 #define STM32_RCC_CSR                 (STM32_RCC_BASE + STM32_RCC_CSR_OFFSET)
@@ -448,6 +454,15 @@
 #define RCC_APB2ENR_TIM1EN            (1 << 0)   /* Bit 0:  TIM1 enable */
 #define RCC_APB2ENR_TIM8EN            (1 << 1)   /* Bit 1:  TIM8 enable */
 #define RCC_APB2ENR_USART1EN          (1 << 4)   /* Bit 4:  USART1 enable */
+#define RCC_APB2ENR_USART6EN          (1 << 5)   /* Bit 5: USART6 enable */
+#define RCC_APB2ENR_UART9EN           (1 << 6)   /* Bit 6: UART9 enable */
+#define RCC_APB2ENR_USART10EN         (1 << 7)   /* Bit 7: USART10 enable */
+#define RCC_APB1LENR_USART2EN         (1 << 17)  /* Bit 17: USART2 enable */
+#define RCC_APB1LENR_USART3EN         (1 << 18)  /* Bit 18: USART3 enable */
+#define RCC_APB1LENR_UART4EN          (1 << 19)  /* Bit 19: UART4 enable */
+#define RCC_APB1LENR_UART5EN          (1 << 20)  /* Bit 20: UART5 enable */
+#define RCC_APB1LENR_UART7EN          (1u << 30) /* Bit 30: UART7 enable */
+#define RCC_APB1LENR_UART8EN          (1u << 31) /* Bit 31: UART8 enable */
 #define RCC_APB2ENR_TIM18EN           (1 << 15)  /* Bit 15: TIM18 enable */
 #define RCC_APB2ENR_TIM15EN           (1 << 16)  /* Bit 16: TIM15 enable */
 #define RCC_APB2ENR_TIM16EN           (1 << 17)  /* Bit 17: TIM16 enable */
@@ -550,6 +565,20 @@
 /* Peripheral kernel clock select register 13 */
 
 #define RCC_CCIPR13_USART1SEL_SHIFT   (0)
+#define RCC_CCIPR13_USART2SEL_SHIFT   (4)
+#define RCC_CCIPR13_USART3SEL_SHIFT   (8)
+#define RCC_CCIPR13_UART4SEL_SHIFT    (12)
+#define RCC_CCIPR13_UART5SEL_SHIFT    (16)
+#define RCC_CCIPR13_USART6SEL_SHIFT   (20)
+#define RCC_CCIPR13_UART7SEL_SHIFT    (24)
+#define RCC_CCIPR13_UART8SEL_SHIFT    (28)
+#define RCC_CCIPR14_UART9SEL_SHIFT    (0)
+#define RCC_CCIPR14_USART10SEL_SHIFT  (4)
+
+/* All USART/UART selectors use encoding 6 for hsi_div_ck. */
+
+#define RCC_USARTSEL_MASK(shift)     (7u << (shift))
+#define RCC_USARTSEL_HSI(shift)      (6u << (shift))
 #define RCC_CCIPR13_USART1SEL_MASK    (0x7 << RCC_CCIPR13_USART1SEL_SHIFT)
 #define RCC_CCIPR13_USART1SEL_HSI     (6 << RCC_CCIPR13_USART1SEL_SHIFT)
 
