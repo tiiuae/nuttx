@@ -195,11 +195,13 @@ before connecting or probing a target.
 
 After timing is qualified and a compatible device is connected, use `i2c bus`
 to check the registered bus. For a device whose datasheet documents a
-register-read transaction, use `i2c get -b 2 -a ADDRESS -r REGISTER`, replacing
+register-read transaction, use `i2c get -b 2 -f 100000 -n -a ADDRESS -r REGISTER`, replacing
 `ADDRESS` and `REGISTER` with that device's documented 7-bit address and
-register. The default combined register/read operation uses a repeated START;
-the `-s` option instead splits it into separate transfers with a STOP between
-them. Use the device's documented transaction requirements.
+register. The combined register/read operation uses a repeated START.
+Do not use `-s`: the current tool submits the register write alone with
+NOSTOP, which the N6 driver rejects as a final NOSTOP. Clients needing
+separate STOP/START transactions must submit ordinary messages without
+NOSTOP. Use the device's documented transaction requirements.
 
 Avoid broad `i2c dev` scans: the tool's default address probe performs a
 one-byte read, which can have device-specific side effects. Do not issue
