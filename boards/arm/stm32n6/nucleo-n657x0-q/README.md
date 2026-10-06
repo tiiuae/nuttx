@@ -160,6 +160,125 @@ Useful script options (both scripts accept `-h`):
 0x34180400  bootloader image; also stage 2 .data/.bss (511 KiB region)
 ```
 
+## Serial board and boot contract
+
+This contract is for **MB1940-N657X0Q-C02**, STM32N657X0H3Q (VFBGA264),
+with factory wiring and no attached shields or custom connections. It selects
+the second-port route for later driver work; it does **not** enable USART3,
+assign it a `/dev/ttyS*` minor, or claim hardware qualification.
+
+### Console and second-port wiring
+
+| Port / signal | MCU pin / AF | Connector |
+|---------------|--------------|-----------|
+| USART1 TX (console) | PE5 / AF7 | Onboard STLINK-V3EC VCP, USB CN10 |
+| USART1 RX (console) | PE6 / AF7 | Onboard STLINK-V3EC VCP, USB CN10 |
+| USART3 TX (test port) | PD8 / AF7 | Arduino CN13 pin 2 (D1), also Morpho CN15 pin 35 |
+| USART3 RX (test port) | PD9 / AF7 | Arduino CN13 pin 1 (D0), also Morpho CN15 pin 37 |
+| Test-port common ground | GND | CN15 pin 20, or Arduino power CN5 pin 6/7 |
+| USART3 RTS / CTS | Not assigned | No hardware flow control in the initial wiring contract |
+
+Preserve the USART1 PE5/PE6 configuration and its factory ST-Link connection.
+SB43 (PE5) and SB34 (PE6) expose the console nets to Morpho CN15 pins 4 and 2;
+they are not second-port routing switches. Do not connect another transmitter
+to the console RX net or change its bridges for a USART3 test.
+
+The C02 schematic routes PD8/PD9 directly to CN13 and CN15 without a
+solder-bridge selection, level shifter, inverter, or serial transceiver.
+No bridge changes are required for the selected USART3 route. Both connector
+appearances of each signal are the same net, not independent ports.
+
+PD8/PD9 and PE5/PE6 use the main VDD I/O domain, supplied by the board's
+3.3 V VDDIO rail, not the 1.8 V VDDIO3 domain used by the XSPI2 port-N pins.
+Keep `PWR_SVMCR3.VDDIOVRSEL` clear and the VDD high-speed/low-voltage option
+consistent with the 3.3 V supply. Use a 3.3 V logic-level peer and a common
+ground. Do not connect RS-232 voltage levels directly. An inverted receiver
+protocol or RS-232/RS-485 connection needs separately qualified inversion or
+external interface circuitry; none is present on these test-port nets.
+
+For later loopback, connect CN13 pin 2 to pin 1 (or CN15 pin 35 to pin 37).
+Do not add this jumper until USART3 driver support and its opt-in configuration
+exist. For a peer, cross board TX to peer RX and board RX to peer TX.
+
+PD8/PD9 do not overlap the existing XSPI2 boot pins, SPI5 PE15/PG1/PG2
+(or its PA3 chip select), I2C2 PB10/PB11, LEDs PG10/PG0/PG8, or the PC13
+button EXTI test. The current TIM1/TIM5 counter test does not configure these
+pads. Arduino shields using D0/D1, or future DCMIPP/DCMI/PSSI, FMC, LCD,
+SPDIF or tamper use of PD8/PD9, conflict with this route and must not run
+concurrently.
+
+### Kernel clock and boot handoff
+
+USART1 uses `RCC_CCIPR13.USART1SEL=6` (**hsi_div_ck**, not undivided HSI).
+Startup changes only that selector field and preserves the other fields.
+USART3 will use the same source through its own selector when implemented;
+step 1 does not write its selector or enable/reset its peripheral.
+
+Early console setup and the full serial driver both call
+`stm32_usart_clock()` to read `RCC_HSICFGR.HSIDIV[8:7]` and derive the nominal
+post-divider clock from the board's 64 MHz HSI definition:
+
+| HSIDIV encoding | Divider | Nominal USART kernel clock with PRESC=/1 |
+|-----------------|---------|------------------------------------------|
+| 0 | /1 | 64 MHz |
+| 1 | /2 | 32 MHz |
+| 2 | /4 | 16 MHz |
+| 3 | /8 | 8 MHz |
+
+The RCC reset encoding is 0. The local clock initialization does not program
+HSIDIV; an FSBL may leave a different value. Both serial initialization paths
+explicitly write `USART_PRESC.PRESCALER=0` (/1) while UE is clear, rather than
+depending on FSBL leftovers. `CONFIG_SUPPRESS_UART_CONFIG` retains its usual
+meaning: the handoff must already provide the correct clock and USART format.
+
+Neither serial path changes the global oscillator divider. HSIDIV and the
+USART kernel selector must remain stable while serial is active; changing
+them requires a separate, coordinated reconfiguration. The derived frequency
+is nominal, not an oscillator-tolerance or measured-baud qualification.
+An FSBL must leave HSI enabled and ready, and quiesce serial/DMA transfers
+before jumping to NuttX.
+
+### CPU, peripheral and DMA access requirements
+
+| Surface | DEV/SRAM boot | FSBL/XSPI boot |
+|---------|---------------|----------------|
+| CPU / register access | Secure privileged NuttX execution; secure RCC/GPIO/USART aliases | Same execution contract; FSBL must not hand off to nonsecure execution |
+| USART / GPIO / RCC | CPU must be permitted to access USART1, GPIOE and RCC; later USART3 also requires GPIOD and USART3 | Inherited RIFSC/GPIO permissions and locks must allow the same accesses |
+| DMA controllers | Configured GPDMA1/HPDMA1 channel pools are set secure and privileged by `stm32_dma_access_initialize()` | Same local initialization must be permitted by inherited isolation settings |
+| DMA transfers | Native DMA driver sets secure source/destination attributes; HPDMA channels use CID 1 with filtering | Same attributes; FSBL RISAF/RIFSC policy must admit the selected DMA master/channel |
+| Writable serial buffers | Static buffers in AXI SRAM, within the `sram.ld` region starting at `0x34000400` | Static buffers in AXI SRAM, within the `flash.ld` writable region `0x34180400..0x341fffff`, not XSPI code/rodata |
+| Memory isolation / cache | RISAF must permit CPU and the selected DMA master to access buffers and descriptors; use the native DMA cache/ownership API | Inherited RISAF policy must provide the same access; XIP does not make SRAM buffers noncacheable |
+
+The local policy does not weaken USART RIFSC permissions: RM0486 describes
+non-RIF-aware peripheral reset access as nonsecure/unprivileged, which admits
+the secure privileged CPU/DMA accesses used here. That reset policy is not
+proof of an arbitrary FSBL's configuration. Do not silently relax isolation
+or substitute nonsecure aliases when access is denied.
+
+Ordinary WFI uses Sleep, not Stop: startup retains AXI SRAM and USART1 clocks
+through the existing LPEN set aliases. USART3 will need its own APB1L enable
+and LPEN handling later. This contract does not qualify Stop-mode reception.
+
+**Target qualification still required:** on each boot path record
+`RCC_HSICFGR`, `RCC_CCIPR13`, USART1 `PRESC/BRR/CR1`, and relevant LPEN
+registers; confirm the resulting clock and console operation. Record the
+USART/GPIO RIFSC permissions, DMA `SECCFGR/PRIVCFGR`, applicable CID settings
+and RISAF buffer-region permissions before DMA qualification. Verify 3.3 V,
+ground and pin continuity on the target before attaching a peer. USART3
+loopback and flow-control qualification belong to the later enabled-driver
+steps. These observations have not been collected by this implementation.
+
+Sources: local RM0486 Rev 4 (chapters 3, 6, 7, 13, 14, 18/19 and 65);
+[DS14791 Rev 1](https://my.avnet.com/wcm/connect/07670e5b-bab1-4163-bb60-e04c35e8bdcf/STM32N657x0-Datasheet_ebv25044.pdf?MOD=AJPERES)
+(Tables 16/17, VFBGA264 and AF7);
+[UM3417 Rev 3](https://www.st.com/resource/en/user_manual/um3417-stm32n6-nucleo144-board-mb1940-stmicroelectronics.pdf)
+(section 7.9, Tables 12/13);
+[MB1940-N657X0Q-C02 schematic](https://www.st.com/resource/en/schematic_pack/mb1940-n657x0q-c02-schematic.pdf)
+(MCU, power, Morpho, Arduino and ST-Link sheets).
+The ST manual and schematic were read from
+[mirrored ST PDFs](https://github.com/gotree94/mcu_ml/tree/main/Day3-6N)
+because direct ST downloads were unavailable.
+
 ## Boot-time tests
 
 `stm32_bringup()` calls `stm32_bringup_test()` in `src/stm32_bringup_test.c`
