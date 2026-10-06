@@ -60,7 +60,9 @@ def check_instances(directory, chip, nuttx, compiler, temporary):
     source = source.replace("/* DRIVER_INSTANCES */", serial[start:end])
     low_names = ["stm32_usart_waitack", "stm32_usart_clock",
                  "stm32_usart_setclock", "stm32_usart_initialize",
-                 "stm32_usart_disable", "stm32_usart_configure"]
+                 "stm32_usart_disable", "stm32_usart_flowcontrol",
+                 "stm32_usart_apply",
+                 "stm32_usart_configure"]
     serial_names = ["stm32serial_getreg", "stm32serial_putreg",
                     "stm32serial_setusartint", "stm32serial_disableusartint",
                     "stm32serial_setapbclock", "stm32serial_setup",
@@ -125,34 +127,59 @@ def main():
             "stm32_usart_setclock",
             "stm32_usart_initialize",
             "stm32_usart_disable",
+            "stm32_usart_flowcontrol",
+            "stm32_usart_apply",
             "stm32_usart_configure",
+            "stm32_usart_setmode",
         )
     ]
-    routines += [
-        function(serial, name)
-        for name in (
-            "stm32serial_getreg",
-            "stm32serial_putreg",
-            "stm32serial_setusartint",
-            "stm32serial_restoreusartint",
-            "stm32serial_disableusartint",
-            "stm32serial_busy",
-            "stm32serial_setapbclock",
-            "stm32serial_setup",
-            "stm32serial_shutdown",
-            "stm32serial_interrupt",
-            "stm32serial_ioctl",
-            "stm32serial_receive",
-            "stm32serial_rxint",
-            "stm32serial_rxavailable",
-            "stm32serial_send",
-            "stm32serial_txready",
-            "stm32serial_txempty",
-            "stm32serial_pmprepare",
-            "up_putc",
-        )
-    ]
+    for name in (
+        "stm32serial_getreg",
+        "stm32serial_putreg",
+        "stm32serial_setusartint",
+        "stm32serial_restoreusartint",
+        "stm32serial_disableusartint",
+        "stm32serial_busy",
+        "stm32serial_setapbclock",
+        "stm32serial_setup",
+        "stm32serial_setflow",
+        "stm32serial_shutdown",
+        "stm32serial_interrupt",
+        "stm32serial_setmode",
+        "stm32serial_ioctl",
+        "stm32serial_receive",
+        "stm32serial_rxint",
+        "stm32serial_rxavailable",
+        "stm32serial_rxflowcontrol",
+        "stm32serial_send",
+        "stm32serial_txready",
+        "stm32serial_txempty",
+        "stm32serial_pmprepare",
+        "up_putc",
+    ):
+        routine = function(serial, name)
+        if name == "stm32serial_rxflowcontrol":
+            routine = "#ifdef CONFIG_SERIAL_IFLOWCONTROL\n" + routine + "\n#endif"
+        elif name == "stm32serial_setflow":
+            routine = ("#if defined(CONFIG_SERIAL_IFLOWCONTROL) && "
+                       "!defined(CONFIG_SUPPRESS_UART_CONFIG)\n" +
+                       routine + "\n#endif")
+        elif name == "stm32serial_setmode":
+            routine = ("#if defined(CONFIG_STM32_USART_INVERT) || "
+                       "defined(CONFIG_STM32_USART_SINGLEWIRE)\n" +
+                       routine + "\n#endif")
+        routines.append(routine)
     source = (directory / "stm32_serial_driver_test.c").read_text()
+    tioctl = (nuttx / "include/nuttx/serial/tioctl.h").read_text()
+    source = source.replace(
+        "/* IOCTL_FLAGS */",
+        "\n".join(re.findall(
+            r"^#\s*define SER_(?:SINGLEWIRE|INVERT)_.*", tioctl, re.MULTILINE)),
+    )
+    gpio = (chip / "stm32_gpio.h").read_text()
+    source = source.replace("/* GPIO_DEFINITIONS */",
+                            gpio[gpio.index("/* Mode:"):
+                                 gpio.index("/* External interrupt")])
     source = source.replace(
         "/* DRIVER_TYPES */",
         extract(uart, r"struct stm32_usart_s") + ";\n" +
@@ -168,10 +195,33 @@ def main():
         ("dma-flow", ["STM32_USART1_TXDMA", "CONFIG_SERIAL_IFLOWCONTROL",
                       "CONFIG_SERIAL_OFLOWCONTROL"]),
         ("irq-flow", ["CONFIG_SERIAL_IFLOWCONTROL", "CONFIG_SERIAL_OFLOWCONTROL"]),
+        ("input-flow", ["CONFIG_SERIAL_IFLOWCONTROL"]),
+        ("output-flow", ["CONFIG_SERIAL_OFLOWCONTROL"]),
         ("dma-no-flow", ["STM32_USART1_TXDMA"]),
         ("software-rts", ["CONFIG_SERIAL_IFLOWCONTROL",
                           "CONFIG_SERIAL_OFLOWCONTROL",
+                          "CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS",
+                          "CONFIG_SERIAL_IFLOWCONTROL_UPPER_WATERMARK=90",
+                          "CONFIG_SERIAL_IFLOWCONTROL_LOWER_WATERMARK=10",
                           "CONFIG_STM32_FLOWCONTROL_BROKEN"]),
+        ("rc-modes", ["CONFIG_STM32_USART_INVERT",
+                      "CONFIG_STM32_USART_SINGLEWIRE"]),
+        ("invert-only", ["CONFIG_STM32_USART_INVERT"]),
+        ("singlewire-only", ["CONFIG_STM32_USART_SINGLEWIRE"]),
+        ("rc-flow", ["STM32_USART1_TXDMA", "CONFIG_STM32_USART_INVERT",
+                     "CONFIG_STM32_USART_SINGLEWIRE",
+                     "CONFIG_SERIAL_IFLOWCONTROL",
+                     "CONFIG_SERIAL_OFLOWCONTROL"]),
+        ("rc-software-rts", ["CONFIG_STM32_USART_INVERT",
+                             "CONFIG_STM32_USART_SINGLEWIRE",
+                             "CONFIG_SERIAL_IFLOWCONTROL",
+                             "CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS",
+                             "CONFIG_SERIAL_IFLOWCONTROL_UPPER_WATERMARK=90",
+                             "CONFIG_SERIAL_IFLOWCONTROL_LOWER_WATERMARK=10",
+                             "CONFIG_STM32_FLOWCONTROL_BROKEN"]),
+        ("rc-suppressed", ["CONFIG_STM32_USART_INVERT",
+                           "CONFIG_STM32_USART_SINGLEWIRE",
+                           "CONFIG_SUPPRESS_UART_CONFIG"]),
         ("suppressed", ["STM32_USART1_TXDMA", "CONFIG_SUPPRESS_UART_CONFIG"]),
     )
     with tempfile.TemporaryDirectory(prefix="stm32n6-serial-") as temporary:

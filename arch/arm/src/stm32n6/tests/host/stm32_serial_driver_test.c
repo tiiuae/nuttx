@@ -27,11 +27,15 @@
 #define OK 0
 #define UNUSED(value) (void)(value)
 #define DEBUGASSERT assert
-#define GPIO_MODE_MASK 3
-#define GPIO_OUTPUT 1
+/* GPIO_DEFINITIONS */
 #define PM_IDLE_DOMAIN 0
 #define TCGETS 1
 #define TCSETS 2
+#define TIOCSINVERT 3
+#define TIOCSSINGLEWIRE 4
+/* IOCTL_FLAGS */
+#define uart_enablerxint(dev) stm32serial_rxint(dev, true)
+#define uart_disablerxint(dev) stm32serial_rxint(dev, false)
 #define _err test_log
 #define _warn test_log
 
@@ -107,6 +111,13 @@ static void stm32serial_send(struct uart_dev_s *dev, int ch);
 static bool stm32serial_txready(struct uart_dev_s *dev);
 static void uart_recvchars(struct uart_dev_s *dev);
 static void uart_xmitchars(struct uart_dev_s *dev);
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+static bool stm32serial_rxflowcontrol(struct uart_dev_s *dev,
+                                      unsigned int buffered, bool upper);
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+static void stm32serial_setflow(struct stm32_serial_s *priv);
+#endif
+#endif
 
 /****************************************************************************
  * Private Data
@@ -118,10 +129,10 @@ static const struct stm32_usart_s g_config =
 {
   .base = STM32_USART1_BASE,
   .clock = STM32_HSI_FREQUENCY,
-  .tx_gpio = 10,
-  .rx_gpio = 11,
-  .rts_gpio = 12,
-  .cts_gpio = 13,
+  .tx_gpio = GPIO_ALT | GPIO_AF7 | 10,
+  .rx_gpio = GPIO_ALT | GPIO_AF7 | 11,
+  .rts_gpio = GPIO_ALT | GPIO_AF7 | 12,
+  .cts_gpio = GPIO_ALT | GPIO_AF7 | 13,
   .enable = STM32_RCC_APB2ENSR,
   .disable = STM32_RCC_APB2ENCR,
   .resetset = STM32_RCC_APB2RSTSR,
@@ -178,6 +189,9 @@ static bool g_pause_rx;
 static unsigned int g_txcount;
 static uint8_t g_txbytes[512];
 static unsigned int g_received;
+static uint32_t g_gpio[16];
+static unsigned int g_gpio_failure;
+static bool g_rts_level;
 static unsigned int g_status[512];
 static unsigned int g_fifohead;
 static unsigned int g_fifolen;
@@ -342,6 +356,13 @@ static void putreg32(uint32_t value, uint32_t address)
       assert((oldcr1 & USART_CR1_UE) == 0);
     }
 
+  if (offset == STM32_USART_CR3_OFFSET &&
+      ((g_regs[offset / 4] ^ value) &
+       (USART_CR3_HDSEL | USART_CR3_RTSE | USART_CR3_CTSE)) != 0)
+    {
+      assert((oldcr1 & USART_CR1_UE) == 0);
+    }
+
   if (offset == STM32_USART_ICR_OFFSET)
     {
       g_regs[STM32_USART_ISR_OFFSET / 4] &= ~value;
@@ -376,7 +397,23 @@ int stm32_usart_disable(uint32_t base);
 static int stm32_configgpio(uint32_t pin)
 {
   assert(pin != 0);
+  if (g_gpio_failure != 0)
+    {
+      g_gpio_failure--;
+      return -EIO;
+    }
+
+  g_gpio[pin & 15] = pin;
   return 0;
+}
+#endif
+
+#if defined(CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS) && \
+    defined(CONFIG_STM32_FLOWCONTROL_BROKEN)
+static void stm32_gpiowrite(uint32_t pin, bool value)
+{
+  assert(pin == g_config.rts_gpio);
+  g_rts_level = value;
 }
 #endif
 
@@ -467,15 +504,20 @@ static void reset(void)
   g_priv.bits = 8;
   g_priv.parity = 0;
   g_priv.stopbits2 = false;
+  g_priv.config = &g_config;
   g_priv.ie = 0;
   g_priv.dev.xmit.head = g_priv.dev.xmit.tail = 0;
   g_priv.dev.recv.head = g_priv.dev.recv.tail = 0;
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
   g_priv.iflow = false;
+  g_priv.rxthrottled = false;
 #endif
 #ifdef CONFIG_SERIAL_OFLOWCONTROL
   g_priv.oflow = false;
 #endif
+  memset(g_gpio, 0, sizeof(g_gpio));
+  g_gpio_failure = 0;
+  g_rts_level = false;
 #ifdef STM32_USART1_TXDMA
   g_priv.txdma = NULL;
   g_priv.txdma_active = false;
@@ -483,7 +525,7 @@ static void reset(void)
   assert(g_priv.lock == 0 && g_lock_depth == 0);
 }
 
-static int ioctl_termios(int command, struct termios *termiosp)
+static int ioctl_arg(int command, unsigned long arg)
 {
   struct inode inode =
   {
@@ -495,7 +537,12 @@ static int ioctl_termios(int command, struct termios *termiosp)
     .f_inode = &inode
   };
 
-  return stm32serial_ioctl(&file, command, (unsigned long)termiosp);
+  return stm32serial_ioctl(&file, command, arg);
+}
+
+static int ioctl_termios(int command, struct termios *termiosp)
+{
+  return ioctl_arg(command, (unsigned long)termiosp);
 }
 
 static void configure(void)
@@ -826,6 +873,296 @@ static void test_pm_and_close(void)
  * Public Functions
  ****************************************************************************/
 
+static void test_initial_flow(void)
+{
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  struct stm32_usart_format_s format;
+  uint32_t flow;
+  bool iflow = false;
+  bool oflow = false;
+
+  reset();
+  g_regs[STM32_USART_CR3_OFFSET / 4] = USART_CR3_HDSEL;
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  iflow = g_priv.iflow = true;
+#endif
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+  oflow = g_priv.oflow = true;
+#endif
+  assert(stm32_usart_flowcontrol(&g_config, iflow, oflow, &flow) == 0);
+  assert(stm32_usart_format(stm32_usart_clock(&g_config), 115200, 8, 0,
+                            false, &format) == 0);
+  assert(stm32_usart_configure(g_config.base, &format, flow) == 0);
+  assert((g_regs[STM32_USART_CR3_OFFSET / 4] & USART_CR3_HDSEL) == 0);
+  assert((g_regs[STM32_USART_ISR_OFFSET / 4] & USART_ISR_TC) == 0);
+  assert(stm32serial_setup(&g_priv.dev) == 0);
+#endif
+}
+
+static void test_flow(void)
+{
+#if !defined(CONFIG_SUPPRESS_UART_CONFIG) && \
+    (defined(CONFIG_SERIAL_IFLOWCONTROL) || \
+     defined(CONFIG_SERIAL_OFLOWCONTROL))
+  struct termios requested =
+  {
+    .c_cflag = CS8,
+    .c_speed = 115200
+  };
+
+  struct stm32_usart_s missing = g_config;
+  uint32_t before[12];
+
+  reset();
+  configure();
+  for (unsigned int flow = 0; flow < 4; flow++)
+    {
+      requested.c_cflag = CS8;
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+      requested.c_cflag |= (flow & 1) != 0 ? CRTS_IFLOW : 0;
+#endif
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+      requested.c_cflag |= (flow & 2) != 0 ? CCTS_OFLOW : 0;
+#endif
+      g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+      assert(ioctl_termios(TCSETS, &requested) == 0);
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+      assert(g_priv.iflow == ((requested.c_cflag & CRTS_IFLOW) != 0));
+#ifndef CONFIG_STM32_FLOWCONTROL_BROKEN
+      assert(((g_regs[2] & USART_CR3_RTSE) != 0) == g_priv.iflow);
+#endif
+#endif
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+      assert(g_priv.oflow == ((requested.c_cflag & CCTS_OFLOW) != 0));
+      assert(((g_regs[2] & USART_CR3_CTSE) != 0) == g_priv.oflow);
+#endif
+    }
+
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  memcpy(before, g_regs, sizeof(before));
+  missing.rts_gpio = missing.cts_gpio = 0;
+  g_priv.config = &missing;
+  requested.c_cflag = CS8 | CRTSCTS;
+  assert(ioctl_termios(TCSETS, &requested) == -EINVAL);
+  g_priv.initialized = false;
+  assert(stm32serial_setup(&g_priv.dev) == -EINVAL);
+  assert(memcmp(before, g_regs, sizeof(before)) == 0);
+  g_priv.initialized = true;
+  g_priv.config = &g_config;
+
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  stm32serial_rxint(&g_priv.dev, true);
+  bool stopped = stm32serial_rxflowcontrol(&g_priv.dev, 500, true);
+
+#ifdef CONFIG_STM32_FLOWCONTROL_BROKEN
+  assert(!stopped && g_rts_level);
+  assert(g_priv.ie & USART_CR1_RXNEIE);
+#else
+  assert(stopped && (g_priv.ie & USART_CR1_RXNEIE) == 0);
+#endif
+  assert(!stm32serial_rxflowcontrol(&g_priv.dev, 0, false));
+  assert(g_priv.ie & USART_CR1_RXNEIE);
+  assert(!g_rts_level);
+
+  stm32serial_rxflowcontrol(&g_priv.dev, 500, true);
+  requested.c_cflag = CS8;
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  assert(!g_priv.rxthrottled && !g_rts_level);
+  assert(g_priv.ie & USART_CR1_RXNEIE);
+
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  g_priv.dev.recv.head = g_priv.dev.recv.size - 1;
+  requested.c_cflag = CS8 | CRTS_IFLOW;
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  assert(g_priv.rxthrottled);
+#ifdef CONFIG_STM32_FLOWCONTROL_BROKEN
+  assert(g_rts_level && (g_priv.ie & USART_CR1_RXNEIE) != 0);
+#else
+  assert((g_priv.ie & USART_CR1_RXNEIE) == 0);
+#endif
+  g_priv.dev.recv.tail = g_priv.dev.recv.size / 2;
+  stm32serial_setflow(&g_priv);
+  assert(g_priv.rxthrottled);
+  g_priv.dev.recv.tail = g_priv.dev.recv.head;
+  stm32serial_setflow(&g_priv);
+  assert(!g_priv.rxthrottled && (g_priv.ie & USART_CR1_RXNEIE) != 0);
+  g_priv.dev.recv.head = g_priv.dev.recv.tail = 0;
+
+#endif
+
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  requested.c_cflag = CS8;
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+  requested.c_cflag |= CCTS_OFLOW;
+#endif
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  stm32serial_send(&g_priv.dev, 0x55);
+  g_priv.dev.xmit.head = g_priv.dev.xmit.tail;
+  assert(!stm32serial_txempty(&g_priv.dev));
+  assert(stm32serial_pmprepare(NULL, PM_IDLE_DOMAIN, PM_SLEEP) == -EBUSY);
+  unsigned int delays = g_delays;
+
+  assert(ioctl_termios(TCSETS, &requested) == -EBUSY);
+  assert(g_delays == delays);
+#endif
+}
+
+static void test_rc_modes(void)
+{
+#if defined(CONFIG_STM32_USART_INVERT) || \
+    defined(CONFIG_STM32_USART_SINGLEWIRE)
+  uint32_t before[12];
+
+  reset();
+  configure();
+  memcpy(before, g_regs, sizeof(before));
+#ifdef CONFIG_SUPPRESS_UART_CONFIG
+#ifdef CONFIG_STM32_USART_INVERT
+  assert(ioctl_arg(TIOCSINVERT, SER_INVERT_ENABLED_RX) == -ENOTSUP);
+#endif
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+  assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -ENOTSUP);
+#endif
+  assert(memcmp(before, g_regs, sizeof(before)) == 0);
+#else
+  struct termios requested =
+  {
+    .c_cflag = CS8 | PARENB | CSTOPB,
+    .c_speed = 100000
+  };
+
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  assert(g_regs[STM32_USART_BRR_OFFSET / 4] == 640);
+  assert((g_regs[0] & (USART_CR1_PCE | USART_CR1_M0)) ==
+         (USART_CR1_PCE | USART_CR1_M0));
+  assert((g_regs[1] & USART_CR2_STOP_MASK) == USART_CR2_STOP2);
+#ifdef CONFIG_STM32_USART_INVERT
+  for (unsigned int invert = 0; invert < 4; invert++)
+    {
+      g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+      stm32serial_rxint(&g_priv.dev, true);
+      uint16_t ie = g_priv.ie;
+
+      assert(ioctl_arg(TIOCSINVERT, invert) == 0);
+      assert(((g_regs[1] & USART_CR2_RXINV) != 0) == ((invert & 1) != 0));
+      assert(((g_regs[1] & USART_CR2_TXINV) != 0) == ((invert & 2) != 0));
+      assert((g_regs[1] & (1 << 18)) == 0);
+      assert(g_priv.ie == ie && g_regs[3] == 640);
+    }
+
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  memcpy(before, g_regs, sizeof(before));
+  assert(ioctl_arg(TIOCSINVERT, 4) == -EINVAL);
+  assert(memcmp(before, g_regs, sizeof(before)) == 0);
+  g_enable_failure = 1;
+  assert(ioctl_arg(TIOCSINVERT, 0) == -ETIMEDOUT);
+  assert(memcmp(before, g_regs, 4 * sizeof(uint32_t)) == 0);
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  assert(ioctl_arg(TIOCSINVERT, 0) == 0);
+#endif
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  requested.c_cflag = CS8;
+  requested.c_speed = 115200;
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  assert(g_regs[3] == 556 && (g_regs[0] & USART_CR1_PCE) == 0);
+
+#ifdef CONFIG_STM32_USART_SINGLEWIRE
+#ifdef CONFIG_STM32_USART_INVERT
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  assert(ioctl_arg(TIOCSINVERT,
+                   SER_INVERT_ENABLED_RX | SER_INVERT_ENABLED_TX) == 0);
+#endif
+  for (unsigned int pull = 0; pull <= 2; pull++)
+    {
+      for (unsigned int pushpull = 0; pushpull <= 1; pushpull++)
+        {
+          unsigned long mode = SER_SINGLEWIRE_ENABLED | (pull << 1) |
+                               (pushpull ? SER_SINGLEWIRE_PUSHPULL : 0);
+
+          g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+          assert(ioctl_arg(TIOCSSINGLEWIRE, mode) == 0);
+          assert(g_regs[2] & USART_CR3_HDSEL);
+          assert(((g_gpio[10] & GPIO_OPENDRAIN) == 0) == (pushpull != 0));
+          assert((g_gpio[10] & GPIO_PUPD_MASK) ==
+                 (pull == 1 ? GPIO_PULLUP :
+                  pull == 2 ? GPIO_PULLDOWN : GPIO_FLOAT));
+          assert(g_gpio[11] == g_config.rx_gpio);
+        }
+    }
+
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  assert(g_regs[2] & USART_CR3_HDSEL);
+#ifdef CONFIG_STM32_USART_INVERT
+  assert((g_regs[1] & (USART_CR2_RXINV | USART_CR2_TXINV)) ==
+         (USART_CR2_RXINV | USART_CR2_TXINV));
+#endif
+  requested.c_cflag |= CRTSCTS;
+  assert(ioctl_termios(TCSETS, &requested) == -EINVAL);
+  requested.c_cflag = CS8;
+  assert(ioctl_arg(TIOCSSINGLEWIRE,
+                   SER_SINGLEWIRE_ENABLED | SER_SINGLEWIRE_PULL_MASK) ==
+         -EINVAL);
+  assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED | 16) == -EINVAL);
+  g_gpio_failure = 1;
+  uint32_t gpio = g_priv.sw_gpio;
+
+  memcpy(before, g_regs, sizeof(before));
+  assert(ioctl_arg(TIOCSSINGLEWIRE, 0) == -EIO);
+  assert(g_gpio[10] == gpio && g_priv.sw_gpio == gpio);
+  assert(memcmp(before, g_regs, 4 * sizeof(uint32_t)) == 0);
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  g_enable_failure = 1;
+  assert(ioctl_arg(TIOCSSINGLEWIRE, 0) == -ETIMEDOUT);
+  assert(g_gpio[10] == gpio && g_priv.sw_gpio == gpio);
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  assert(ioctl_arg(TIOCSSINGLEWIRE,
+                   ~(unsigned long)SER_SINGLEWIRE_ENABLED) == 0);
+  assert((g_regs[2] & USART_CR3_HDSEL) == 0);
+  assert(g_gpio[10] == g_config.tx_gpio);
+
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+#if defined(CONFIG_SERIAL_IFLOWCONTROL) || \
+    defined(CONFIG_SERIAL_OFLOWCONTROL)
+  requested.c_cflag = CS8;
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  requested.c_cflag |= CRTS_IFLOW;
+#endif
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+  requested.c_cflag |= CCTS_OFLOW;
+#endif
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -EINVAL);
+  requested.c_cflag = CS8;
+  assert(ioctl_termios(TCSETS, &requested) == 0);
+#endif
+  g_regs[STM32_USART_ISR_OFFSET / 4] &= ~USART_ISR_TC;
+  unsigned int delays = g_delays;
+
+  assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -EBUSY);
+  assert(g_delays == delays);
+#ifdef STM32_USART1_TXDMA
+  g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+  g_priv.txdma_active = true;
+  assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -EBUSY);
+  g_priv.txdma_active = false;
+#endif
+#endif
+
+  reset();
+  configure();
+  g_enable_failure = 2;
+#ifdef CONFIG_STM32_USART_INVERT
+  assert(ioctl_arg(TIOCSINVERT, SER_INVERT_ENABLED_RX) == -EIO);
+#else
+  assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -EIO);
+#endif
+  assert(g_errors != 0 && g_delays == 2 * USART_ACK_TIMEOUT_US);
+#endif
+#endif
+}
+
 int main(void)
 {
   test_handoff();
@@ -833,6 +1170,9 @@ int main(void)
   test_busy_and_rollback();
   test_fifo_and_debug();
   test_pm_and_close();
+  test_initial_flow();
+  test_flow();
+  test_rc_modes();
   assert(g_priv.lock == 0 && g_lock_depth == 0);
   return 0;
 }

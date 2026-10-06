@@ -41,6 +41,34 @@ def main():
         ("all-suppressed", ports, "USART1", ["SUPPRESS_UART_CONFIG"]),
         ("all-no-console", ports, None, []),
         ("no-uart", [], None, []),
+        ("all-rc", ports, "USART1",
+         ["STM32_USART_INVERT", "STM32_USART_SINGLEWIRE"]),
+        ("invert-only", ["USART1", "USART3"], "USART1",
+         ["STM32_USART_INVERT"]),
+        ("singlewire-only", ["USART1", "USART3"], "USART1",
+         ["STM32_USART_SINGLEWIRE"]),
+        ("rc-no-termios", ["USART1", "USART3"], "USART1",
+         ["STM32_USART_INVERT", "STM32_USART_SINGLEWIRE", "SERIAL_TERMIOS=n"]),
+        ("rc-suppressed", ["USART1", "USART3"], "USART1",
+         ["STM32_USART_INVERT", "STM32_USART_SINGLEWIRE",
+          "SUPPRESS_UART_CONFIG"]),
+        ("flow-in", ["USART1", "USART3"], "USART1", ["USART3_IFLOWCONTROL"]),
+        ("flow-out", ["USART1", "USART3"], "USART1", ["USART3_OFLOWCONTROL"]),
+        ("flow-both", ports, "USART1",
+         ["USART3_IFLOWCONTROL", "USART3_OFLOWCONTROL"]),
+        ("flow-no-pins", ["USART1", "USART3"], "USART1",
+         ["USART3_IFLOWCONTROL", "USART3_OFLOWCONTROL"]),
+        ("console-flow", ["USART1", "USART3"], "USART3",
+         ["USART3_IFLOWCONTROL", "USART3_OFLOWCONTROL"]),
+        ("console-software-rts", ["USART1", "USART3"], "USART3",
+         ["USART3_IFLOWCONTROL", "SERIAL_IFLOWCONTROL_WATERMARKS",
+          "STM32_FLOWCONTROL_BROKEN"]),
+        ("flow-software-rts", ["USART1", "USART3"], "USART1",
+         ["USART3_IFLOWCONTROL", "SERIAL_IFLOWCONTROL_WATERMARKS",
+          "STM32_FLOWCONTROL_BROKEN"]),
+        ("unsupported-options", ports, "USART1",
+         ["STM32_USART_BREAKS", "STM32_USART_SWAP"] +
+         [port + "_RS485" for port in ports]),
     ]
     with tempfile.TemporaryDirectory(prefix="n6-serial-config-") as temporary:
         directory = pathlib.Path(temporary)
@@ -53,11 +81,15 @@ def main():
                    APPSBINDIR=str(root.parent / "apps"),
                    EXTERNALDIR=str(root / "dummy"), KCONFIG_CONFIG=".config")
         for name, selected, console, options in variants:
-            request = baseline + "\nCONFIG_SERIAL_TERMIOS=y\n"
+            request = baseline + "\n"
+            if "SERIAL_TERMIOS=n" not in options:
+                request += "CONFIG_SERIAL_TERMIOS=y\n"
             request += "".join(f"CONFIG_STM32_{port}=y\n" for port in selected)
             request += (f"CONFIG_{console}_SERIAL_CONSOLE=y\n" if console else
                         "CONFIG_NO_SERIAL_CONSOLE=y\n")
-            request += "".join(f"CONFIG_{option}=y\n" for option in options)
+            request += "".join("CONFIG_" + (option if "=" in option else
+                                           option + "=y") + "\n"
+                               for option in options)
             seed = directory / "seed"
             seed.write_text(request)
             subprocess.run(["kconfig-conf", "--defconfig=" + str(seed),
@@ -72,14 +104,29 @@ def main():
                     assert values.get(symbol) == "y", (name, symbol)
             if console:
                 assert values.get(console + "_SERIAL_CONSOLE") == "y"
-            if selected:
+            if selected and "SERIAL_TERMIOS=n" not in options:
                 assert values.get("SERIAL_TERMIOS") == "y"
+            if "SERIAL_TERMIOS=n" in options:
+                assert values.get("SERIAL_TERMIOS") != "y"
+            for option in options:
+                if option in ("STM32_USART_INVERT", "STM32_USART_SINGLEWIRE",
+                              "STM32_FLOWCONTROL_BROKEN") or \
+                        option.endswith(("IFLOWCONTROL", "OFLOWCONTROL")):
+                    assert values.get(option) == "y", (name, option)
+            for option in ["STM32_USART_BREAKS", "STM32_USART_SWAP"] + [
+                    port + "_RS485" for port in ports]:
+                assert values.get(option) != "y", (name, option)
             assert not any(value == "y" for key, value in values.items()
                            if key.startswith("STM32_HAVE_IP_USART") or
                            key.startswith("STM32_HAVE_LPUART"))
             symbols = {"SERIAL_TERMIOS", "SERIAL_TXDMA", "SERIAL_RXDMA",
                        "SERIAL_IFLOWCONTROL", "SERIAL_OFLOWCONTROL", "PM",
-                       "SUPPRESS_UART_CONFIG", "STM32_SERIAL_DISABLE_REORDERING"}
+                       "SUPPRESS_UART_CONFIG", "STM32_SERIAL_DISABLE_REORDERING",
+                       "STM32_USART_INVERT", "STM32_USART_SINGLEWIRE",
+                       "STM32_FLOWCONTROL_BROKEN",
+                       "SERIAL_IFLOWCONTROL_WATERMARKS",
+                       "SERIAL_IFLOWCONTROL_UPPER_WATERMARK",
+                       "SERIAL_IFLOWCONTROL_LOWER_WATERMARK"}
             for port in ports:
                 symbols.update(("STM32_" + port, "STM32_" + port + "_SERIALDRIVER"))
                 symbols.update(port + "_" + suffix for suffix in (
@@ -99,6 +146,11 @@ def main():
                     # Compile-only bindings; not physical alternate-function routes.
                     header += f"#define GPIO_{port}_TX GPIO_USART1_TX\n"
                     header += f"#define GPIO_{port}_RX GPIO_USART1_RX\n"
+                if name != "flow-no-pins":
+                    if values.get("SERIAL_IFLOWCONTROL") == "y":
+                        header += f"#define GPIO_{port}_RTS GPIO_USART1_TX\n"
+                    if values.get("SERIAL_OFLOWCONTROL") == "y":
+                        header += f"#define GPIO_{port}_CTS GPIO_USART1_RX\n"
             shim = directory / "variant.h"
             shim.write_text(header)
             for original in commands:
