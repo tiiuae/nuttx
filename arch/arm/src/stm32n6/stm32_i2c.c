@@ -77,12 +77,6 @@ enum stm32_i2c_phase_e
   STM32_I2C_PHASE_ERROR
 };
 
-enum stm32_i2c_after_stop_e
-{
-  STM32_I2C_STOP_FINAL = 0,
-  STM32_I2C_STOP_NEXT
-};
-
 struct stm32_i2c_config_s
 {
   uintptr_t base;
@@ -131,10 +125,8 @@ struct stm32_i2c_priv_s
   struct i2c_msg_s *messages;
   int message_count;
   int message_index;
-  size_t message_offset;
   size_t message_remaining;
   uint16_t block_remaining;
-  enum stm32_i2c_after_stop_e after_stop;
   clock_t transfer_start;
   uint32_t transfer_timeout;
 #ifndef CONFIG_I2C_POLLED
@@ -533,47 +525,7 @@ static void stm32_i2c_set_interrupt_sources(struct stm32_i2c_priv_s *priv,
 static void stm32_i2c_clear_flags(struct stm32_i2c_priv_s *priv,
                                   uint32_t status)
 {
-  uint32_t clear = 0;
-
-  if ((status & I2C_ISR_NACKF) != 0)
-    {
-      clear |= I2C_ICR_NACKCF;
-    }
-
-  if ((status & I2C_ISR_STOPF) != 0)
-    {
-      clear |= I2C_ICR_STOPCF;
-    }
-
-  if ((status & I2C_ISR_BERR) != 0)
-    {
-      clear |= I2C_ICR_BERRCF;
-    }
-
-  if ((status & I2C_ISR_ARLO) != 0)
-    {
-      clear |= I2C_ICR_ARLOCF;
-    }
-
-  if ((status & I2C_ISR_OVR) != 0)
-    {
-      clear |= I2C_ICR_OVRCF;
-    }
-
-  if ((status & I2C_ISR_PECERR) != 0)
-    {
-      clear |= I2C_ICR_PECCF;
-    }
-
-  if ((status & I2C_ISR_TIMEOUT) != 0)
-    {
-      clear |= I2C_ICR_TIMOUTCF;
-    }
-
-  if ((status & I2C_ISR_ALERT) != 0)
-    {
-      clear |= I2C_ICR_ALERTCF;
-    }
+  uint32_t clear = status & STM32_I2C_CLEARABLE_FLAGS;
 
   if (clear != 0)
     {
@@ -667,15 +619,13 @@ static void stm32_i2c_fail_transfer(struct stm32_i2c_priv_s *priv, int result,
   stm32_i2c_wake_transfer(priv);
 }
 
-static void stm32_i2c_load_message(struct stm32_i2c_priv_s *priv,
-                                   bool start)
+static void stm32_i2c_load_message(struct stm32_i2c_priv_s *priv)
 {
   const struct i2c_msg_s *msg = &priv->messages[priv->message_index];
-  uint32_t cr2 = ((uint32_t)msg->addr << I2C_CR2_SADD7_SHIFT) |
-                 ((uint32_t)stm32_i2c_message_block_size(
-                      priv->message_remaining) << I2C_CR2_NBYTES_SHIFT);
   uint8_t block_size = stm32_i2c_message_block_size(
       priv->message_remaining);
+  uint32_t cr2 = ((uint32_t)msg->addr << I2C_CR2_SADD7_SHIFT) |
+                 ((uint32_t)block_size << I2C_CR2_NBYTES_SHIFT);
   bool reload = stm32_i2c_message_reload(priv->messages,
                                          priv->message_count,
                                          priv->message_index,
@@ -700,10 +650,7 @@ static void stm32_i2c_load_message(struct stm32_i2c_priv_s *priv,
       cr2 |= I2C_CR2_RELOAD;
     }
 
-  if (start)
-    {
-      cr2 |= I2C_CR2_START;
-    }
+  cr2 |= I2C_CR2_START;
 
   priv->phase = STM32_I2C_PHASE_ACTIVE;
   putreg32(cr2, priv->config->base + STM32_I2C_CR2_OFFSET);
@@ -733,7 +680,6 @@ static void stm32_i2c_reload_block(struct stm32_i2c_priv_s *priv,
         }
 
       priv->message_index++;
-      priv->message_offset = 0;
       priv->message_remaining =
           (size_t)priv->messages[priv->message_index].length;
     }
@@ -753,10 +699,8 @@ static void stm32_i2c_reload_block(struct stm32_i2c_priv_s *priv,
               I2C_CR2_NBYTES_MASK | I2C_CR2_RELOAD, cr2);
 }
 
-static void stm32_i2c_request_stop(struct stm32_i2c_priv_s *priv,
-                                   enum stm32_i2c_after_stop_e after_stop)
+static void stm32_i2c_request_stop(struct stm32_i2c_priv_s *priv)
 {
-  priv->after_stop = after_stop;
   priv->phase = STM32_I2C_PHASE_STOPPING;
   stm32_i2c_set_interrupt_sources(priv, I2C_CR1_NACKIE |
       I2C_CR1_STOPIE | I2C_CR1_ERRIE);
@@ -820,7 +764,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
           return;
         }
 
-      msg->buffer[priv->message_offset++] =
+      msg->buffer[(size_t)msg->length - priv->message_remaining] =
           getreg8(priv->config->base + STM32_I2C_RXDR_OFFSET);
       priv->message_remaining--;
       priv->block_remaining--;
@@ -838,7 +782,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
           return;
         }
 
-      putreg8(msg->buffer[priv->message_offset++],
+      putreg8(msg->buffer[(size_t)msg->length - priv->message_remaining],
               priv->config->base + STM32_I2C_TXDR_OFFSET);
       priv->message_remaining--;
       priv->block_remaining--;
@@ -876,19 +820,18 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
           if ((msg->flags & I2C_M_NOSTOP) != 0)
             {
               priv->message_index++;
-              priv->message_offset = 0;
               priv->message_remaining =
                   (size_t)priv->messages[priv->message_index].length;
-              stm32_i2c_load_message(priv, true);
+              stm32_i2c_load_message(priv);
             }
           else
             {
-              stm32_i2c_request_stop(priv, STM32_I2C_STOP_NEXT);
+              stm32_i2c_request_stop(priv);
             }
         }
       else
         {
-          stm32_i2c_request_stop(priv, STM32_I2C_STOP_FINAL);
+          stm32_i2c_request_stop(priv);
         }
     }
 
@@ -901,7 +844,7 @@ static void stm32_i2c_transfer_status(struct stm32_i2c_priv_s *priv)
           return;
         }
 
-      priv->phase = priv->after_stop == STM32_I2C_STOP_NEXT ?
+      priv->phase = priv->message_index + 1 < priv->message_count ?
                     STM32_I2C_PHASE_WAIT_NEXT :
                     STM32_I2C_PHASE_WAIT_FINAL;
       stm32_i2c_set_interrupt_sources(priv, 0);
@@ -1256,7 +1199,6 @@ static int stm32_i2c_recover_gpio_bus(struct stm32_i2c_priv_s *priv,
   clock_t start = clock_systime_ticks();
   clock_t timeout =
       stm32_i2c_timeout_from_ms(STM32_I2C_RECOVERY_TIMEOUT_MS);
-  bool pulsed = false;
   unsigned int pulse;
   int ret;
 
@@ -1306,7 +1248,6 @@ static int stm32_i2c_recover_gpio_bus(struct stm32_i2c_priv_s *priv,
             }
 
           up_udelay(STM32_I2C_RECOVERY_PULSE_US);
-          pulsed = true;
           if (stm32_gpioread(sda_gpio))
             {
               break;
@@ -1318,10 +1259,7 @@ static int stm32_i2c_recover_gpio_bus(struct stm32_i2c_priv_s *priv,
           ret = -EIO;
           goto out;
         }
-    }
 
-  if (pulsed)
-    {
       ret = stm32_i2c_wait_scl_high(scl_gpio, start, timeout);
       if (ret < 0)
         {
@@ -1642,7 +1580,6 @@ static void stm32_i2c_begin_transfer(struct stm32_i2c_priv_s *priv,
   priv->messages = msgs;
   priv->message_count = count;
   priv->message_index = 0;
-  priv->message_offset = 0;
   priv->message_remaining = (size_t)msgs[0].length;
   priv->block_remaining = 0;
   priv->transfer_result = 0;
@@ -1656,7 +1593,7 @@ static void stm32_i2c_begin_transfer(struct stm32_i2c_priv_s *priv,
   up_enable_irq(priv->config->error_irq);
 #endif
 
-  stm32_i2c_load_message(priv, true);
+  stm32_i2c_load_message(priv);
   leave_critical_section(flags);
 }
 
@@ -1668,7 +1605,6 @@ static void stm32_i2c_start_next_message(struct stm32_i2c_priv_s *priv)
       priv->transfer_active)
     {
       priv->message_index++;
-      priv->message_offset = 0;
       priv->message_remaining =
           (size_t)priv->messages[priv->message_index].length;
 
@@ -1677,7 +1613,7 @@ static void stm32_i2c_start_next_message(struct stm32_i2c_priv_s *priv)
       up_enable_irq(priv->config->error_irq);
 #endif
 
-      stm32_i2c_load_message(priv, true);
+      stm32_i2c_load_message(priv);
     }
 
   leave_critical_section(flags);
@@ -1916,7 +1852,6 @@ static int stm32_i2c_transfer(FAR struct i2c_master_s *dev,
   uint32_t timeout_ticks;
   int ret;
   int i;
-  bool started = false;
 
   if (dev == NULL)
     {
@@ -2013,11 +1948,10 @@ static int stm32_i2c_transfer(FAR struct i2c_master_s *dev,
     }
 
   stm32_i2c_begin_transfer(priv, msgs, count, timeout_ticks);
-  started = true;
   ret = stm32_i2c_run_transfer(priv);
 
   stm32_i2c_quiesce_transfer(priv);
-  if (ret < 0 && started)
+  if (ret < 0)
     {
       int reset;
       int cleanup;
