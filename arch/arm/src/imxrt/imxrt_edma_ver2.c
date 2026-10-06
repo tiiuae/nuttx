@@ -65,6 +65,7 @@
 #include "chip.h"
 #include "imxrt_edma.h"
 #include "imxrt_clockconfig.h"
+#include "imxrt_dtcm.h"
 
 #include "hardware/imxrt_ccm.h"
 #include "hardware/imxrt_memorymap.h"
@@ -95,20 +96,6 @@
 #endif
 #define EDMA_ALIGN_MASK   (EDMA_ALIGN - 1)
 #define EDMA_ALIGN_UP(n)  (((n) + EDMA_ALIGN_MASK) & ~EDMA_ALIGN_MASK)
-
-#if defined(CONFIG_ARCH_CHIP_MIMXRT1189CVM8C) || \
-    defined(CONFIG_ARCH_CHIP_MIMXRT1189CVM8C_CM33)
-#  define USE_DTCM_SHADOW_ADDRESSING 1
-#  ifdef CONFIG_ARCH_CORTEXM33
-#    define DTCM_SIZE                (128 * 1024)
-#    define DTCM_SHADOW_ADDRESS      0x20200000ul
-#  elif defined(CONFIG_ARCH_CORTEXM7)
-#    define DTCM_SIZE                (256 * 1024)
-#    define DTCM_SHADOW_ADDRESS      0x20400000ul
-#  else
-#    error "Unsupported i.MX RT1180 core"
-#  endif
-#endif
 
 /****************************************************************************
  * Private Types
@@ -192,53 +179,6 @@ static struct imxrt_edmatcd_s g_tcd_pool[CONFIG_IMXRT_EDMA_NTCD]
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
-
-/* Translate a CPU buffer address to the system-bus view used by DMA.
- * Cache maintenance must still use the original CPU address.
- */
-
-static inline bool imxrt_dma_address(const void *buffer, size_t nbytes,
-                                     uint32_t *dma_address)
-{
-  uintptr_t address = (uintptr_t)buffer;
-
-#ifdef USE_DTCM_SHADOW_ADDRESSING
-  if (address >= IMXRT_DTCM_BASE &&
-      address - IMXRT_DTCM_BASE < DTCM_SIZE)
-    {
-      uintptr_t offset = address - IMXRT_DTCM_BASE;
-
-      if (nbytes > DTCM_SIZE - offset)
-        {
-          return false;
-        }
-
-      address = DTCM_SHADOW_ADDRESS + offset;
-    }
-#endif
-
-  *dma_address = (uint32_t)address;
-  return true;
-}
-
-/* Translate a DMA-visible address back to the CPU view for driver-owned
- * bookkeeping.
- */
-
-static inline uintptr_t imxrt_dma_cpu_address(uint32_t dma_address)
-{
-  uintptr_t address = dma_address;
-
-#ifdef USE_DTCM_SHADOW_ADDRESSING
-  if (address >= DTCM_SHADOW_ADDRESS &&
-      address - DTCM_SHADOW_ADDRESS < DTCM_SIZE)
-    {
-      address = IMXRT_DTCM_BASE + address - DTCM_SHADOW_ADDRESS;
-    }
-#endif
-
-  return address;
-}
 
 /* An eDMA minor loop advances the address by offset once per transfer
  * unit; the major loop repeats that sequence iter times.  Check both
