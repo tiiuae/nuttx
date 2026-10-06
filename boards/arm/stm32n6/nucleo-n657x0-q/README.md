@@ -227,8 +227,9 @@ post-divider clock from the board's 64 MHz HSI definition:
 
 The RCC reset encoding is 0. The local clock initialization does not program
 HSIDIV; an FSBL may leave a different value. Both serial initialization paths
-explicitly write `USART_PRESC.PRESCALER=0` (/1) while UE is clear, rather than
-depending on FSBL leftovers. `CONFIG_SUPPRESS_UART_CONFIG` retains its usual
+explicitly select PRESC while UE is clear, rather than depending on FSBL
+leftovers. Normal console rates use /1; very low rates may require a documented
+prescaler up to /256. `CONFIG_SUPPRESS_UART_CONFIG` retains its usual
 meaning: the handoff must already provide the correct clock and USART format.
 
 Neither serial path changes the global oscillator divider. HSIDIV and the
@@ -278,6 +279,59 @@ Sources: local RM0486 Rev 4 (chapters 3, 6, 7, 13, 14, 18/19 and 65);
 The ST manual and schematic were read from
 [mirrored ST PDFs](https://github.com/gotree94/mcu_ml/tree/main/Day3-6N)
 because direct ST downloads were unavailable.
+
+### USART1 line configuration and power policy
+
+Early and full setup share validated baud/format calculation and register
+programming. Arithmetic uses 64-bit intermediates; oversampling by 16 is
+preferred, with oversampling by 8 only when needed and representable.
+FIFO mode, word length, parity, PRESC and BRR are established with UE clear.
+Transmitter/receiver acknowledgement waits are bounded to 100 microseconds
+per attempt. Failed reconfiguration restores the prior registers; failure
+to acknowledge the restoration returns `-EIO`, not success.
+
+With `CONFIG_SERIAL_TERMIOS`, USART1 accepts CS7/CS8 payloads, no/even/odd
+parity, and one/two stop bits. RX and interrupt TX mask CS7 payloads to seven
+bits; the hardware word length performs the same masking for DMA TX.
+TCGETS reports the configured format and nominal requested input/output
+speed, not a measured or quantization-adjusted rate. Unsupported payload
+widths, zero baud (B0/hangup is not implemented), and unavailable flow pins
+return `-EINVAL`; unrepresentable rates return `-ERANGE`. Configuration
+suppression leaves the bootloader's format intact and rejects TCSETS with
+`-ENOTSUP`.
+
+Runtime changes exclude IRQ/debug output and reject queued TX, active DMA,
+DMA requests, incomplete wire TX, pending hardware RX or an active receiver
+with `-EBUSY`, without aborting transfers. The peer must be idle during the
+change. NuttX's upper half implements drain/flush; the lower half preserves
+the software RX ring. Frames arriving at the UE-disable boundary cannot be
+guaranteed. Each FIFO character obtains fresh error status, with PE/FE/NE/ORE
+cleared before RDR advances the FIFO. Errors without payload are also cleared.
+The existing 256-pass ISR bound, TC-based wire completion and debug
+CR-before-LF behavior are retained.
+
+Close disables interrupts, stops/releases TX DMA, disables the USART, and
+only then gates its APB clock and releases configured pins. A nonblocking
+close or upper-half drain timeout can discard wire TX and logs a warning.
+A failed DMA stop or USART disable leaves the clock enabled, logs the error
+and makes subsequent setup return that error until successful shutdown or
+reboot; it must not silently reopen an uncertain channel/peripheral.
+
+PM prepare leaves service untouched and permits NORMAL/IDLE. Initialized
+ports veto STANDBY/SLEEP with `-EBUSY` for queued/activity cases and
+`-ENOTSUP` otherwise. There is no unbounded CTS/TC wait or unsafe void-notify
+suspend. This gate does not alter the board's ordinary WFI/Sleep behavior
+or claim Stop-mode clock retention, DMA retention or RX wakeup support.
+
+Host checks are available with
+`make -C arch/arm/src/stm32n6/tests/host check-serial`. They exercise baud
+boundaries and real driver routines against mocked registers, including
+termios, FIFO errors, acknowledgement failures, PM and close/reopen.
+**Hardware qualification remains pending:** measure baud and receive
+clock-deviation tolerance on both boot paths, inject parity/framing/noise/
+overrun errors, exercise FIFO bursts and close/reopen, and verify busy/
+CTS-blocked PM rejection using separately qualified flow-control wiring.
+No second port or RTS/CTS board route is enabled by these changes.
 
 ## Boot-time tests
 
