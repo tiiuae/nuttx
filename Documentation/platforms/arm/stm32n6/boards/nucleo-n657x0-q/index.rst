@@ -41,8 +41,10 @@ Features
    This is the initial NuttX port for the STM32N6 family. The supported
    peripheral set is intentionally minimal: USART1 (the ST-LINK VCOM
    console), GPIO, RCC, PWR, the SysTick scheduler timer, the STM32
-   TIM1-TIM18 driver, polling SPI master support, partial GPDMA1/HPDMA1
-   support, and the three on-board user LEDs. SPI DMA and interrupt-driven
+   TIM1-TIM18 driver, polling SPI master support, opt-in I2C2 master support,
+   partial GPDMA1/HPDMA1 support, and the three on-board user LEDs. I2C2
+   timing and wiring remain unqualified; initialization fails until valid
+   board timing inputs are supplied. SPI DMA and interrupt-driven
    transfers are not implemented. The timer driver is not yet connected to
    board or PX4 PWM/DShot clients, and DMA support is not yet validated for
    general peripheral RX/TX. Other on-chip peripherals and on-board features
@@ -173,6 +175,89 @@ The tests read ``stm32_spi_getlasterror()`` after transfers while holding
 the bus lock, so SPI failures are returned to the bring-up caller rather
 than being treated as successful exchanges.
 
+I2C2 Support and Bring-up
+========================
+
+The board provides an opt-in I2C2 route using open-drain alternate-function
+pins:
+
+.. list-table::
+   :header-rows: 1
+
+   * - MCU
+     - I2C2 signal
+     - AF
+     - Status
+   * - PB10
+     - SCL
+     - AF4
+     - Configured MCU route; connector unqualified
+   * - PB11
+     - SDA
+     - AF4
+     - Configured MCU route; connector unqualified
+
+This follows the Nucleo BSP pin assignment. Do not use I2C1 on PE5/PE6:
+those pins are already assigned to the USART1 console. Connector positions,
+solder-bridge settings, I/O voltage, external pull-ups, and bus capacitance
+must be checked against UM3417, the exact MB1940 schematic revision, and
+the actual wiring before connecting a device. Use compatible open-drain
+devices, external pull-ups to the verified I/O rail, and a common ground;
+internal pull-ups are not a substitute for the electrical design.
+
+.. warning::
+
+   The timing inputs in
+   ``boards/arm/stm32n6/nucleo-n657x0-q/include/board.h`` are not qualified.
+   ``BOARD_I2C2_RISE_TIME_NS`` and ``BOARD_I2C2_FALL_TIME_NS`` are zero,
+   which deliberately causes timing setup to fail. Bring-up logs the
+   failure and does not register ``/dev/i2c2``. Supply measured rise/fall
+   bounds for the final wiring and a justified
+   ``BOARD_I2C2_CLOCK_TOLERANCE_PPM``; do not substitute guessed values.
+
+The clock contract selects ``hsi_div_ck`` at 64 MHz and a 50 MHz APB
+interface clock. The driver checks the actual HSIDIV against this contract,
+rather than changing it. The analog and digital filters are currently
+disabled. Enabling the analog filter also requires confirmed STM32N6
+datasheet delay bounds in ``BOARD_I2C2_ANALOG_FILTER_MIN_NS`` and
+``BOARD_I2C2_ANALOG_FILTER_MAX_NS``. Filter settings and electrical inputs
+must be qualified together with the resulting SCL waveform.
+
+Select ``CONFIG_STM32_I2C2`` and ``CONFIG_NUCLEO_N657X0_Q_I2C2`` to
+initialize the bus during board bring-up. ``CONFIG_I2C_DRIVER`` additionally
+registers ``/dev/i2c2`` for userspace. ``CONFIG_SYSTEM_I2CTOOL`` enables
+the NSH ``i2c`` command. The dedicated ``i2c`` configuration selects these
+through its configuration dependencies and defaults to 100 kHz.
+``CONFIG_I2C_POLLED`` optionally replaces interrupt-driven byte service.
+
+After electrical qualification, use ``i2c bus`` to check registration.
+For a device with a documented register-read protocol, use:
+
+.. code:: console
+
+   nsh> i2c bus
+   nsh> i2c get -b 2 -f 100000 -n -a ADDRESS -r REGISTER
+
+Replace ``ADDRESS`` and ``REGISTER`` with the device's documented unshifted
+7-bit address and register index, in hexadecimal. ``-n`` selects a combined
+register write/read vector with a repeated START. Do not use ``-s`` for this
+operation: the current tool submits the register write alone with NOSTOP,
+which the N6 driver rejects as a final NOSTOP. Clients requiring separate
+STOP/START transactions must submit ordinary messages without NOSTOP.
+
+Avoid broad ``i2c dev`` scans: the default probe performs a one-byte read
+and may have device-specific side effects. Only write known-safe registers.
+The driver supports 100/400 kHz, but start at 100 kHz and qualify 400 kHz
+separately. Sensor identification and sustained reads, SCL/SDA timing,
+clock stretching, NACK/error injection, and stuck-line recovery remain
+hardware acceptance requirements.
+
+``CONFIG_I2C_RESET`` enables explicit single-master GPIO recovery; do not
+enable it on a bus shared with another controller. See the STM32N6
+:doc:`I2C support description <../../index>` for transfer flags, timeout
+budgets, and abort/recovery behavior. PX4 sensor integration is not yet
+provided.
+
 Buttons and LEDs
 ================
 
@@ -225,6 +310,8 @@ The regular configurations map the pins required for the serial console.
 Configurations enabling SPI5 also assign PE15, PG1, and PG2 to SPI
 alternate functions and PA3 to BMP280 chip select. The ``nsh-test``
 configuration additionally configures the on-board button input on PC13.
+Configurations enabling board I2C2 bring-up assign PB10/PB11 to AF4
+open-drain SCL/SDA.
 Other GPIOs retain their reset state and are free for application use.
 
 ===== ================== ======= =================================
@@ -237,6 +324,8 @@ PE15  SPI5_SCK            AF5     Arduino D13 / Morpho CN15-11
 PG1   SPI5_MISO           AF5     Arduino D12 / Morpho CN15-13
 PG2   SPI5_MOSI           AF5     Arduino D11 / Morpho CN15-15
 PA3   SPI5 chip select    --      Arduino D10; active low for BMP280
+PB10  I2C2_SCL            AF4     Opt-in; wiring unqualified
+PB11  I2C2_SDA            AF4     Opt-in; wiring unqualified
 ===== ================== ======= =================================
 
 Power Supply
@@ -373,6 +462,17 @@ the userled lower-half driver and ``apps/examples/leds`` enabled, so
 the three on-board LEDs are exposed at ``/dev/userleds`` and can be
 exercised from userspace.  Run ``leds`` from the NSH prompt to spawn
 the daemon that cycles through the LEDs.
+
+i2c
+---
+
+Builds an SRAM NSH image with I2C2 board bring-up, the I2C character
+interface, and the NSH ``i2c`` tool limited to bus 2 at an initial 100 kHz.
+Use DEV boot mode and the SRAM load procedure above. The configuration
+does not qualify the electrical wiring: with the current zero rise/fall
+inputs, initialization fails and ``/dev/i2c2`` is not registered. Complete
+the timing and wiring prerequisites in the I2C2 section before attempting
+device transactions.
 
 License Exceptions
 ==================
