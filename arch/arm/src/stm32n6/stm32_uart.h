@@ -87,6 +87,12 @@ extern "C"
  * Public Function Prototypes
  ****************************************************************************/
 
+/* USART kernel clock with CCIPR13 selecting hsi_div_ck and PRESC=/1.
+ * The global HSI divider must remain unchanged while serial is in use.
+ */
+
+uint32_t stm32_usart_clock(void);
+
 #undef EXTERN
 #if defined(__cplusplus)
 }

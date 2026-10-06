@@ -146,7 +146,6 @@ struct stm32_serial_s
   const uint32_t    baud;      /* Configured baud */
 #endif
   const uint8_t     irq;       /* IRQ associated with this USART */
-  const uint32_t    apbclock;  /* PCLK 1 or 2 frequency */
   const uint32_t    usartbase; /* Base address of USART registers */
   const uint32_t    tx_gpio;   /* U[S]ART TX GPIO pin configuration */
   const uint32_t    rx_gpio;   /* U[S]ART RX GPIO pin configuration */
@@ -278,7 +277,6 @@ static struct stm32_serial_s g_usart1priv =
   .bits          = CONFIG_USART1_BITS,
   .stopbits2     = CONFIG_USART1_2STOP,
   .baud          = CONFIG_USART1_BAUD,
-  .apbclock      = STM32_HSI_FREQUENCY,  /* USART1SEL=HSI via CCIPR13 */
   .usartbase     = STM32_USART1_BASE,
   .tx_gpio       = GPIO_USART1_TX,
   .rx_gpio       = GPIO_USART1_RX,
@@ -472,6 +470,7 @@ static void stm32serial_setformat(struct uart_dev_s *dev)
   uint32_t brr;
   uint32_t cr1;
   uint32_t usartdiv8;
+  uint32_t clock = stm32_usart_clock();
 
   /* In case of oversampling by 8, the equation is:
    *
@@ -479,7 +478,7 @@ static void stm32serial_setformat(struct uart_dev_s *dev)
    *   usartdiv8 = 2 * fCK / baud
    */
 
-  usartdiv8 = ((priv->apbclock << 1) + (priv->baud >> 1)) / priv->baud;
+  usartdiv8 = ((clock << 1) + (priv->baud >> 1)) / priv->baud;
 
   /* Baud rate for standard USART (SPI mode included):
    *
@@ -836,6 +835,7 @@ static int stm32serial_setup(struct uart_dev_s *dev)
 
   /* Configure the USART line format and speed. */
 
+  stm32serial_putreg(priv, STM32_USART_PRESC_OFFSET, USART_PRESC_DIV1);
   stm32serial_setformat(dev);
 
   /* Enable Rx, Tx, and the USART */

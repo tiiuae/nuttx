@@ -241,6 +241,10 @@
 #define USART_TDR_SHIFT           (0)       /* Bits 8:0: Data value */
 #define USART_TDR_MASK            (0xff << USART_TDR_SHIFT)
 
+/* Prescaler register */
+
+#define USART_PRESC_DIV1          (0)       /* Input clock not divided */
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/

@@ -49,7 +49,6 @@
 #ifdef HAVE_CONSOLE
 #  if defined(CONFIG_USART1_SERIAL_CONSOLE)
 #    define STM32N6_CONSOLE_BASE     STM32_USART1_BASE
-#    define STM32N6_APBCLOCK         STM32_HSI_FREQUENCY  /* USART1SEL=HSI via CCIPR13 */
 #    define STM32N6_CONSOLE_APBREG   STM32_RCC_APB2ENSR
 #    define STM32N6_CONSOLE_APBEN    RCC_APB2ENR_USART1EN
 #    define STM32N6_CONSOLE_BAUD     CONFIG_USART1_BAUD
@@ -117,38 +116,6 @@
 
 #  define USART_CR3_SETBITS 0
 
-#  undef USE_OVER8
-
-  /* Calculate USART BAUD rate divider.
-   *
-   * Baud rate for standard USART (SPI mode included):
-   *
-   * In case of oversampling by 16, the equation is:
-   *   baud    = fCK / UARTDIV
-   *   UARTDIV = fCK / baud
-   *
-   * In case of oversampling by 8, the equation is:
-   *
-   *   baud    = 2 * fCK / UARTDIV
-   *   UARTDIV = 2 * fCK / baud
-   */
-
-#  define STM32N6_USARTDIV8 \
-      (((STM32N6_APBCLOCK << 1) + (STM32N6_CONSOLE_BAUD >> 1)) / STM32N6_CONSOLE_BAUD)
-#  define STM32N6_USARTDIV16 \
-      ((STM32N6_APBCLOCK + (STM32N6_CONSOLE_BAUD >> 1)) / STM32N6_CONSOLE_BAUD)
-
-  /* Pick OVER8 only when the divisor is small enough that the loss of
-   * the low BRR bit (DIV_FRACTION[0]) does not exceed half a step.
-   */
-
-#  if STM32N6_USARTDIV8 > 2000
-#    define STM32N6_BRR_VALUE STM32N6_USARTDIV16
-#  else
-#    define USE_OVER8 1
-#    define STM32N6_BRR_VALUE \
-      ((STM32N6_USARTDIV8 & 0xfff0) | ((STM32N6_USARTDIV8 & 0x000f) >> 1))
-#  endif
 #endif /* HAVE_CONSOLE */
 
 /****************************************************************************
@@ -174,6 +141,22 @@
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: stm32_usart_clock
+ *
+ * Description:
+ *   Return the nominal hsi_div_ck frequency inherited from ROM or FSBL.
+ *
+ ****************************************************************************/
+
+uint32_t stm32_usart_clock(void)
+{
+  uint32_t hsidiv = (getreg32(STM32_RCC_HSICFGR) &
+                    RCC_HSICFGR_HSIDIV_MASK) >> RCC_HSICFGR_HSIDIV_SHIFT;
+
+  return STM32_HSI_FREQUENCY >> hsidiv;
+}
 
 /****************************************************************************
  * Name: arm_lowputc
@@ -208,6 +191,9 @@ void stm32_lowsetup(void)
 #if defined(HAVE_UART)
 #if defined(HAVE_CONSOLE) && !defined(CONFIG_SUPPRESS_UART_CONFIG)
   uint32_t cr;
+  uint32_t clock;
+  uint32_t usartdiv8;
+  uint32_t brr;
 #endif
 
 #if defined(HAVE_CONSOLE)
@@ -226,6 +212,9 @@ void stm32_lowsetup(void)
 #endif
 
 #if defined(HAVE_CONSOLE) && !defined(CONFIG_SUPPRESS_UART_CONFIG)
+  modifyreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET,
+              USART_CR1_UE, 0);
+
   cr  = getreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR2_OFFSET);
   cr &= ~USART_CR2_CLRBITS;
   cr |= USART_CR2_SETBITS;
@@ -241,14 +230,26 @@ void stm32_lowsetup(void)
   cr |= USART_CR3_SETBITS;
   putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR3_OFFSET);
 
-  putreg32(STM32N6_BRR_VALUE,
-           STM32N6_CONSOLE_BASE + STM32_USART_BRR_OFFSET);
+  putreg32(USART_PRESC_DIV1,
+           STM32N6_CONSOLE_BASE + STM32_USART_PRESC_OFFSET);
 
+  clock = stm32_usart_clock();
+  usartdiv8 = ((clock << 1) + (STM32N6_CONSOLE_BAUD >> 1)) /
+              STM32N6_CONSOLE_BAUD;
   cr  = getreg32(STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
-#ifdef USE_OVER8
-  cr |= USART_CR1_OVER8;
+  if (usartdiv8 > 2000)
+    {
+      brr = (clock + (STM32N6_CONSOLE_BAUD >> 1)) /
+            STM32N6_CONSOLE_BAUD;
+    }
+  else
+    {
+      brr = (usartdiv8 & 0xfff0) | ((usartdiv8 & 0x000f) >> 1);
+      cr |= USART_CR1_OVER8;
+    }
+
+  putreg32(brr, STM32N6_CONSOLE_BASE + STM32_USART_BRR_OFFSET);
   putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);
-#endif
 
   cr |= (USART_CR1_UE | USART_CR1_TE | USART_CR1_RE);
   putreg32(cr, STM32N6_CONSOLE_BASE + STM32_USART_CR1_OFFSET);

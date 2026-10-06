@@ -234,11 +234,18 @@ void __start_c(void)
   (void)getreg32(STM32_SYSCFG_VDDCCCR);
 
 #ifdef CONFIG_STM32_USART1
-  /* Route USART1's kernel clock to HSI so the BRR computation is
-   * independent of any later SYSCLK changes.
+  /* A previous boot stage may have left the console enabled. */
+
+#ifndef CONFIG_SUPPRESS_UART_CONFIG
+  modifyreg32(STM32_USART1_CR1, USART_CR1_UE, 0);
+#endif
+
+  /* Route USART1 to hsi_div_ck without changing other kernel selectors
+   * or the global HSI divider.
    */
 
-  putreg32(RCC_CCIPR13_USART1SEL_HSI, STM32_RCC_CCIPR13);
+  modifyreg32(STM32_RCC_CCIPR13, RCC_CCIPR13_USART1SEL_MASK,
+              RCC_CCIPR13_USART1SEL_HSI);
 #endif
 
   stm32_lowsetup();
