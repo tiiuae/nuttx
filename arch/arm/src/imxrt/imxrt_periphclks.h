@@ -29,6 +29,17 @@
 
 #include <nuttx/config.h>
 #include <stdint.h>
+
+#ifdef CONFIG_IMXRT_CLOCKCONFIG_VER3
+
+/* CCM v2 with per-peripheral LPCG registers: LPUART clock helpers are
+ * declared in imxrt_clockconfig_ver3.h.
+ */
+
+#include "imxrt_clockconfig_ver3.h"
+
+#else
+
 #include "hardware/imxrt_ccm.h"
 
 /****************************************************************************
@@ -603,4 +614,7 @@ void imxrt_periphclk_configure(uintptr_t regaddr, unsigned int index,
 #if defined(__cplusplus)
 }
 #endif
+
+#endif /* !CONFIG_IMXRT_CLOCKCONFIG_VER3 */
+
 #endif /* __ARCH_ARM_SRC_IMXRT_IMXRT_PERIPHCLKS_H */

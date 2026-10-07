@@ -1533,6 +1533,7 @@ static int imxrt_ifup_action(struct net_driver_s *dev, bool resetphy)
   imxrt_enet_modifyreg32(priv, IMXRT_ENET_EIMR_OFFSET, TX_INTERRUPTS,
                          priv->ints);
 
+  netdev_carrier_on(dev);
   return OK;
 }
 
@@ -1620,6 +1621,7 @@ static int imxrt_ifdown(struct net_driver_s *dev)
   /* Mark the device "down" */
 
   priv->bifup = false;
+  netdev_carrier_off(dev);
   leave_critical_section(flags);
   return OK;
 }

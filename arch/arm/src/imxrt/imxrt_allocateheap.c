@@ -159,16 +159,23 @@
 #  define IMXRT_DTCM 0
 #endif
 
+extern const uint32_t _ram_size[];    /* See linker script */
+
 #ifndef IMXRT_OCRAM_SIZE
-
-extern  const uint32_t  _ram_size[];  /* See linker script */
-
 #  define IMXRT_OCRAM_SIZE             ((uint32_t)_ram_size)
 #endif
 
 #define FLEXRAM_REMAINING_K ((IMXRT_OCRAM_SIZE / 1024) - (CONFIG_IMXRT_DTCM + CONFIG_IMXRT_DTCM))
 
-#if defined(CONFIG_IMXRT_OCRAM_PRIMARY)
+#if defined(CONFIG_IMXRT_TCM_PRIMARY)
+/* Place the primary heap in the core-local TCM.  Both cores alias their
+ * TCM at IMXRT_DTCM_BASE (M7 DTCM in the M7 view, M33 SysTCM in the M33
+ * view); the size is picked up from the linker script's _ram_size.
+ */
+
+#  define PRIMARY_RAM_START    IMXRT_DTCM_BASE
+#  define PRIMARY_RAM_SIZE     ((uint32_t)_ram_size)
+#elif defined(CONFIG_IMXRT_OCRAM_PRIMARY)
 #  define PRIMARY_RAM_START    _IMXRT_OCRAM_BASE
 #  define PRIMARY_RAM_SIZE     IMXRT_OCRAM_SIZE - (CONFIG_ITCM_USED + CONFIG_DTCM_USED)
 #  define IMXRT_OCRAM_ASSIGNED 1
@@ -197,7 +204,19 @@ extern  const uint32_t  _ram_size[];  /* See linker script */
  * already been assigned as the primary RAM.
  */
 
-#if defined(CONFIG_IMXRT_OCRAM_HEAP) && !defined(IMXRT_OCRAM_ASSIGNED)
+#if defined(CONFIG_IMXRT_TCM_PRIMARY) && \
+    defined(CONFIG_IMXRT_OCRAM_HEAP)
+/* With TCM as primary RAM, the linker defines the usable OCRAM range so
+ * that board-reserved and DMA-only storage is excluded.
+ */
+
+extern const uint8_t _socramheap[];
+extern const uint8_t _eocramheap[];
+#  define REGION1_RAM_START    ((uintptr_t)_socramheap)
+#  define REGION1_RAM_SIZE     ((uintptr_t)_eocramheap - \
+                               (uintptr_t)_socramheap)
+#  define IMXRT_OCRAM_ASSIGNED 1
+#elif defined(CONFIG_IMXRT_OCRAM_HEAP) && !defined(IMXRT_OCRAM_ASSIGNED)
 #  define REGION1_RAM_START    IMXRT_OCRAM_START
 #  define REGION1_RAM_SIZE     IMXRT_OCRAM_SIZE
 #  define IMXRT_OCRAM_ASSIGNED 1

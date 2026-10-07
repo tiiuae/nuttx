@@ -47,6 +47,14 @@
 #include "imxrt_start.h"
 #include "imxrt_gpio.h"
 
+#ifdef CONFIG_IMXRT_ELE
+#  include "imxrt118x_ele.h"
+#endif
+
+#ifdef CONFIG_IMXRT_TRDC
+#  include "imxrt118x_trdc.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -100,6 +108,7 @@ extern const void * const _vectors[];
 
 static inline void imxrt_tcmenable(void)
 {
+#ifdef CONFIG_ARCH_CORTEXM7
   uint32_t regval;
 
   UP_MB();
@@ -126,11 +135,12 @@ static inline void imxrt_tcmenable(void)
 
   UP_MB();
 
-#ifdef CONFIG_ARMV7M_ITCM
+#if defined(CONFIG_ARMV7M_ITCM) && !defined(CONFIG_ARCH_FAMILY_IMXRT118x)
   /* Copy TCM code from flash to ITCM */
 
 #warning Missing logic
 #endif
+#endif /* CONFIG_ARCH_CORTEXM7 */
 }
 
 /****************************************************************************
@@ -202,7 +212,7 @@ void __start(void)
     }
 
   /* Copy any necessary code sections from FLASH to RAM.  The correct
-   * destination in OCRAM is given by _sramfuncs and _eramfuncs.  The
+   * destination in RAM is given by _sramfuncs and _eramfuncs.  The
    * temporary location is in flash after the data initialization code
    * at _framfuncs.  This should be done before imxrt_clockconfig() is
    * called (in case it has some dependency on initialized C variables).
@@ -225,6 +235,12 @@ void __start(void)
   arm_stack_check_init();
 #endif
 
+#ifdef CONFIG_IMXRT_ELE
+  /* Bring the EdgeLock Enclave up */
+
+  imxrt118x_ele_init();
+#endif
+
   /* Configure the UART so that we can get debug output as soon as possible */
 
   imxrt_clockconfig();
@@ -239,6 +255,13 @@ void __start(void)
   /* Initialize onboard resources */
 
   imxrt_boardinitialize();
+
+#ifdef CONFIG_IMXRT_TRDC
+  /* Take ownership of the TRDCs from ELE and program them. */
+
+  imxrt118x_trdc_init();
+  imxrt118x_trdc_config();
+#endif
 
 #ifdef CONFIG_ARM_MPU
 #ifdef CONFIG_BUILD_PROTECTED

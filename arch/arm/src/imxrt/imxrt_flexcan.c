@@ -83,6 +83,13 @@
 #define TXMBCOUNT                   (CONFIG_IMXRT_FLEXCAN_TXMB + 1)
 #define TOTALMBCOUNT                RXMBCOUNT + TXMBCOUNT
 
+/* TXMBCOUNT spans the mailbox reserved for the ERR005829 workaround as well,
+ * so the transmit ring is one shorter than the mailboxes it covers: the
+ * usable ones are RXMBCOUNT + 1 .. TOTALMBCOUNT - 1.
+ */
+
+#define TXMBRINGSIZE                (TXMBCOUNT - 1)
+
 #define IFLAG1_RX                   ((1 << RXMBCOUNT)-1)
 #define IFLAG1_TX                   (((1 << TXMBCOUNT)-2) << RXMBCOUNT)
 
@@ -269,7 +276,7 @@ struct imxrt_driver_s
   int mb_address_offset;
   spinlock_t lock;
 #ifdef TX_TIMEOUT_WQ
-  struct wdog_s txtimeout[TXMBCOUNT]; /* TX timeout timer */
+  struct wdog_s txtimeout[TXMBRINGSIZE]; /* TX timeout timer */
 #endif
   struct work_s rcvwork;            /* For deferring interrupt work to the wq */
   struct work_s irqwork;            /* For deferring interrupt work to the wq */
@@ -289,8 +296,11 @@ struct imxrt_driver_s
   const struct flexcan_config_s *config;
 
 #ifdef CONFIG_NET_CAN_RAW_TX_DEADLINE
-  struct txmbstats txmb[TXMBCOUNT];
+  struct txmbstats txmb[TXMBRINGSIZE];
 #endif
+
+  uint32_t bus_errors;          /* ESR1 error flags observed, monotonic */
+  uint32_t rx_overruns;         /* RX mailbox CODE=OVERRUN count */
 };
 
 /****************************************************************************
@@ -481,7 +491,7 @@ static struct mb_s *flexcan_get_mb(struct imxrt_driver_s *priv,
 
 static void imxrt_receive(struct imxrt_driver_s *priv,
                             uint32_t flags);
-static void imxrt_txdone_work(void *arg);
+static void imxrt_tx_work(void *arg);
 static void imxrt_txdone(struct imxrt_driver_s *priv);
 
 static int  imxrt_flexcan_interrupt(int irq, void *context,
@@ -490,7 +500,7 @@ static void imxrt_flexcan_interrupt_work(void *arg);
 
 /* Watchdog timer expirations */
 #ifdef TX_TIMEOUT_WQ
-static void imxrt_txtimeout_work(void *arg);
+static void imxrt_txtimeout_abort(struct imxrt_driver_s *priv);
 static void imxrt_txtimeout_expiry(wdparm_t arg);
 #endif
 
@@ -516,6 +526,98 @@ static void imxrt_reset(struct imxrt_driver_s *priv);
  * Private Functions
  ****************************************************************************/
 
+/* ESR1 error flags.  Every one is set by the protocol engine on the matching
+ * bus error and cleared when ESR1 is read, so a read reports the error
+ * types seen since the previous read.  Sampling them at every driver entry
+ * gives a monotonic error count without the ERRINT interrupt, which fires
+ * once per error frame and storms at bus rate on a dead bus.
+ */
+
+#define ESR1_ERRFLAGS (CAN_ESR1_STFERR | CAN_ESR1_FRMERR | CAN_ESR1_CRCERR | \
+                       CAN_ESR1_ACKERR | CAN_ESR1_BIT0ERR | CAN_ESR1_BIT1ERR | \
+                       CAN_ESR1_STFERRFAST | CAN_ESR1_FRMERRFAST | \
+                       CAN_ESR1_CRCERRFAST | CAN_ESR1_BIT0ERRFAST | \
+                       CAN_ESR1_BIT1ERRFAST)
+
+/****************************************************************************
+ * Function: imxrt_sample_errors
+ *
+ * Description:
+ *   Read ESR1, clearing its error flags, and add the number of set flags
+ *   to the bus error count.
+ *
+ * Input Parameters:
+ *   priv  - Reference to the driver state structure
+ *
+ * Returned Value:
+ *   The ESR1 value that was read.
+ *
+ ****************************************************************************/
+
+static uint32_t imxrt_sample_errors(struct imxrt_driver_s *priv)
+{
+  irqstate_t flags;
+  uint32_t esr1;
+  uint32_t errs;
+
+  flags = spin_lock_irqsave(NULL);
+
+  esr1 = getreg32(priv->base + IMXRT_CAN_ESR1_OFFSET);
+
+  for (errs = esr1 & ESR1_ERRFLAGS; errs != 0; errs &= errs - 1)
+    {
+      priv->bus_errors++;
+    }
+
+  spin_unlock_irqrestore(NULL, flags);
+
+  return esr1;
+}
+
+/****************************************************************************
+ * Function: imxrt_txmb_next
+ *
+ * Description:
+ *   Pick the mailbox to load the next frame into.
+ *
+ *   Every frame of a multi-frame transport transfer carries the same CAN
+ *   ID, and FlexCAN breaks an arbitration tie between mailboxes holding
+ *   equal IDs by taking the lowest mailbox number.  Handing out the
+ *   lowest *free* mailbox therefore lets a frame loaded into a
+ *   just-drained low mailbox win arbitration against older frames still
+ *   pending in higher ones, and the receiver sees the transfer out of
+ *   order.
+ *
+ *   Only ever hand out a mailbox above every pending one, and wrap back to
+ *   the bottom once the ring has drained.
+ *
+ * Input Parameters:
+ *   priv  - Reference to the driver state structure
+ *
+ * Returned Value:
+ *   The mailbox index to use, or TOTALMBCOUNT if none is available.
+ *
+ ****************************************************************************/
+
+static uint32_t imxrt_txmb_next(struct imxrt_driver_s *priv)
+{
+  uint32_t mbi  = RXMBCOUNT + 1;
+  uint32_t next = RXMBCOUNT + 1;
+
+  while (mbi < TOTALMBCOUNT)
+    {
+      struct mb_s *mb = flexcan_get_mb(priv, mbi);
+      if (mb->cs.code == CAN_TXMB_DATAORREMOTE)
+        {
+          next = mbi + 1;
+        }
+
+      mbi++;
+    }
+
+  return next;
+}
+
 /****************************************************************************
  * Function: imxrt_txringfull
  *
@@ -533,21 +635,7 @@ static void imxrt_reset(struct imxrt_driver_s *priv);
 
 static bool imxrt_txringfull(struct imxrt_driver_s *priv)
 {
-  uint32_t mbi = RXMBCOUNT + 1;
-  struct mb_s *mb;
-
-  while (mbi < TOTALMBCOUNT)
-    {
-      mb = flexcan_get_mb(priv, mbi);
-      if (mb->cs.code != CAN_TXMB_DATAORREMOTE)
-        {
-          return 0;
-        }
-
-      mbi++;
-    }
-
-  return 1;
+  return imxrt_txmb_next(priv) >= TOTALMBCOUNT;
 }
 
 /****************************************************************************
@@ -586,33 +674,20 @@ static int imxrt_transmit(struct imxrt_driver_s *priv)
   uint32_t txmb = 0;
 #endif
 
-  mbi = RXMBCOUNT + 1;
-  mb_bit = 1 << mbi;
+  mbi = imxrt_txmb_next(priv);
 
-  while (mbi < TOTALMBCOUNT)
-    {
-      /* Check whether message buffer is not currently transmitting */
-
-      struct mb_s *mb = flexcan_get_mb(priv, mbi);
-      if (mb->cs.code != CAN_TXMB_DATAORREMOTE)
-        {
-          putreg32(mb_bit, priv->base + IMXRT_CAN_IFLAG1_OFFSET);
-          break;
-        }
-
-      mb_bit <<= 1;
-      mbi++;
-#ifdef CONFIG_NET_CAN_RAW_TX_DEADLINE
-      txmb++;
-#endif
-    }
-
-  if (mbi == TOTALMBCOUNT)
+  if (mbi >= TOTALMBCOUNT)
     {
       nwarn("No TX MB available mbi %" PRIi32 "\n", mbi);
       NETDEV_TXERRORS(&priv->dev);
       return 0;       /* No transmission for you! */
     }
+
+  mb_bit = 1 << mbi;
+  putreg32(mb_bit, priv->base + IMXRT_CAN_IFLAG1_OFFSET);
+#ifdef CONFIG_NET_CAN_RAW_TX_DEADLINE
+  txmb = mbi - (RXMBCOUNT + 1);
+#endif
 
 #ifdef CONFIG_NET_CAN_RAW_TX_DEADLINE
   struct timespec ts;
@@ -622,13 +697,18 @@ static int imxrt_transmit(struct imxrt_driver_s *priv)
     {
       struct timeval *tv =
              (struct timeval *)(priv->dev.d_buf + priv->dev.d_len);
-      priv->txmb[txmb].deadline = *tv;
       timeout  = (tv->tv_sec - ts.tv_sec)*CLK_TCK
                  + ((tv->tv_usec - ts.tv_nsec / 1000)*CLK_TCK) / 1000000;
       if (timeout < 0)
         {
           return 0;       /* No transmission for you! */
         }
+
+      /* Only now that the frame is going out, so a deadline is never left
+       * behind on a mailbox holding nothing.
+       */
+
+      priv->txmb[txmb].deadline = *tv;
     }
   else
     {
@@ -656,6 +736,7 @@ static int imxrt_transmit(struct imxrt_driver_s *priv)
     (peak_tx_mailbox_index_ > mbi ? peak_tx_mailbox_index_ : mbi);
 
   union cs_e cs;
+  cs.cs = 0;
   cs.code = CAN_TXMB_DATAORREMOTE;
   struct mb_s *mb = flexcan_get_mb(priv, mbi);
   mb->cs.code = CAN_TXMB_INACTIVE;
@@ -698,6 +779,7 @@ static int imxrt_transmit(struct imxrt_driver_s *priv)
         }
 
       cs.rtr = frame->can_id & FLAGRTR ? 1 : 0;
+      cs.brs = frame->flags & CANFD_BRS ? 1 : 0;
 
       cs.dlc = g_len_to_can_dlc[frame->len];
 
@@ -855,6 +937,13 @@ static void imxrt_receive(struct imxrt_driver_s *priv,
         }
 
       rf = flexcan_get_mb(priv, mbi);
+
+      /* CODE is in CS; read it before unlocking the mailbox via IFLAG. */
+
+      if (rf->cs.code == CAN_RXMB_OVERRUN)
+        {
+          priv->rx_overruns++;
+        }
 
       /* Read the frame contents */
 
@@ -1025,6 +1114,16 @@ static void imxrt_txdone(struct imxrt_driver_s *priv)
            */
 
           wd_cancel(&priv->txtimeout[txmb]);
+
+          /* Retire the deadline with the frame. Left behind it sits in the
+           * past forever, and the next expiry of any other mailbox's
+           * watchdog makes imxrt_txtimeout_abort() abort whatever frame has
+           * since been loaded here.
+           */
+
+          priv->txmb[txmb].deadline.tv_sec  = 0;
+          priv->txmb[txmb].deadline.tv_usec = 0;
+
           struct mb_s *mb = flexcan_get_mb(priv, mbi);
           mb->cs.code = CAN_TXMB_INACTIVE;
 #endif
@@ -1039,35 +1138,48 @@ static void imxrt_txdone(struct imxrt_driver_s *priv)
 }
 
 /****************************************************************************
- * Function: imxrt_txdone_work
+ * Function: imxrt_tx_work
  *
  * Description:
- *   An interrupt was received indicating that the last TX packet(s) is done
+ *   Process TX completions and deadline aborts on the worker thread, then
+ *   poll for more data.  TX-complete IRQs and the deadline watchdog both
+ *   queue this function on the same work_s; work_queue() cancels a pending
+ *   callback when that work_s is reused, so splitting them lost whichever
+ *   ran second (deadlines left set, TX IMASK left off, expired frames
+ *   never aborted).
  *
  * Input Parameters:
- *   priv  - Reference to the driver state structure
+ *   arg  - Reference to the driver state structure
  *
  * Returned Value:
  *   None
  *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *   We are not in an interrupt context so that we can lock the network.
- *
  ****************************************************************************/
 
-static void imxrt_txdone_work(void *arg)
+static void imxrt_tx_work(void *arg)
 {
   struct imxrt_driver_s *priv = (struct imxrt_driver_s *)arg;
 
+  imxrt_sample_errors(priv);
   imxrt_txdone(priv);
 
-  /* There should be space for a new TX in any event.  Poll the network for
-   * new XMIT data
+#ifdef TX_TIMEOUT_WQ
+  imxrt_txtimeout_abort(priv);
+#endif
+
+  /* The TX IRQ masked every TX mailbox to stop the interrupt storm.
+   * Restore the mask so abort completions and later transmits can
+   * interrupt.  txdone() already cleared completion flags.
    */
 
+  modifyreg32(priv->base + IMXRT_CAN_IMASK1_OFFSET, 0, IFLAG1_TX);
+
   net_lock();
-  devif_poll(&priv->dev, imxrt_txpoll);
+  if (priv->bifup)
+    {
+      devif_poll(&priv->dev, imxrt_txpoll);
+    }
+
   net_unlock();
 }
 
@@ -1098,6 +1210,8 @@ static void imxrt_flexcan_interrupt_work(void *arg)
   uint32_t flags;
   flags  = getreg32(priv->base + IMXRT_CAN_IFLAG1_OFFSET);
   flags &= IFLAG1_RX;
+
+  imxrt_sample_errors(priv);
 
   net_lock();
   imxrt_receive(priv, flags);
@@ -1156,7 +1270,7 @@ static int imxrt_flexcan_interrupt(int irq, void *context,
            */
 
           modifyreg32(priv->base + IMXRT_CAN_IMASK1_OFFSET, IFLAG1_TX, 0);
-          work_queue(CANWORK, &priv->irqwork, imxrt_txdone_work, priv, 0);
+          work_queue(CANWORK, &priv->irqwork, imxrt_tx_work, priv, 0);
         }
     }
 
@@ -1164,59 +1278,73 @@ static int imxrt_flexcan_interrupt(int irq, void *context,
 }
 
 /****************************************************************************
- * Function: imxrt_txtimeout_work
+ * Function: imxrt_txtimeout_abort
  *
  * Description:
- *   Perform TX timeout related work from the worker thread
+ *   Abort TX mailboxes whose deadline has passed.  Called from
+ *   imxrt_tx_work() after completions have been retired so a just-finished
+ *   mailbox is not aborted on a stale deadline.
  *
  * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
+ *   priv - Reference to the driver state structure
  *
  * Returned Value:
- *   OK on success
- *
- * Assumptions:
+ *   None
  *
  ****************************************************************************/
 #ifdef TX_TIMEOUT_WQ
 
-static void imxrt_txtimeout_work(void *arg)
+static void imxrt_txtimeout_abort(struct imxrt_driver_s *priv)
 {
-  struct imxrt_driver_s *priv = (struct imxrt_driver_s *)arg;
   uint32_t flags;
   uint32_t mbi;
   uint32_t mb_bit;
 
   struct timespec ts;
-  struct timeval *now = (struct timeval *)&ts;
-  clock_systime_timespec(&ts);
-  now->tv_usec = ts.tv_nsec / 1000; /* timespec to timeval conversion */
+  struct timeval now;
 
-  /* The watchdog timed out, yet we still check mailboxes in case the
-   * transmit function transmitted a new frame
-   */
+  clock_systime_timespec(&ts);
+  now.tv_sec  = ts.tv_sec;
+  now.tv_usec = ts.tv_nsec / 1000;
 
   flags  = getreg32(priv->base + IMXRT_CAN_IFLAG1_OFFSET);
 
-  for (mbi = 0; mbi < TXMBCOUNT; mbi++)
+  for (mbi = 0; mbi < TXMBRINGSIZE; mbi++)
     {
-      if (priv->txmb[mbi].deadline.tv_sec != 0
-          && (now->tv_sec > priv->txmb[mbi].deadline.tv_sec
-          || now->tv_usec > priv->txmb[mbi].deadline.tv_usec))
+      struct timeval *deadline = &priv->txmb[mbi].deadline;
+      struct mb_s *mb;
+
+      /* imxrt_txdone() zeroes the deadline of a mailbox it has retired, so a
+       * non-zero deadline here means the mailbox still holds a frame.
+       */
+
+      if (deadline->tv_sec == 0 && deadline->tv_usec == 0)
         {
-          NETDEV_TXTIMEOUTS(&priv->dev);
-
-          mb_bit = 1 << (RXMBCOUNT +  mbi);
-
-          if (flags & mb_bit)
-            {
-              putreg32(mb_bit, priv->base + IMXRT_CAN_IFLAG1_OFFSET);
-            }
-
-          struct mb_s *mb = flexcan_get_mb(priv, mbi + RXMBCOUNT);
-          mb->cs.code = CAN_TXMB_ABORT;
-          priv->txmb[mbi].pending = TX_ABORT;
+          continue;
         }
+
+      if (now.tv_sec < deadline->tv_sec
+          || (now.tv_sec == deadline->tv_sec
+              && now.tv_usec <= deadline->tv_usec))
+        {
+          continue;
+        }
+
+      NETDEV_TXTIMEOUTS(&priv->dev);
+
+      /* imxrt_transmit() stores the deadline of mailbox RXMBCOUNT + 1 + mbi
+       * in txmb[mbi]; the mailbox this loop aborts has to match.
+       */
+
+      mb_bit = 1 << (RXMBCOUNT + 1 + mbi);
+
+      if (flags & mb_bit)
+        {
+          putreg32(mb_bit, priv->base + IMXRT_CAN_IFLAG1_OFFSET);
+        }
+
+      mb = flexcan_get_mb(priv, RXMBCOUNT + 1 + mbi);
+      mb->cs.code = CAN_TXMB_ABORT;
     }
 }
 
@@ -1225,7 +1353,8 @@ static void imxrt_txtimeout_work(void *arg)
  *
  * Description:
  *   Our TX watchdog timed out.  Called from the timer interrupt handler.
- *   The last TX never completed.  Reset the hardware and start again.
+ *   Queue the same TX worker as the completion IRQ so the two cannot
+ *   cancel each other.
  *
  * Input Parameters:
  *   arg  - The argument
@@ -1242,10 +1371,7 @@ static void imxrt_txtimeout_expiry(wdparm_t arg)
 {
   struct imxrt_driver_s *priv = (struct imxrt_driver_s *)arg;
 
-  /* Schedule to perform the TX timeout processing on the worker thread
-   */
-
-  work_queue(CANWORK, &priv->irqwork, imxrt_txtimeout_work, priv, 0);
+  work_queue(CANWORK, &priv->irqwork, imxrt_tx_work, priv, 0);
 }
 
 #endif
@@ -1354,6 +1480,8 @@ static int imxrt_ifup(struct net_driver_s *dev)
     }
 
   priv->bifup = true;
+  priv->bus_errors = 0;
+  priv->rx_overruns = 0;
   priv->txdesc = (struct can_frame *)&g_tx_pool;
   priv->rxdesc = (struct can_frame *)&g_rx_pool;
   if (priv->canfd_capable)
@@ -1512,7 +1640,7 @@ static int imxrt_ioctl(struct net_driver_s *dev, int cmd,
 
   switch (cmd)
     {
-#ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
       case SIOCGCANBITRATE: /* Get bitrate from a CAN controller */
         {
           struct can_ioctl_data_s *req =
@@ -1579,7 +1707,44 @@ static int imxrt_ioctl(struct net_driver_s *dev, int cmd,
             }
         }
         break;
+
+      case SIOCGCANERRORS:
+        {
+          struct can_ioctl_errors_s *req =
+              (struct can_ioctl_errors_s *)((uintptr_t)arg);
+          uint32_t esr1 = imxrt_sample_errors(priv);
+          uint32_t ecr  = getreg32(priv->base + IMXRT_CAN_ECR_OFFSET);
+          uint32_t flt  = (esr1 & CAN_ESR1_FLTCONF_MASK) >>
+                          CAN_ESR1_FLTCONF_SHIFT;
+
+          if (flt >= 2)
+            {
+              req->state = CAN_ERRSTATE_BUSOFF;
+            }
+          else if (flt == 1)
+            {
+              req->state = CAN_ERRSTATE_PASSIVE;
+            }
+          else if (esr1 & (CAN_ESR1_TXWRN | CAN_ESR1_RXWRN))
+            {
+              req->state = CAN_ERRSTATE_WARNING;
+            }
+          else
+            {
+              req->state = CAN_ERRSTATE_ACTIVE;
+            }
+
+          req->txerr = (ecr & CAN_ECR_TXERRCNT_MASK) >>
+                       CAN_ECR_TXERRCNT_SHIFT;
+          req->rxerr = (ecr & CAN_ECR_RXERRCNT_MASK) >>
+                       CAN_ECR_RXERRCNT_SHIFT;
+          req->errors = priv->bus_errors;
+          req->rx_overruns = priv->rx_overruns;
+          ret = OK;
+        }
+        break;
 #endif
+
       default:
         ret = -ENOTTY;
         break;
@@ -1850,6 +2015,9 @@ static void imxrt_reset(struct imxrt_driver_s *priv)
     }
 
   regval  = getreg32(priv->base + IMXRT_CAN_MCR_OFFSET);
+  regval &= ~CAN_MCR_MAXMB_MASK; /* Zero MAXMB to ensure "bitwise or"
+                                  * below sets the correct value.
+                                  */
   regval |= CAN_MCR_SLFWAK | CAN_MCR_WRNEN | CAN_MCR_SRXDIS |
             CAN_MCR_IRMQ | CAN_MCR_AEN |
             (((TOTALMBCOUNT - 1) << CAN_MCR_MAXMB_SHIFT) &
