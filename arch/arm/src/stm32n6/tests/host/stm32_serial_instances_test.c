@@ -62,6 +62,14 @@ struct uart_dev_s
   const void *ops;
   void *priv;
   bool isconsole;
+  struct
+  {
+    char *buffer;
+    char *nbuffer;
+    size_t length;
+    size_t nlength;
+    size_t nbytes;
+  } dmatx;
 };
 
 /* DRIVER_TYPES */;
@@ -71,7 +79,12 @@ struct uart_dev_s
  ****************************************************************************/
 
 static const int g_uart_ops;
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
+static int stm32serial_dmaabort(struct stm32_serial_s *priv, bool discard);
+static inline uint32_t stm32serial_getreg(struct stm32_serial_s *priv,
+                                         int offset);
+static inline void stm32serial_putreg(struct stm32_serial_s *priv,
+                                      int offset, uint32_t value);
 static const int g_uart_dma_ops = 1;
 #endif
 
@@ -116,6 +129,16 @@ static void spin_unlock_irqrestore(spinlock_t *lock, irqstate_t flags)
   UNUSED(flags);
   assert(*lock == 1);
   *lock = 0;
+}
+
+static irqstate_t enter_critical_section(void)
+{
+  return 0;
+}
+
+static void leave_critical_section(irqstate_t flags)
+{
+  UNUSED(flags);
 }
 
 static void up_udelay(unsigned int usecs)
@@ -259,13 +282,29 @@ static void stm32_unconfiggpio(uint32_t pin)
   assert(pin != 0);
 }
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
 static int stm32_dmastop(DMA_HANDLE handle)
 {
   UNUSED(handle);
   assert(false);
   return 0;
 }
+
+static int stm32_dmaabort(DMA_HANDLE handle, size_t *transferred)
+{
+  UNUSED(handle);
+  UNUSED(transferred);
+  assert(false);
+  return 0;
+}
+
+static void uart_xmitchars_done(struct uart_dev_s *dev)
+{
+  UNUSED(dev);
+  assert(false);
+}
+
+/* DMA_ABORT */
 
 static int stm32_dmafree(DMA_HANDLE handle)
 {
@@ -322,6 +361,7 @@ int main(void)
         }
 
       hw = priv->config;
+      assert(hw->txrequest == 108 + 2 * i);
       memcpy(before, g_selectors, sizeof(before));
       assert(hw->irq == STM32_IRQ_USART1 + i);
       assert(hw->rxrequest == 107 + 2 * i && hw->txrequest == 108 + 2 * i);
@@ -344,8 +384,8 @@ int main(void)
       assert(stm32serial_receive(&priv->dev, &status) == (int)(0x60 + i));
       assert((status >> 16 & USART_ISR_PE) != 0);
       assert(g_regs[i][STM32_USART_ICR_OFFSET / 4] == USART_ISR_PE);
-#ifdef STM32_USART1_TXDMA
-      assert(priv->dev.ops == (i == 0 ?
+#ifdef STM32_SERIAL_TXDMA
+      assert(priv->dev.ops == ((TEST_DMA_PORT_MASK & (1u << i)) != 0 ?
              (const void *)&g_uart_dma_ops : (const void *)&g_uart_ops));
 #endif
     }

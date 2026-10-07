@@ -33,6 +33,15 @@
 #define TCSETS 2
 #define TIOCSINVERT 3
 #define TIOCSSINGLEWIRE 4
+#define TCFLSH 5
+#define TCIFLUSH 0
+#define TCOFLUSH 1
+#define TCIOFLUSH 2
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define USART_TXDMA_BLOCK_MAX 65535
+#define USART_DEBUG_BUFSIZE 128
+#define uart_dmatxavail(dev) stm32serial_dmatxavail(dev)
+#define uart_dmasend(dev) stm32serial_dmasend(dev)
 /* IOCTL_FLAGS */
 #define uart_enablerxint(dev) stm32serial_rxint(dev, true)
 #define uart_disablerxint(dev) stm32serial_rxint(dev, false)
@@ -53,6 +62,7 @@
 #include NUTTX_TERMIOS_HEADER
 #include "hardware/stm32n6xxx_rcc.h"
 #include "stm32_serial_format.h"
+#include "stm32_dma.h"
 
 /****************************************************************************
  * Private Types
@@ -70,13 +80,25 @@ struct uart_buffer_s
   char *buffer;
 };
 
+struct uart_dmaxfer_s
+{
+  char *buffer;
+  char *nbuffer;
+  size_t length;
+  size_t nlength;
+  size_t nbytes;
+};
+
 struct uart_dev_s
 {
   struct uart_buffer_s recv;
   struct uart_buffer_s xmit;
   void *priv;
   bool isconsole;
+  struct uart_dmaxfer_s dmatx;
 };
+
+typedef struct uart_dev_s uart_dev_t;
 
 struct inode
 {
@@ -109,6 +131,19 @@ static bool stm32serial_rxavailable(struct uart_dev_s *dev);
 static void stm32serial_rxint(struct uart_dev_s *dev, bool enable);
 static void stm32serial_send(struct uart_dev_s *dev, int ch);
 static bool stm32serial_txready(struct uart_dev_s *dev);
+static void stm32serial_txint(struct uart_dev_s *dev, bool enable);
+static void stm32serial_detach(struct uart_dev_s *dev);
+#ifdef STM32_SERIAL_TXDMA
+static void stm32serial_dmasend(struct uart_dev_s *dev);
+static void stm32serial_dmatxavail(struct uart_dev_s *dev);
+static void stm32serial_dmatxcallback(DMA_HANDLE handle, uint8_t status,
+                                     void *arg);
+static int stm32serial_dmaabort(struct stm32_serial_s *priv, bool discard);
+static void stm32serial_dmafallback(struct stm32_serial_s *priv, int error);
+static bool stm32serial_debugsend(struct stm32_serial_s *priv);
+static void uart_xmitchars_dma(struct uart_dev_s *dev);
+static void uart_xmitchars_done(struct uart_dev_s *dev);
+#endif
 static void uart_recvchars(struct uart_dev_s *dev);
 static void uart_xmitchars(struct uart_dev_s *dev);
 #ifdef CONFIG_SERIAL_IFLOWCONTROL
@@ -187,7 +222,7 @@ static bool g_disable_failure;
 static bool g_clocked;
 static bool g_pause_rx;
 static unsigned int g_txcount;
-static uint8_t g_txbytes[512];
+static uint8_t g_txbytes[140000];
 static unsigned int g_received;
 static uint32_t g_gpio[16];
 static unsigned int g_gpio_failure;
@@ -196,8 +231,21 @@ static unsigned int g_status[512];
 static unsigned int g_fifohead;
 static unsigned int g_fifolen;
 static uint32_t g_fifoerrors[512];
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
 static int g_dma_stop_result;
+static int g_dma_setup_result;
+static int g_dma_start_result;
+static int g_dma_progress_result;
+static int g_dma_callback_result;
+static int g_dma_free_result;
+static unsigned int g_irq_detaches;
+static bool g_dma_available;
+static size_t g_dma_transferred;
+static struct stm32_dma_config_s g_dma_config;
+static char g_debugbuffer[USART_DEBUG_BUFSIZE];
+static unsigned int g_debughead;
+static unsigned int g_debugtail;
+static bool g_debugoverflow;
 #endif
 
 /****************************************************************************
@@ -347,6 +395,11 @@ static void putreg32(uint32_t value, uint32_t address)
                 ((value & USART_CR1_RE) != 0 ? USART_ISR_REACK : 0);
             }
         }
+
+      if ((value & USART_CR1_TE) == 0)
+        {
+            g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+        }
     }
 
   if (offset == STM32_USART_BRR_OFFSET ||
@@ -423,19 +476,88 @@ static void stm32_unconfiggpio(uint32_t pin)
   g_releases++;
 }
 
-#ifdef STM32_USART1_TXDMA
-static int stm32_dmastop(DMA_HANDLE handle)
+#ifdef STM32_SERIAL_TXDMA
+DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
+{
+  assert(request->controller == STM32_DMA_CONTROLLER_GPDMA1);
+  assert(request->peripheral_address ==
+         g_config.base + STM32_USART_TDR_OFFSET);
+  return g_dma_available ? &g_priv : NULL;
+}
+
+int stm32_dmacallback(DMA_HANDLE handle, dma_callback_t callback, void *arg)
+{
+  assert(handle != NULL && callback == stm32serial_dmatxcallback);
+  assert(arg == &g_priv);
+  return g_dma_callback_result;
+}
+
+int stm32_dmasetup(DMA_HANDLE handle,
+                   const struct stm32_dma_config_s *config)
+{
+  assert(handle != NULL && config->width == 1);
+  assert(config->nbytes <= USART_TXDMA_BLOCK_MAX);
+  assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BATCH);
+  g_dma_config = *config;
+  return g_dma_setup_result;
+}
+
+int stm32_dmastart(DMA_HANDLE handle)
+{
+  assert(handle != NULL);
+  assert((g_regs[STM32_USART_CR3_OFFSET / 4] & USART_CR3_DMAT) == 0);
+  assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BATCH);
+  g_dma_transferred = 0;
+  return g_dma_start_result;
+}
+
+int stm32_dmastop(DMA_HANDLE handle)
 {
   assert(handle != NULL);
   return g_dma_stop_result;
 }
 
-static int stm32_dmafree(DMA_HANDLE handle)
+int stm32_dmaabort(DMA_HANDLE handle, size_t *transferred)
 {
   assert(handle != NULL);
-  return 0;
+  assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK);
+  if (g_dma_progress_result != 0)
+    {
+      return g_dma_progress_result;
+    }
+
+  if (g_dma_stop_result == 0)
+    {
+      *transferred = g_dma_transferred;
+    }
+
+  return g_dma_stop_result;
+}
+
+int stm32_dmafree(DMA_HANDLE handle)
+{
+  assert(handle != NULL);
+  return g_dma_free_result;
+}
+
+static void uart_datasent(struct uart_dev_s *dev)
+{
+  assert(dev == &g_priv.dev);
 }
 #endif
+
+static void up_disable_irq(int irq)
+{
+  UNUSED(irq);
+}
+
+static void irq_detach(int irq)
+{
+  UNUSED(irq);
+#ifdef STM32_SERIAL_TXDMA
+  g_irq_detaches++;
+#endif
+}
 
 speed_t cfgetspeed(const struct termios *termiosp)
 {
@@ -479,7 +601,8 @@ static void uart_xmitchars(struct uart_dev_s *dev)
 {
   while (dev->xmit.head != dev->xmit.tail && stm32serial_txready(dev))
     {
-      stm32serial_send(dev, dev->xmit.buffer[dev->xmit.tail++]);
+      stm32serial_send(dev, dev->xmit.buffer[dev->xmit.tail]);
+      dev->xmit.tail = (dev->xmit.tail + 1) % dev->xmit.size;
     }
 
   stm32serial_setusartint(&g_priv, g_priv.ie & ~USART_CR1_TXEIE);
@@ -518,9 +641,22 @@ static void reset(void)
   memset(g_gpio, 0, sizeof(g_gpio));
   g_gpio_failure = 0;
   g_rts_level = false;
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
   g_priv.txdma = NULL;
-  g_priv.txdma_active = false;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_IDLE;
+  g_priv.txdma_fallback = false;
+  g_priv.txdma_length = 0;
+  g_priv.txdma_was_idle = false;
+  g_priv.txdma_error = 0;
+  memset(&g_priv.dev.dmatx, 0, sizeof(g_priv.dev.dmatx));
+  g_dma_stop_result = g_dma_setup_result = g_dma_start_result = 0;
+  g_dma_progress_result = 0;
+  g_dma_callback_result = g_dma_free_result = 0;
+  g_irq_detaches = 0;
+  g_dma_available = true;
+  g_dma_transferred = 0;
+  g_debughead = g_debugtail = 0;
+  g_debugoverflow = false;
 #endif
   assert(g_priv.lock == 0 && g_lock_depth == 0);
 }
@@ -701,10 +837,10 @@ static void test_busy_and_rollback(void)
   g_priv.dev.xmit.head = 1;
   assert(ioctl_termios(TCSETS, &requested) == -EBUSY);
   g_priv.dev.xmit.head = 0;
-#ifdef STM32_USART1_TXDMA
-  g_priv.txdma_active = true;
+#ifdef STM32_SERIAL_TXDMA
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_BATCH;
   assert(ioctl_termios(TCSETS, &requested) == -EBUSY);
-  g_priv.txdma_active = false;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_IDLE;
 #endif
   g_regs[STM32_USART_CR3_OFFSET / 4] |= USART_CR3_DMAR;
   assert(ioctl_termios(TCSETS, &requested) == -EBUSY);
@@ -806,10 +942,10 @@ static void test_fifo_and_debug(void)
   assert(!stm32serial_txempty(&g_priv.dev));
   g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
   assert(stm32serial_txempty(&g_priv.dev));
-#ifdef STM32_USART1_TXDMA
-  g_priv.txdma_active = true;
+#ifdef STM32_SERIAL_TXDMA
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_BATCH;
   assert(!stm32serial_txempty(&g_priv.dev));
-  g_priv.txdma_active = false;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_IDLE;
 #endif
 }
 
@@ -832,10 +968,10 @@ static void test_pm_and_close(void)
   g_regs[STM32_USART_ISR_OFFSET / 4] &= ~USART_ISR_TC;
   assert(stm32serial_pmprepare(NULL, PM_IDLE_DOMAIN, PM_STANDBY) == -EBUSY);
   g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
-#ifdef STM32_USART1_TXDMA
-  g_priv.txdma_active = true;
+#ifdef STM32_SERIAL_TXDMA
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_BATCH;
   assert(stm32serial_pmprepare(NULL, PM_IDLE_DOMAIN, PM_SLEEP) == -EBUSY);
-  g_priv.txdma_active = false;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_IDLE;
 #endif
   assert(memcmp(before, g_regs, sizeof(before)) == 0);
   assert(g_delays == 0);
@@ -853,14 +989,15 @@ static void test_pm_and_close(void)
   assert(g_clocked && g_priv.initialized);
 #endif
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
   reset();
   configure();
   g_priv.txdma = &g_priv;
-  g_priv.txdma_active = true;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_BATCH;
   g_dma_stop_result = -ETIMEDOUT;
   stm32serial_shutdown(&g_priv.dev);
-  assert(g_clocked && g_priv.initialized && g_priv.txdma_active);
+  assert(g_clocked && g_priv.initialized &&
+         g_priv.txdma_state == STM32_SERIAL_TXDMA_BATCH);
   assert(stm32serial_setup(&g_priv.dev) == -ETIMEDOUT);
   assert(g_errors != 0);
   g_dma_stop_result = 0;
@@ -1142,11 +1279,11 @@ static void test_rc_modes(void)
 
   assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -EBUSY);
   assert(g_delays == delays);
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
   g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
-  g_priv.txdma_active = true;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_BATCH;
   assert(ioctl_arg(TIOCSSINGLEWIRE, SER_SINGLEWIRE_ENABLED) == -EBUSY);
-  g_priv.txdma_active = false;
+  g_priv.txdma_state = STM32_SERIAL_TXDMA_IDLE;
 #endif
 #endif
 
@@ -1163,8 +1300,294 @@ static void test_rc_modes(void)
 #endif
 }
 
+#ifdef STM32_SERIAL_TXDMA
+static void dma_reset(void)
+{
+  reset();
+  g_regs[STM32_USART_CR1_OFFSET / 4] =
+    USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
+}
+
+static void dma_complete(size_t count, uint8_t status)
+{
+  const uint8_t *source = (const uint8_t *)g_dma_config.source_address;
+  size_t i;
+
+  assert(count <= g_dma_config.nbytes);
+  for (i = 0; i < count; i++)
+    {
+      g_txbytes[g_txcount++] = source[i] & (g_priv.bits == 7 ? 0x7f : 0xff);
+    }
+  g_dma_transferred = count;
+  if ((status & DMA_STATUS_DTEF) != 0)
+    {
+      g_dma_progress_result = -EIO;
+    }
+
+  stm32serial_dmatxcallback(g_priv.txdma, status, &g_priv);
+}
+
+static void test_dma(void)
+{
+  static char large[131073];
+  static const unsigned int lengths[] =
+    {1, 2, 15, 16, 17, 65534, 65535, 65536, 131071};
+  unsigned int i;
+  unsigned int j;
+
+  for (i = 0; i < sizeof(large); i++)
+    {
+      large[i] = i * 13;
+    }
+
+  for (i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++)
+    {
+      dma_reset();
+      stm32serial_dmainitialize(&g_priv);
+      g_priv.dev.xmit.buffer = large;
+      g_priv.dev.xmit.size = sizeof(large);
+      g_priv.dev.xmit.head = lengths[i];
+      stm32serial_dmatxavail(&g_priv.dev);
+      while (g_priv.txdma_state != STM32_SERIAL_TXDMA_IDLE)
+        {
+          assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK);
+          assert(!stm32serial_txempty(&g_priv.dev));
+          dma_complete(g_dma_config.nbytes, DMA_STATUS_TCF);
+        }
+
+      assert(g_priv.dev.xmit.tail == lengths[i]);
+      assert(g_txcount == lengths[i]);
+      assert(memcmp(g_txbytes, large, lengths[i]) == 0);
+      g_regs[STM32_USART_ISR_OFFSET / 4] &= ~USART_ISR_TC;
+      assert(!stm32serial_txempty(&g_priv.dev));
+      g_regs[STM32_USART_ISR_OFFSET / 4] |= USART_ISR_TC;
+      assert(stm32serial_txempty(&g_priv.dev));
+    }
+
+  g_priv.dev.xmit.buffer = g_txbuffer;
+  g_priv.dev.xmit.size = sizeof(g_txbuffer);
+  for (i = 0; i < sizeof(g_txbuffer); i++)
+    {
+      g_txbuffer[i] = i * 7;
+    }
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.tail = 500;
+  g_priv.dev.xmit.head = 10;
+  stm32serial_dmatxavail(&g_priv.dev);
+  dma_complete(12, DMA_STATUS_TCF);
+  dma_complete(4, DMA_STATUS_SUSPF);
+  assert(g_priv.txdma_fallback &&
+         g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+  assert(g_priv.dev.xmit.tail == 10 && g_txcount == 22);
+  for (i = 0; i < 22; i++)
+    {
+      assert(g_txbytes[i] == (uint8_t)g_txbuffer[(500 + i) % 512]);
+    }
+
+  for (j = 0; j < 2; j++)
+    {
+      dma_reset();
+      stm32serial_dmainitialize(&g_priv);
+      g_priv.dev.xmit.tail = 500;
+      g_priv.dev.xmit.head = 10;
+      stm32serial_dmatxavail(&g_priv.dev);
+      if (j == 0)
+        {
+          g_dma_setup_result = -EINVAL;
+        }
+      else
+        {
+          g_dma_start_result = -EIO;
+        }
+
+      dma_complete(12, DMA_STATUS_TCF);
+      assert(g_priv.dev.xmit.tail == 10 && g_txcount == 22);
+      for (i = 0; i < 22; i++)
+        {
+          assert(g_txbytes[i] == (uint8_t)g_txbuffer[(500 + i) % 512]);
+        }
+    }
+
+  for (j = 0; j < 2; j++)
+    {
+      dma_reset();
+      stm32serial_dmainitialize(&g_priv);
+      g_priv.dev.xmit.head = 17;
+      g_dma_setup_result = j == 0 ? -EINVAL : 0;
+      g_dma_start_result = j == 1 ? -EIO : 0;
+      stm32serial_dmatxavail(&g_priv.dev);
+      assert(g_priv.txdma_fallback &&
+             g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+      assert(g_txcount == 17 && g_priv.dev.xmit.tail == 17);
+      assert(memcmp(g_txbytes, g_txbuffer, 17) == 0);
+    }
+
+  for (j = 0; j <= 17; j++)
+    {
+      dma_reset();
+      stm32serial_dmainitialize(&g_priv);
+      g_priv.dev.xmit.head = 17;
+      stm32serial_dmatxavail(&g_priv.dev);
+      stm32serial_dmatxcallback(NULL, DMA_STATUS_TCF, &g_priv);
+      stm32serial_dmatxcallback(g_priv.txdma, DMA_STATUS_HTF, &g_priv);
+      assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK &&
+             g_priv.dev.xmit.tail == 0);
+      dma_complete(j, DMA_STATUS_SUSPF);
+      assert(g_priv.txdma_fallback &&
+             g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+      assert(g_txcount == 17 && g_priv.dev.xmit.tail == 17);
+      assert(memcmp(g_txbytes, g_txbuffer, 17) == 0);
+    }
+
+  for (j = 0; j < 2; j++)
+    {
+      dma_reset();
+      stm32serial_dmainitialize(&g_priv);
+      assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+      g_priv.dev.xmit.head = 17;
+      g_dma_setup_result = j == 0 ? -EINVAL : 0;
+      g_dma_start_result = j == 1 ? -EIO : 0;
+      g_dma_stop_result = -ETIMEDOUT;
+      stm32serial_dmatxavail(&g_priv.dev);
+      assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BATCH);
+      assert(g_priv.txdma_fallback && g_priv.txdma_error == -ETIMEDOUT);
+      assert(g_priv.dev.xmit.tail == 0 && g_txcount == 0);
+      stm32serial_txint(&g_priv.dev, true);
+      stm32serial_dmatxavail(&g_priv.dev);
+      assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BATCH);
+      assert(g_priv.dev.xmit.tail == 0 && g_txcount == 0);
+      g_dma_stop_result = 0;
+      assert(ioctl_arg(TCFLSH, TCOFLUSH) == 0);
+      assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+      assert(g_priv.txdma_error == 0 && g_priv.dev.xmit.tail == 17);
+    }
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.head = 17;
+  stm32serial_dmatxavail(&g_priv.dev);
+  g_dma_stop_result = -ETIMEDOUT;
+  dma_complete(4, DMA_STATUS_SUSPF);
+  assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK);
+  assert(g_priv.dev.xmit.tail == 0 && g_txcount == 4);
+  assert(ioctl_arg(TCFLSH, TCOFLUSH) == -ETIMEDOUT);
+  stm32serial_txint(&g_priv.dev, true);
+  stm32serial_dmatxavail(&g_priv.dev);
+  assert(g_priv.dev.xmit.tail == 0 && g_txcount == 4);
+  g_dma_stop_result = 0;
+  assert(ioctl_arg(TCFLSH, TCOFLUSH) == 0);
+  assert(g_priv.dev.xmit.tail == 17 &&
+         g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+
+  dma_reset();
+  g_dma_callback_result = -EINVAL;
+  stm32serial_dmainitialize(&g_priv);
+  assert(g_priv.txdma == NULL && g_priv.txdma_fallback);
+  g_dma_free_result = -EBUSY;
+  stm32serial_dmainitialize(&g_priv);
+  assert(g_priv.txdma != NULL && g_priv.txdma_error == -EBUSY);
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.head = 17;
+  stm32serial_dmatxavail(&g_priv.dev);
+  dma_complete(4, DMA_STATUS_DTEF);
+  assert(g_priv.txdma_error == -EIO &&
+         g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK);
+  assert(g_priv.dev.xmit.tail == 0 && g_txcount == 4);
+  assert(ioctl_arg(TCFLSH, TCOFLUSH) == 0);
+  assert(g_priv.dev.xmit.tail == 17 &&
+         g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.head = 17;
+  stm32serial_dmatxavail(&g_priv.dev);
+  assert((g_regs[STM32_USART_ISR_OFFSET / 4] & USART_ISR_TC) == 0);
+  assert(ioctl_arg(TCFLSH, TCIOFLUSH) == 0);
+  assert(g_priv.dev.xmit.tail == 17 && stm32serial_txempty(&g_priv.dev));
+  assert(g_txcount == 0);
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.head = 17;
+  stm32serial_dmatxavail(&g_priv.dev);
+  up_putc('\n');
+  up_putc('D');
+  stm32serial_detach(&g_priv.dev);
+  assert(g_irq_detaches == 0);
+  assert(g_txcount == 0);
+  g_priv.dev.xmit.head = 20;
+  dma_complete(17, DMA_STATUS_TCF);
+  assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_IDLE);
+  assert(stm32serial_debugsend(&g_priv));
+  assert(g_txcount == 20 && g_txbytes[17] == '\r' &&
+         g_txbytes[18] == '\n' && g_txbytes[19] == 'D');
+  assert(g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK);
+  dma_complete(3, DMA_STATUS_TCF);
+  assert(g_txcount == 23 && g_priv.dev.xmit.tail == 20);
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.head = 1;
+  stm32serial_dmatxavail(&g_priv.dev);
+  for (i = 0; i < USART_DEBUG_BUFSIZE + 10; i++)
+    {
+      up_putc('!');
+    }
+
+  assert(g_debugoverflow);
+  dma_complete(1, DMA_STATUS_TCF);
+  while (g_debughead != g_debugtail)
+    {
+      assert(stm32serial_debugsend(&g_priv));
+    }
+
+  assert(!g_debugoverflow);
+  assert(g_txcount == 1 + USART_DEBUG_BUFSIZE - 1 +
+         strlen("\r\nERROR: USART debug TX overflow\r\n"));
+
+  dma_reset();
+  g_dma_available = false;
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.dev.xmit.head = 17;
+  stm32serial_dmatxavail(&g_priv.dev);
+  assert(g_priv.txdma == NULL && g_txcount == 17);
+
+  dma_reset();
+  stm32serial_dmainitialize(&g_priv);
+  g_priv.bits = 7;
+  g_priv.dev.xmit.head = 17;
+  stm32serial_dmatxavail(&g_priv.dev);
+  assert(!g_priv.txdma_fallback &&
+         g_priv.txdma_state == STM32_SERIAL_TXDMA_BLOCK);
+  dma_complete(17, DMA_STATUS_TCF);
+  assert(g_txcount == 17);
+  for (i = 0; i < 17; i++)
+    {
+      assert(g_txbytes[i] == ((uint8_t)g_txbuffer[i] & 0x7f));
+    }
+
+  for (i = 0; i < 8; i++)
+    {
+      dma_reset();
+      assert(stm32serial_setup(&g_priv.dev) == 0);
+      stm32serial_dmainitialize(&g_priv);
+      assert(g_priv.txdma != NULL && !g_priv.txdma_fallback);
+      stm32serial_shutdown(&g_priv.dev);
+      assert(g_priv.txdma == NULL && !g_priv.initialized);
+      assert(g_priv.shutdown_error == 0);
+    }
+}
+#endif
+
 int main(void)
 {
+  reset();
+  stm32serial_txint(&g_priv.dev, false);
+  stm32serial_detach(&g_priv.dev);
   test_handoff();
   test_formats();
   test_busy_and_rollback();
@@ -1173,6 +1596,9 @@ int main(void)
   test_initial_flow();
   test_flow();
   test_rc_modes();
+#ifdef STM32_SERIAL_TXDMA
+  test_dma();
+#endif
   assert(g_priv.lock == 0 && g_lock_depth == 0);
   return 0;
 }

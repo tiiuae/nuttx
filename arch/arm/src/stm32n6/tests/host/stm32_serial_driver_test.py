@@ -39,6 +39,28 @@ def function(text, name):
     )
 
 
+def check_dma_abort(directory, chip, compiler, temporary):
+    dma = (chip / "stm32_dma.c").read_text()
+    source = (directory / "stm32_dma_abort_test.c").read_text()
+    source = source.replace("/* DMA_TYPES */",
+                            extract(dma, r"enum stm32_dma_abort_state_e") +
+                            ";\n" +
+                            extract(dma, r"struct stm32_dma_channel_s"))
+    start = dma.index("#define STM32_DMA_INTERRUPT_MASK")
+    end = dma.index("\n\n", start)
+    source = source.replace("/* DMA_INTERRUPTS */", dma[start:end])
+    source = source.replace("/* DMA_ROUTINES */",
+                            "\n".join(function(dma, name) for name in (
+                                "stm32_dma_stop", "stm32_dmastop",
+                                "stm32_dmaabort")))
+    executable = pathlib.Path(temporary) / "dma-abort"
+    subprocess.run(compiler + ["-x", "c", "-std=c11", "-Wall", "-Wextra",
+                               "-Werror", "-I" + str(directory / "include"),
+                               "-I" + str(chip), "-o", str(executable), "-"],
+                   input=source, text=True, check=True)
+    subprocess.run([str(executable)], check=True)
+
+
 def check_instances(directory, chip, nuttx, compiler, temporary):
     ports = ["USART1", "USART2", "USART3", "UART4", "UART5",
              "USART6", "UART7", "UART8", "UART9", "USART10"]
@@ -51,6 +73,9 @@ def check_instances(directory, chip, nuttx, compiler, temporary):
     source = source.replace("/* CONSOLE_SELECTION */", uart[start:end])
     source = source.replace("/* DRIVER_TYPES */",
                             extract(uart, r"struct stm32_usart_s") + ";\n" +
+                            "#ifdef STM32_SERIAL_TXDMA\n" +
+                            extract(serial, r"enum stm32_serial_txdma_state_e") +
+                            ";\n#endif\n" +
                             extract(serial, r"struct stm32_serial_s"))
     source = source.replace("/* HARDWARE_INSTANCES */",
                             extract(low, r"const struct stm32_usart_s\s+"
@@ -73,6 +98,8 @@ def check_instances(directory, chip, nuttx, compiler, temporary):
                             "\n".join(function(low, name) for name in low_names) +
                             "\n" + "\n".join(function(serial, name)
                                             for name in serial_names))
+    source = source.replace("/* DMA_ABORT */",
+                            function(serial, "stm32serial_dmaabort"))
     source = source.replace("/* ACK_TIMEOUT */",
                             re.search(r"^#define USART_ACK_TIMEOUT_US .*",
                                       low, re.MULTILINE).group())
@@ -82,13 +109,21 @@ def check_instances(directory, chip, nuttx, compiler, temporary):
          ["CONFIG_STM32_SERIAL_DISABLE_REORDERING"]),
         ("all-no-console", ports, None, []),
         ("sparse-console3-dma1", ["USART1", "USART3"], "USART3",
-         ["STM32_USART1_TXDMA"]),
+         ["STM32_SERIAL_TXDMA", "CONFIG_USART1_TXDMA", "TEST_DMA_PORT_MASK=1"]),
+        ("all-dma", ports, "USART1",
+         ["STM32_SERIAL_TXDMA", "TEST_DMA_PORT_MASK=1023"] +
+         [f"CONFIG_{port}_TXDMA" for port in ports]),
+        ("sparse-dma9-dma10", ["USART1", "USART3", "UART9", "USART10"], "USART1",
+         ["STM32_SERIAL_TXDMA", "CONFIG_UART9_TXDMA", "CONFIG_USART10_TXDMA",
+          "TEST_DMA_PORT_MASK=768"]),
         ("sparse-console10", ["USART1", "USART10"], "USART10", []),
     ]
     for name, selected, console, options in variants:
         executable = pathlib.Path(temporary) / name
         definitions = ["CONFIG_STM32_STM32N6XXXX", "CONFIG_SERIAL_TERMIOS",
                        "STM32_IRQ_FIRST=16"] + options
+        if "STM32_SERIAL_TXDMA" in options:
+            definitions.append("CONFIG_STM32_GPDMA1")
         for index, port in enumerate(selected, 1):
             definitions += [f"CONFIG_STM32_{port}",
                             f"CONFIG_STM32_{port}_SERIALDRIVER",
@@ -144,6 +179,7 @@ def main():
         "stm32serial_setup",
         "stm32serial_setflow",
         "stm32serial_shutdown",
+        "stm32serial_detach",
         "stm32serial_interrupt",
         "stm32serial_setmode",
         "stm32serial_ioctl",
@@ -153,6 +189,7 @@ def main():
         "stm32serial_rxflowcontrol",
         "stm32serial_send",
         "stm32serial_txready",
+        "stm32serial_txint",
         "stm32serial_txempty",
         "stm32serial_pmprepare",
         "up_putc",
@@ -169,6 +206,19 @@ def main():
                        "defined(CONFIG_STM32_USART_SINGLEWIRE)\n" +
                        routine + "\n#endif")
         routines.append(routine)
+    dma_names = (
+        "stm32serial_dmainitialize", "stm32serial_dmasend",
+        "stm32serial_dmatxavail", "stm32serial_dmaabort",
+        "stm32serial_dmafallback", "stm32serial_dmatxcallback",
+        "stm32serial_debugsend",
+    )
+    routines.append("#ifdef STM32_SERIAL_TXDMA\n" +
+                    "\n".join(function(serial, name) for name in dma_names) +
+                    "\n#endif")
+    dma = (nuttx / "drivers/serial/serial_dma.c").read_text()
+    routines.append("#ifdef STM32_SERIAL_TXDMA\n" +
+                    function(dma, "uart_xmitchars_dma") + "\n" +
+                    function(dma, "uart_xmitchars_done") + "\n#endif")
     source = (directory / "stm32_serial_driver_test.c").read_text()
     tioctl = (nuttx / "include/nuttx/serial/tioctl.h").read_text()
     source = source.replace(
@@ -183,6 +233,8 @@ def main():
     source = source.replace(
         "/* DRIVER_TYPES */",
         extract(uart, r"struct stm32_usart_s") + ";\n" +
+        "#ifdef STM32_SERIAL_TXDMA\n" +
+        extract(serial, r"enum stm32_serial_txdma_state_e") + ";\n#endif\n" +
         extract(serial, r"struct stm32_serial_s"),
     )
     source = source.replace("/* DRIVER_ROUTINES */", "\n".join(routines))
@@ -192,12 +244,12 @@ def main():
     )
     compiler = shlex.split(os.environ.get("HOSTCC", "cc"))
     variants = (
-        ("dma-flow", ["STM32_USART1_TXDMA", "CONFIG_SERIAL_IFLOWCONTROL",
+        ("dma-flow", ["STM32_SERIAL_TXDMA", "CONFIG_SERIAL_IFLOWCONTROL",
                       "CONFIG_SERIAL_OFLOWCONTROL"]),
         ("irq-flow", ["CONFIG_SERIAL_IFLOWCONTROL", "CONFIG_SERIAL_OFLOWCONTROL"]),
         ("input-flow", ["CONFIG_SERIAL_IFLOWCONTROL"]),
         ("output-flow", ["CONFIG_SERIAL_OFLOWCONTROL"]),
-        ("dma-no-flow", ["STM32_USART1_TXDMA"]),
+        ("dma-no-flow", ["STM32_SERIAL_TXDMA"]),
         ("software-rts", ["CONFIG_SERIAL_IFLOWCONTROL",
                           "CONFIG_SERIAL_OFLOWCONTROL",
                           "CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS",
@@ -208,7 +260,7 @@ def main():
                       "CONFIG_STM32_USART_SINGLEWIRE"]),
         ("invert-only", ["CONFIG_STM32_USART_INVERT"]),
         ("singlewire-only", ["CONFIG_STM32_USART_SINGLEWIRE"]),
-        ("rc-flow", ["STM32_USART1_TXDMA", "CONFIG_STM32_USART_INVERT",
+        ("rc-flow", ["STM32_SERIAL_TXDMA", "CONFIG_STM32_USART_INVERT",
                      "CONFIG_STM32_USART_SINGLEWIRE",
                      "CONFIG_SERIAL_IFLOWCONTROL",
                      "CONFIG_SERIAL_OFLOWCONTROL"]),
@@ -222,9 +274,10 @@ def main():
         ("rc-suppressed", ["CONFIG_STM32_USART_INVERT",
                            "CONFIG_STM32_USART_SINGLEWIRE",
                            "CONFIG_SUPPRESS_UART_CONFIG"]),
-        ("suppressed", ["STM32_USART1_TXDMA", "CONFIG_SUPPRESS_UART_CONFIG"]),
+        ("suppressed", ["STM32_SERIAL_TXDMA", "CONFIG_SUPPRESS_UART_CONFIG"]),
     )
     with tempfile.TemporaryDirectory(prefix="stm32n6-serial-") as temporary:
+        check_dma_abort(directory, chip, compiler, temporary)
         for name, options in variants:
             executable = pathlib.Path(temporary) / name
             subprocess.run(

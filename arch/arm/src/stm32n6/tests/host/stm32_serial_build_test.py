@@ -16,22 +16,37 @@ def main():
     arch = root / "arch/arm/src"
     if (arch / "chip").resolve() != chip:
         raise RuntimeError("Configure an STM32N6 build before running this matrix")
+    for filename in ("Kconfig-uart", "Kconfig-usart"):
+        common = (root / "drivers/serial" / filename).read_text()
+        assert "ARCH_CHIP_" not in common, filename
+        assert "STM32_GPDMA1" not in common, filename
     ports = ["USART1", "USART2", "USART3", "UART4", "UART5",
              "USART6", "UART7", "UART8", "UART9", "USART10"]
     baseline = (root / "boards/arm/stm32n6/nucleo-n657x0-q/configs/"
                 "nsh-xspi/defconfig").read_text()
     baseline = "\n".join(line for line in baseline.splitlines()
-                         if not any(line.startswith("CONFIG_" + prefix)
+                         if line not in ("CONFIG_STM32_GPDMA1=y",
+                                         "CONFIG_STM32_HPDMA1=y")
+                         and not any(line.startswith("CONFIG_" + prefix)
                                     for port in ports
                                     for prefix in ("STM32_" + port, port + "_")))
     output = subprocess.check_output(
-        ["make", "-s", "-C", str(arch), "TOPDIR=" + str(root), "-n",
-         "stm32_lowputc.o", "stm32_serial.o", "stm32_start.o"], text=True)
+        ["make", "-s", "-C", str(arch), "TOPDIR=" + str(root), "-B", "-n",
+         "stm32_lowputc.o", "stm32_serial.o", "stm32_start.o",
+         "stm32_dma.o"], text=True)
     commands = [shlex.split(line) for line in output.splitlines()
                 if line.startswith("arm-none-eabi-gcc ")]
-    if len(commands) != 3:
-        raise RuntimeError("Expected three ARM compile commands")
+    if len(commands) != 4:
+        raise RuntimeError("Expected four ARM compile commands")
+    board_command = next(command.copy() for command in commands
+                         if "chip/stm32_serial.c" in command)
+    board_command[board_command.index("chip/stm32_serial.c")] = str(
+        root / "boards/arm/stm32n6/nucleo-n657x0-q/src/stm32_dma_test.c")
+    board_command[board_command.index("-o") + 1] = "stm32_dma_test.o"
+    commands.append(board_command)
     variants = [(port.lower(), [port], port, []) for port in ports]
+    variants += [(port.lower() + "-dma", [port], port,
+                  ["STM32_GPDMA1", port + "_TXDMA"]) for port in ports]
     variants += [
         ("all-console10", ports, "USART10", []),
         ("all-fixed-order", ports, "USART10",
@@ -69,6 +84,28 @@ def main():
         ("unsupported-options", ports, "USART1",
          ["STM32_USART_BREAKS", "STM32_USART_SWAP"] +
          [port + "_RS485" for port in ports]),
+        ("all-dma", ports, "USART1",
+         ["STM32_GPDMA1"] + [port + "_TXDMA" for port in ports]),
+        ("mixed-dma", ports, "USART1",
+         ["STM32_GPDMA1", "USART3_TXDMA", "UART9_TXDMA", "USART10_TXDMA"]),
+        ("dma-no-termios", ports, "USART1",
+         ["STM32_GPDMA1", "SERIAL_TERMIOS=n", "USART3_TXDMA"]),
+        ("dma-pm-flow", ports, "USART1",
+         ["STM32_GPDMA1", "PM", "USART1_TXDMA", "USART3_TXDMA",
+          "USART3_OFLOWCONTROL", "USART3_IFLOWCONTROL"]),
+        ("dma-no-console", ports, None,
+         ["STM32_GPDMA1", "USART3_TXDMA"]),
+        ("dma-suppressed", ports, "USART1",
+         ["STM32_GPDMA1", "USART1_TXDMA", "SUPPRESS_UART_CONFIG"]),
+        ("dma-cache-off", ports, "USART1",
+         ["STM32_GPDMA1", "USART1_TXDMA", "ARMV8M_DCACHE=n"]),
+        ("unsupported-rxdma", ports, "USART1",
+         ["STM32_GPDMA1"] + [port + "_RXDMA" for port in ports[:8]]),
+        ("dma-without-controller", ports, "USART1",
+         ["STM32_GPDMA1=n"] + [port + "_TXDMA" for port in ports]),
+        ("dma-hpdma-only", ports, "USART1",
+         ["STM32_GPDMA1=n", "STM32_HPDMA1"] +
+         [port + "_TXDMA" for port in ports]),
     ]
     with tempfile.TemporaryDirectory(prefix="n6-serial-config-") as temporary:
         directory = pathlib.Path(temporary)
@@ -90,6 +127,8 @@ def main():
             request += "".join("CONFIG_" + (option if "=" in option else
                                            option + "=y") + "\n"
                                for option in options)
+            if "ARMV8M_DCACHE=n" in options:
+                request = request.replace("CONFIG_ARMV8M_DCACHE=y\n", "")
             seed = directory / "seed"
             seed.write_text(request)
             subprocess.run(["kconfig-conf", "--defconfig=" + str(seed),
@@ -113,13 +152,25 @@ def main():
                               "STM32_FLOWCONTROL_BROKEN") or \
                         option.endswith(("IFLOWCONTROL", "OFLOWCONTROL")):
                     assert values.get(option) == "y", (name, option)
+                if option.endswith("TXDMA"):
+                    assert values.get(option) == "y", (name, option)
+            if any(values.get(port + "_TXDMA") == "y" for port in ports):
+                assert values.get("SERIAL_TXDMA") == "y", name
+            if name == "unsupported-rxdma":
+                assert all(values.get(port + "_RXDMA") == "y"
+                           for port in ports[:8]), name
+            else:
+                assert not any(values.get(port + "_RXDMA") == "y"
+                               for port in ports), name
+            assert values.get("STM32_DMA1") != "y"
             for option in ["STM32_USART_BREAKS", "STM32_USART_SWAP"] + [
                     port + "_RS485" for port in ports]:
                 assert values.get(option) != "y", (name, option)
             assert not any(value == "y" for key, value in values.items()
                            if key.startswith("STM32_HAVE_IP_USART") or
                            key.startswith("STM32_HAVE_LPUART"))
-            symbols = {"SERIAL_TERMIOS", "SERIAL_TXDMA", "SERIAL_RXDMA",
+            symbols = {"STM32_GPDMA1", "ARMV8M_DCACHE", "SERIAL_TERMIOS",
+                       "SERIAL_TXDMA", "SERIAL_RXDMA",
                        "SERIAL_IFLOWCONTROL", "SERIAL_OFLOWCONTROL", "PM",
                        "SUPPRESS_UART_CONFIG", "STM32_SERIAL_DISABLE_REORDERING",
                        "STM32_USART_INVERT", "STM32_USART_SINGLEWIRE",
@@ -153,13 +204,30 @@ def main():
                         header += f"#define GPIO_{port}_CTS GPIO_USART1_RX\n"
             shim = directory / "variant.h"
             shim.write_text(header)
+            expected_error = None
+            if name == "unsupported-rxdma":
+                expected_error = "STM32N6 serial RX DMA is not implemented"
+            elif name in ("dma-without-controller", "dma-hpdma-only"):
+                assert values.get("STM32_GPDMA1") != "y", name
+                expected_error = (
+                    "STM32N6 serial TX DMA requires CONFIG_STM32_GPDMA1")
             for original in commands:
                 command = original.copy()
                 index = command.index("-o") + 1
                 command[index] = str(directory / pathlib.Path(command[index]).name)
-                subprocess.run(command + ["-Werror", "-include", str(shim)],
-                               cwd=arch, check=True)
-            print("STM32N6 generated-config ARM build passed:", name, flush=True)
+                if expected_error:
+                    result = subprocess.run(
+                        command + ["-Werror", "-include", str(shim)],
+                        cwd=arch, capture_output=True, text=True)
+                    assert result.returncode != 0, name
+                    assert expected_error in result.stderr, (name, result.stderr)
+                    break
+                else:
+                    subprocess.run(command + ["-Werror", "-include", str(shim)],
+                                   cwd=arch, check=True)
+            outcome = "rejected" if expected_error else "passed"
+            print(f"STM32N6 generated-config ARM build {outcome}: {name}",
+                  flush=True)
 
 
 if __name__ == "__main__":
