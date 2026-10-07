@@ -499,6 +499,21 @@ host mocks do not establish wire timing, receiver interoperability or losslessne
 
 ## Boot-time tests
 
+The low-level timer driver keeps TIM1–18 hardware properties in read-only
+per-instance configurations: register base, RCC enable register and mask,
+board input clock, update IRQ, counter width, channel count, capability flags,
+and optional output GPIOs. A timer-indexed table contains only enabled timers
+not reserved for PWM, ADC, DAC, quadrature encoding, or capture. Missing GPIO
+definitions do not prevent register-only channel configuration.
+
+Run `make -C arch/arm/src/stm32n6/tests/host check-tim` from the NuttX directory
+to exercise the complete driver with host register and IRQ mocks. The matrix
+covers each timer individually, all timers with and without GPIOs, sparse
+GPIO definitions (including a zero-valued pin configuration), ownership
+exclusions, and no enabled timers. It checks clock prescalers, register access
+widths, capability and channel limits, IRQ selection, RCC bit preservation,
+and allocation/deallocation. These checks do not establish hardware timing.
+
 `stm32_bringup()` calls `stm32_bringup_test()` in `src/stm32_bringup_test.c`
 after registering the user-LED driver. The runner executes enabled GPIO EXTI,
 timer clock, DMA policy, SPI5 loopback, and SPI5 BMP280 tests in that order.
