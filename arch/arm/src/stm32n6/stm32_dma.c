@@ -52,13 +52,6 @@
  * Private Types
  ****************************************************************************/
 
-enum stm32_dma_abort_state_e
-{
-  STM32_DMA_ABORT_NONE = 0,
-  STM32_DMA_ABORT_VALID,
-  STM32_DMA_ABORT_UNKNOWN
-};
-
 enum stm32_dma_transfer_state_e
 {
   STM32_DMA_UNCONFIGURED = 0,
@@ -68,7 +61,9 @@ enum stm32_dma_transfer_state_e
   STM32_DMA_COMPLETE,
   STM32_DMA_ERROR,
   STM32_DMA_STOPPING,
-  STM32_DMA_RECOVERY
+  STM32_DMA_RECOVERY_PENDING,
+  STM32_DMA_RECOVERY_VALID,
+  STM32_DMA_RECOVERY_UNKNOWN
 };
 
 struct stm32_dma_channel_s
@@ -80,8 +75,7 @@ struct stm32_dma_channel_s
   bool initialized;
   bool allocated;
   enum stm32_dma_transfer_state_e state;
-  enum stm32_dma_abort_state_e abort_state;
-  size_t abort_transferred; /* Only meaningful in STM32_DMA_ABORT_VALID */
+  size_t abort_transferred; /* Saved count for STM32_DMA_RECOVERY_VALID */
   struct stm32_dma_request_s request;
   struct stm32_dma_config_s config;
   uint32_t tr1;
@@ -163,13 +157,21 @@ static inline void stm32_dma_putreg(
   putreg32(value, channel->base + offset);
 }
 
+static bool stm32_dma_recovering(
+  const struct stm32_dma_channel_s *channel)
+{
+  return channel->state == STM32_DMA_RECOVERY_PENDING ||
+         channel->state == STM32_DMA_RECOVERY_VALID ||
+         channel->state == STM32_DMA_RECOVERY_UNKNOWN;
+}
+
 static bool stm32_dma_in_flight(
   const struct stm32_dma_channel_s *channel)
 {
   return channel->state == STM32_DMA_STARTING ||
          channel->state == STM32_DMA_RUNNING ||
          channel->state == STM32_DMA_STOPPING ||
-         channel->state == STM32_DMA_RECOVERY;
+         stm32_dma_recovering(channel);
 }
 
 static bool stm32_dma_busy(const struct stm32_dma_channel_s *channel)
@@ -740,7 +742,6 @@ static int stm32_dma_initialize_controller(
       flags = enter_critical_section();
       channel->allocated = false;
       channel->state = STM32_DMA_UNCONFIGURED;
-      channel->abort_state = STM32_DMA_ABORT_NONE;
       channel->descriptors = NULL;
       channel->descriptor_count = 0;
       channel->descriptor_index = 0;
@@ -879,7 +880,6 @@ DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
       channel->allocated = true;
       channel->request = *request;
       channel->state = STM32_DMA_UNCONFIGURED;
-      channel->abort_state = STM32_DMA_ABORT_NONE;
       channel->descriptors = NULL;
       channel->descriptor_count = 0;
       channel->descriptor_index = 0;
@@ -999,7 +999,6 @@ int stm32_dmasetup(DMA_HANDLE handle,
   channel->descriptor_index = 0;
   channel->list_mode = STM32_DMA_LIST_TERMINAL;
   channel->state = STM32_DMA_READY;
-  channel->abort_state = STM32_DMA_ABORT_NONE;
   channel->status = 0;
   channel->error = 0;
 
@@ -1123,7 +1122,6 @@ int stm32_dmallibuild(DMA_HANDLE handle,
   channel->descriptor_index = 0;
   channel->list_mode = mode;
   channel->state = STM32_DMA_READY;
-  channel->abort_state = STM32_DMA_ABORT_NONE;
   channel->status = 0;
   channel->error = 0;
 
@@ -1251,7 +1249,6 @@ int stm32_dmastart(DMA_HANDLE handle)
   channel->status = 0;
   channel->error = 0;
   channel->descriptor_index = 0;
-  channel->abort_state = STM32_DMA_ABORT_NONE;
   control = (channel->config.priority << STM32_DMA_CR_PRIO_SHIFT) |
             STM32_DMA_INTERRUPT_MASK | STM32_DMA_CR_EN;
   channel->state = STM32_DMA_RUNNING;
@@ -1266,6 +1263,7 @@ out:
 static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
 {
   struct stm32_dma_channel_s *channel = stm32_dma_getchannel(handle);
+  enum stm32_dma_transfer_state_e recovery;
   irqstate_t flags;
   uint32_t control;
   uint32_t raw_status;
@@ -1315,6 +1313,11 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
 
   was_active = stm32_dma_in_flight(channel);
   was_enabled = (control & STM32_DMA_CR_EN) != 0;
+
+  /* Preserve snapshot validity while STOPPING owns the channel. */
+
+  recovery = stm32_dma_recovering(channel) ? channel->state :
+                                           STM32_DMA_RECOVERY_PENDING;
   channel->state = STM32_DMA_STOPPING;
   up_disable_irq(channel->irq);
   if (was_enabled)
@@ -1354,7 +1357,7 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
   raw_status = stm32_dma_getreg(channel,
                                 STM32_DMA_CXSR_OFFSET(channel->channel));
   if (transferred != NULL &&
-      channel->abort_state == STM32_DMA_ABORT_VALID)
+      recovery == STM32_DMA_RECOVERY_VALID)
     {
       /* A reset timeout may have destroyed the hardware counters. */
 
@@ -1366,7 +1369,7 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
       size_t buffered;
       uint32_t fifo_mask;
 
-      if (channel->abort_state == STM32_DMA_ABORT_UNKNOWN ||
+      if (recovery == STM32_DMA_RECOVERY_UNKNOWN ||
           (channel->status & DMA_STATUS_DTEF) != 0 ||
           (raw_status & STM32_DMA_FLAG_DTEF) != 0)
         {
@@ -1374,7 +1377,7 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
            * write had side effects. Do not invent an exact retry boundary.
            */
 
-          channel->abort_state = STM32_DMA_ABORT_UNKNOWN;
+          recovery = STM32_DMA_RECOVERY_UNKNOWN;
           ret = -EIO;
           goto failed;
         }
@@ -1388,25 +1391,25 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
                  channel->config.width;
       if (remaining + buffered > channel->config.nbytes)
         {
-          channel->abort_state = STM32_DMA_ABORT_UNKNOWN;
+          recovery = STM32_DMA_RECOVERY_UNKNOWN;
           ret = -EIO;
           goto failed;
         }
 
       completed = channel->config.nbytes - remaining - buffered;
       channel->abort_transferred = completed;
-      channel->abort_state = STM32_DMA_ABORT_VALID;
+      recovery = STM32_DMA_RECOVERY_VALID;
     }
 
   /* RM0486 permits reset when suspended or already disabled. */
 
-  if (channel->abort_state == STM32_DMA_ABORT_NONE)
+  if (recovery == STM32_DMA_RECOVERY_PENDING)
     {
       /* A discard without a snapshot cannot support an exact abort retry
        * if the reset fails after destroying the hardware counters.
        */
 
-      channel->abort_state = STM32_DMA_ABORT_UNKNOWN;
+      recovery = STM32_DMA_RECOVERY_UNKNOWN;
     }
 
   stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel),
@@ -1451,7 +1454,7 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
 
 failed:
   flags = enter_critical_section();
-  channel->state = STM32_DMA_RECOVERY;
+  channel->state = recovery;
   channel->error = ret;
   up_enable_irq(channel->irq);
   leave_critical_section(flags);
@@ -1495,7 +1498,7 @@ int stm32_dmastatus(DMA_HANDLE handle, struct stm32_dma_status_s *status)
       status->remaining =
         channel->state != STM32_DMA_UNCONFIGURED &&
         channel->state != STM32_DMA_STOPPING &&
-        channel->state != STM32_DMA_RECOVERY ?
+        !stm32_dma_recovering(channel) ?
         stm32_dma_getreg(channel,
                          STM32_DMA_CXBR1_OFFSET(channel->channel)) &
         STM32_DMA_BR1_BNDT_MASK : 0;

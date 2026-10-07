@@ -43,8 +43,6 @@ def check_dma_abort(directory, chip, compiler, temporary):
     dma = (chip / "stm32_dma.c").read_text()
     source = (directory / "stm32_dma_abort_test.c").read_text()
     source = source.replace("/* DMA_TYPES */",
-                            extract(dma, r"enum stm32_dma_abort_state_e") +
-                            ";\n" +
                             extract(dma, r"enum stm32_dma_transfer_state_e") +
                             ";\n" +
                             extract(dma, r"struct stm32_dma_channel_s"))
@@ -53,7 +51,8 @@ def check_dma_abort(directory, chip, compiler, temporary):
     source = source.replace("/* DMA_INTERRUPTS */", dma[start:end])
     source = source.replace("/* DMA_ROUTINES */",
                             "\n".join(function(dma, name) for name in (
-                                "stm32_dma_in_flight", "stm32_dma_busy",
+                                "stm32_dma_recovering", "stm32_dma_in_flight",
+                                "stm32_dma_busy",
                                 "stm32_dma_check_config", "stm32_dmafree",
                                 "stm32_dmasetup", "stm32_dmallibuild",
                                 "stm32_dmacallback", "stm32_dma_interrupt",

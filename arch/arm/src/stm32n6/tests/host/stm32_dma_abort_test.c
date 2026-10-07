@@ -213,7 +213,6 @@ static void reset(void)
   g_on_unlock = NULL;
   g_on_invalidate = NULL;
   g_complete_on_suspend = false;
-  assert(g_channel.abort_state == STM32_DMA_ABORT_NONE);
 }
 
 static void callback(DMA_HANDLE handle, uint8_t status, void *arg)
@@ -276,7 +275,10 @@ static void check_busy(void)
 
   assert(stm32_dmastatus(&g_channel, &status) == 0);
   assert(status.in_flight == (state != STM32_DMA_ERROR));
-  if (state == STM32_DMA_STOPPING || state == STM32_DMA_RECOVERY)
+  if (state == STM32_DMA_STOPPING ||
+      state == STM32_DMA_RECOVERY_PENDING ||
+      state == STM32_DMA_RECOVERY_VALID ||
+      state == STM32_DMA_RECOVERY_UNKNOWN)
     {
       assert(status.remaining == 0);
     }
@@ -352,10 +354,11 @@ static void test_states(void)
         {
           transferred = 99;
           assert(stm32_dmaabort(&g_channel, &transferred) == -EIO);
-          assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY);
+          assert(transferred == 99);
+          assert(g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
           check_busy();
           interrupt(STM32_DMA_FLAG_TCF | STM32_DMA_FLAG_DTEF);
-          assert(g_channel.state == STM32_DMA_RECOVERY);
+          assert(g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
           assert(g_channel.error == -EIO && g_callbacks == 1);
         }
 
@@ -398,10 +401,10 @@ static void test_states(void)
       assert(memcmp(saved, g_descriptors, sizeof(saved)) == 0);
       assert(g_channel.state == STM32_DMA_READY);
       configs[1].width = 1;
-      g_channel.abort_state = STM32_DMA_ABORT_UNKNOWN;
+      g_channel.abort_transferred = 99;
       assert(stm32_dmallibuild(&g_channel, configs, 2, g_descriptors, 3,
                              i) == 0);
-      assert(g_channel.abort_state == STM32_DMA_ABORT_NONE);
+      assert(g_channel.state == STM32_DMA_READY);
       assert(stm32_dmastart(&g_channel) == 0);
       for (j = 0; j < (i == STM32_DMA_LIST_TERMINAL ? 2 : 6); j++)
         {
@@ -421,7 +424,7 @@ static void test_states(void)
       assert(stm32_dmastop(&g_channel) == 0);
     }
 
-  for (i = STM32_DMA_STARTING; i <= STM32_DMA_RECOVERY; i++)
+  for (i = STM32_DMA_STARTING; i <= STM32_DMA_RECOVERY_UNKNOWN; i++)
     {
       reset();
       g_channel.state = STM32_DMA_READY;
@@ -464,7 +467,7 @@ int main(void)
                   transferred = 99;
                   assert(stm32_dmaabort(&g_channel, &transferred) == 0);
                   assert(transferred == 16 - remaining - buffered * width);
-                  assert(g_channel.abort_state == STM32_DMA_ABORT_VALID);
+                  assert(g_channel.abort_transferred == transferred);
                   assert(g_channel.state == STM32_DMA_UNCONFIGURED);
                   assert(g_resets == 1 && g_invalidations == 1);
                   assert(g_irq_enabled);
@@ -482,15 +485,15 @@ int main(void)
 
   reset();
   g_suspend_timeout = true;
+  g_channel.abort_transferred = 99;
   transferred = 99;
   assert(stm32_dmaabort(&g_channel, &transferred) == -ETIMEDOUT);
-  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY);
+  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY_PENDING);
   check_busy();
   interrupt(STM32_DMA_FLAG_TCF);
-  assert(g_channel.state == STM32_DMA_RECOVERY);
+  assert(g_channel.state == STM32_DMA_RECOVERY_PENDING);
   assert(g_channel.error == -ETIMEDOUT);
   assert(g_resets == 0 && g_invalidations == 0 && g_irq_enabled);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_NONE);
   g_suspend_timeout = false;
   g_regs[STM32_DMA_CXBR1_OFFSET(0) / 4] = 5;
   assert(stm32_dmaabort(&g_channel, &transferred) == 0);
@@ -502,11 +505,21 @@ int main(void)
   g_regs[STM32_DMA_CXSR_OFFSET(0) / 4] = 3 << STM32_DMA_SR_FIFOL_SHIFT;
   transferred = 99;
   assert(stm32_dmaabort(&g_channel, &transferred) == -ETIMEDOUT);
-  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY);
+  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY_VALID);
   check_busy();
   assert(g_invalidations == 0 && g_irq_enabled);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_VALID);
   assert(g_channel.abort_transferred == 4);
+
+  g_suspend_timeout = true;
+  g_suspended = false;
+  g_regs[STM32_DMA_CXSR_OFFSET(0) / 4] = 0;
+  g_regs[STM32_DMA_CXCR_OFFSET(0) / 4] = STM32_DMA_CR_EN;
+  g_on_unlock = check_busy;
+  assert(stm32_dmaabort(&g_channel, &transferred) == -ETIMEDOUT);
+  assert(g_on_unlock == NULL && transferred == 99);
+  assert(g_channel.state == STM32_DMA_RECOVERY_VALID);
+  assert(g_channel.abort_transferred == 4);
+  g_suspend_timeout = false;
   g_reset_timeout = false;
   memset(g_regs, 0, sizeof(g_regs));
   assert(stm32_dmaabort(&g_channel, &transferred) == 0);
@@ -516,28 +529,33 @@ int main(void)
   g_regs[STM32_DMA_CXBR1_OFFSET(0) / 4] = 18;
   transferred = 99;
   assert(stm32_dmaabort(&g_channel, &transferred) == -EIO);
-  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY);
+  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
   check_busy();
   assert(g_resets == 0 && g_invalidations == 0);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_UNKNOWN);
+  g_suspend_timeout = true;
+  g_suspended = false;
+  g_regs[STM32_DMA_CXSR_OFFSET(0) / 4] = 0;
+  g_regs[STM32_DMA_CXCR_OFFSET(0) / 4] = STM32_DMA_CR_EN;
+  assert(stm32_dmaabort(&g_channel, &transferred) == -ETIMEDOUT);
+  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
+  g_suspend_timeout = false;
   memset(g_regs, 0, sizeof(g_regs));
   assert(stm32_dmaabort(&g_channel, &transferred) == -EIO);
   assert(transferred == 99);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_UNKNOWN);
+  assert(g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
 
   reset();
   g_channel.status = DMA_STATUS_DTEF;
   transferred = 99;
   assert(stm32_dmaabort(&g_channel, &transferred) == -EIO);
-  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_UNKNOWN);
+  assert(transferred == 99 && g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
   assert(g_resets == 0 && stm32_dmastop(&g_channel) == 0);
 
   reset();
   g_regs[STM32_DMA_CXSR_OFFSET(0) / 4] = STM32_DMA_FLAG_DTEF;
   assert(stm32_dmaabort(&g_channel, &transferred) == -EIO);
   assert(g_resets == 0);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_UNKNOWN);
+  assert(g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
 
   reset();
   g_channel.descriptor_count = 2;
@@ -566,8 +584,7 @@ int main(void)
   reset();
   g_reset_timeout = true;
   assert(stm32_dmastop(&g_channel) == -ETIMEDOUT);
-  assert(g_channel.state == STM32_DMA_RECOVERY);
-  assert(g_channel.abort_state == STM32_DMA_ABORT_UNKNOWN);
+  assert(g_channel.state == STM32_DMA_RECOVERY_UNKNOWN);
   memset(g_regs, 0, sizeof(g_regs));
   transferred = 99;
   assert(stm32_dmaabort(&g_channel, &transferred) == -EIO);
