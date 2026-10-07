@@ -360,10 +360,9 @@ the console to the front. Sparse hardware numbers do not leave minor-number
 gaps. `/dev/console` still aliases the selected console. Registration failures
 are logged and device names use bounded full-number formatting.
 
-USART3 and the other new ports use interrupt I/O. The existing USART1 TX DMA
-path has separate operations so enabling it does not attach DMA callbacks
-to interrupt-only ports; DMA menu reachability and additional-port DMA are
-deferred to step 5. Step 2's deep-PM veto remains unchanged.
+Ports default to interrupt I/O; each ordinary instance can independently opt
+into GPDMA1 TX DMA as described below. Separate operations keep DMA callbacks
+off interrupt-only ports. Step 2's deep-PM veto remains unchanged.
 
 In addition to `check-serial`, run
 `make -C arch/arm/src/stm32n6/tests/host check-serial-build` with an existing
@@ -375,6 +374,71 @@ Host instance tests check sparse registration, console ordering, independent
 reset/Sleep clocks and preserving the console when another port closes.
 **Target qualification remains pending:** USART1 console and USART3 peer/
 loopback must run simultaneously on both DEV/SRAM and FSBL/XSPI boots.
+
+### Per-port TX DMA
+
+Enable `CONFIG_STM32_GPDMA1` and `CONFIG_<port>_TXDMA` for each selected
+USART1/2/3/6/10 or UART4/5/7/8/9. Generated Kconfig selects
+`CONFIG_SERIAL_TXDMA`; GPDMA1 is not aliased to another family's DMA1.
+The common serial menus remain architecture-neutral. N6-local build checks
+reject TXDMA without GPDMA1 (including HPDMA-only selections) and reject
+unimplemented RXDMA pending the step 6 ownership work. Unsupported selections
+are not silently compiled as interrupt I/O. Existing board TXDMA requests now
+take effect; keep an interrupt-only configuration for diagnosis. No new board
+pin routes or ports are enabled.
+The DMA-core bring-up test skips USART1 request/register tests when the
+serial driver owns that port; an idle DMAT bit is not permission to borrow it.
+
+Allocation occurs on attach, after DMA initialization, not during early
+console setup. Unavailable channels and setup/start/transfer errors are
+reported and use interrupt TX once ownership/progress is safe. Contiguous and
+wrapped TX batches are split into blocks of at most 65535 bytes. The DMA core
+owns source cache maintenance; DMA completion releases software-buffer space,
+but `txempty()` still waits for USART TC, not DMA TCF.
+
+The DMA core tracks initialization, allocation and transfers in one state:
+`OFFLINE` channels have not completed initialization, `FREE` channels are
+allocatable, and `UNCONFIGURED` channels are allocated but not programmed.
+Successful stop retains allocation; free returns the channel to the pool.
+Completion requires fresh setup/list programming before another start.
+Fatal errors require a successful stop/reset before
+setup or release; concurrent operations cannot interrupt an ongoing stop.
+Recovery substates distinguish a pending snapshot, a saved exact count and
+unknown progress, preserving that distinction across stop/abort retries.
+
+On an error, the DMA core suspends the channel, snapshots BNDT and FIFOL
+before resetting it, and counts only bytes already accepted by TDR.
+Prefetched DMA FIFO bytes and the remaining suffix are retried; completed
+blocks and wrapped segments are not. A reset-timeout snapshot is retained
+for a later abort attempt. Unknown progress or an abort timeout retains
+buffer/channel ownership, blocks further TX and vetoes reconfiguration/PM;
+it does not manufacture a successful retry. In particular, DTEF cannot prove
+the failed bus write's side effects, so it does not trigger automatic retry.
+Explicit flush/close may discard unknown progress after a confirmed stop.
+TX flush performs abort and
+software-ring discard in one IRQ-excluded transaction. Close does not release
+channels or gate the USART clock after failed quiescence.
+
+Debug writes during DMA are deferred until the complete current batch has
+reached TDR, then sent by the USART TX interrupt before the next DMA batch.
+CR-before-LF is preserved and CTS can stall this service without a busy wait.
+The shared console debug queue holds 127 bytes; overflow drops the newest
+character (both bytes for a newline) and emits an explicit overflow diagnostic
+when service resumes. After interrupt fallback, deferred diagnostics follow
+the queued payload. A DMA console keeps its TX IRQ attached across close so
+deferred debug remains usable. Early boot and idle-console debug output
+remain polled.
+
+The host checks include byte-for-byte wraps, 65535-byte boundaries, first/
+second-segment setup/start/transfer failures, FIFO-aware abort accounting,
+abort/reset timeouts, flush, close/reopen, debug ordering/overflow and TC-based
+drain. The generated-config ARM matrix covers every port, mixed DMA/IRQ,
+cache on/off, termios, flow control, PM, no console and unsupported DMA choices.
+**Hardware qualification remains pending:** compare DMA and interrupt binary
+traffic under cache/concurrent console load, inject faults and channel
+exhaustion, exercise CTS-blocked close/flush/PM, and run repeated lifecycle
+tests on both DEV/SRAM and FSBL/XSPI boots. These software checks do not
+establish wire-level losslessness or the step 5 physical exit criteria.
 
 ### Flow control and PX4 RC modes
 
@@ -430,7 +494,7 @@ RTS/CTS selections and rejection of unsupported configuration choices.
 **Electrical/protocol qualification is still pending:** on both boot paths,
 measure CTS-blocked FIFO and DMA drain, pause readers and verify RTS prevents
 loss with the actual peer, decode S.BUS/DSM with the chosen inversion circuit,
-and exercise the selected half-duplex RC peer. TX DMA accounting remains step 5;
+and exercise the selected half-duplex RC peer. TX DMA accounting is implemented;
 host mocks do not establish wire timing, receiver interoperability or losslessness.
 
 ## Boot-time tests

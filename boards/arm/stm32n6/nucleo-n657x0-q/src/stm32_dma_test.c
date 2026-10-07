@@ -796,7 +796,8 @@ static int stm32_dma_test_linked_lists(
   return ret;
 }
 
-#ifdef CONFIG_STM32_USART1
+#if defined(CONFIG_STM32_USART1) && \
+    !defined(CONFIG_STM32_USART1_SERIALDRIVER)
 static int stm32_dma_test_usart(enum stm32_dma_controller_e controller)
 {
   struct stm32_dma_request_s request =
@@ -1113,7 +1114,10 @@ int stm32_dma_policy_test(void)
 #  endif
 #endif
 
-#ifdef CONFIG_STM32_USART1
+#ifdef CONFIG_STM32_USART1_SERIALDRIVER
+  syslog(LOG_WARNING,
+         "DMA core: skipping USART1 tests; serial driver owns the port\n");
+#elif defined(CONFIG_STM32_USART1)
 #  if defined(CONFIG_STM32_GPDMA1) && \
       CONFIG_STM32_GPDMA1_NCHANNELS > CONFIG_STM32_GPDMA1_RESERVED_CHANNELS
   if (stm32_dma_test_usart(STM32_DMA_CONTROLLER_GPDMA1) < 0)
