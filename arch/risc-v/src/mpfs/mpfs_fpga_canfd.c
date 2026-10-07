@@ -99,7 +99,7 @@
 #define BT_COMPUTE_MAX_ERROR      50 /* 1/10th of % */
 #define BT_COMPUTE_SYNC_SEG       1
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
 /* CAN hw filter support */
 
 #define HW_FILTER_A             0
@@ -109,7 +109,7 @@
 
 #define CAN_STD_ID              0
 #define CAN_EXT_ID              1
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
 /* Special address description flags for the CAN_ID */
 
@@ -381,12 +381,12 @@ struct mpfs_driver_s
   uint32_t txb_prio;
   unsigned int ntxbufs;
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
   /* hw filter */
 
   uint8_t used_bit_filter_number;
   bool used_range_filter;
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
   /* This holds the information visible to the NuttX network */
 
@@ -487,7 +487,7 @@ static void
 
 /* HW filter related functions */
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
 static void mpfs_can_add_hw_filter(struct mpfs_driver_s *priv,
                                    uint8_t filter_type,
                                    uint8_t can_id_type,
@@ -495,7 +495,7 @@ static void mpfs_can_add_hw_filter(struct mpfs_driver_s *priv,
                                    uint32_t fid1,
                                    uint32_t fid2);
 static void mpfs_can_reset_hw_filter(struct mpfs_driver_s *priv);
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
 /* CAN controller life cycle routines */
 
@@ -507,7 +507,7 @@ static int mpfs_reset(struct mpfs_driver_s *priv);
 
 static int mpfs_ifup(struct net_driver_s *dev);
 static int mpfs_ifdown(struct net_driver_s *dev);
-#ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg);
 #endif
 
@@ -2035,7 +2035,7 @@ static void
     (mode_reg | MPFS_CANFD_MODE_RTRLE) :
     (mode_reg & ~MPFS_CANFD_MODE_RTRLE);
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
   mode_reg |= MPFS_CANFD_MODE_AFM;
 #endif
 
@@ -2070,7 +2070,7 @@ static void
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
 static void mpfs_can_add_hw_filter(struct mpfs_driver_s *priv,
                                    uint8_t filter_type,
                                    uint8_t can_id_type,
@@ -2248,7 +2248,7 @@ static void mpfs_can_add_hw_filter(struct mpfs_driver_s *priv,
         break;
     }
 }
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
 /****************************************************************************
  * Name: mpfs_can_reset_hw_filter
@@ -2266,7 +2266,7 @@ static void mpfs_can_add_hw_filter(struct mpfs_driver_s *priv,
  *  None
  *
  ****************************************************************************/
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
 static void mpfs_can_reset_hw_filter(struct mpfs_driver_s *priv)
 {
   uint32_t reg;
@@ -2303,7 +2303,7 @@ static void mpfs_can_reset_hw_filter(struct mpfs_driver_s *priv)
   priv->used_bit_filter_number = 0;
   priv->used_range_filter = false;
 }
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
 /****************************************************************************
  * Name: mpfs_can_controller_start
@@ -2602,8 +2602,7 @@ static int mpfs_ifdown(struct net_driver_s *dev)
 #ifdef CONFIG_NETDEV_IOCTL
 static int mpfs_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 {
-#if defined(CONFIG_NETDEV_CAN_BITRATE_IOCTL) || \
-defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
+#ifdef CONFIG_NETDEV_CAN_IOCTL
   struct mpfs_driver_s *priv =
     (struct mpfs_driver_s *)dev->d_private;
 #endif
@@ -2611,7 +2610,7 @@ defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
 
   switch (cmd)
     {
-#ifdef CONFIG_NETDEV_CAN_BITRATE_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
     case SIOCGCANBITRATE:
 
       /* Get bitrate from the CAN controller */
@@ -2694,9 +2693,9 @@ defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
         ret = OK;
       }
       break;
-#endif /* CONFIG_NETDEV_CAN_BITRATE_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
     case SIOCACANSTDFILTER:
 
       {
@@ -2852,7 +2851,7 @@ defined(CONFIG_NETDEV_CAN_FILTER_IOCTL)
         ret = OK;
       }
       break;
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
     default:
       ret = -ENOTTY;
@@ -2927,12 +2926,12 @@ int mpfs_fpga_canfd_init(void)
                           &priv0->can.data_bittiming,
                           priv0->can.data_bittiming_const);
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
   /* Init hw filter runtime var */
 
   priv0->used_bit_filter_number = 0;
   priv0->used_range_filter = false;
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
   /* Set CAN control modes */
 
@@ -3027,12 +3026,12 @@ int mpfs_fpga_canfd_init(void)
                           &priv1->can.data_bittiming,
                           priv1->can.data_bittiming_const);
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
   /* Init hw filter runtime var */
 
   priv1->used_bit_filter_number = 0;
   priv1->used_range_filter = false;
-#endif /* CONFIG_NETDEV_CAN_FILTER_IOCTL */
+#endif /* CONFIG_NETDEV_CAN_IOCTL */
 
   /* Set CAN control modes */
 

@@ -1977,7 +1977,7 @@ static int fdcan_netdev_ioctl(struct net_driver_s *dev, int cmd,
         break;
 #endif
 
-#ifdef CONFIG_NETDEV_CAN_FILTER_IOCTL
+#ifdef CONFIG_NETDEV_CAN_IOCTL
       case SIOCACANEXTFILTER:
         {
           /* TODO: Add hardware-level filter... */
