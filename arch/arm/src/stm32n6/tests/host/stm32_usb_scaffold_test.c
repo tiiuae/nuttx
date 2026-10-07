@@ -14,7 +14,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -27,6 +30,14 @@
 #define STM32_IRQ_FIRST 16
 #define uerr test_error
 #define OK 0
+#define DEBUGASSERT assert
+#define kmm_malloc malloc
+#define kmm_zalloc(s) calloc(1, (s))
+#define kmm_free free
+#define MSEC2TICK(m) (m)
+#define USEC2TICK(u) (((u) + 999) / 1000)
+#define TICK2MSEC(t) (t)
+#define SEM_INITIALIZER(n) {.count = (n)}
 #define CONTROL_NPRIV 1
 #define TEST_CLOCKS (STM32_OTG_RCC_EN | STM32_OTG_RCC_PHY_EN)
 #define TEST_RESETS (STM32_OTG_RCC_RST | STM32_OTG_RCC_PHY_RST | \
@@ -39,6 +50,22 @@
  ****************************************************************************/
 
 typedef unsigned int irqstate_t;
+typedef int (*xcpt_t)(int, void *, void *);
+typedef uintptr_t wdparm_t;
+typedef void (*wdentry_t)(uintptr_t);
+
+typedef struct
+{
+  unsigned int count;
+} sem_t;
+
+struct wdog_s
+{
+  wdentry_t callback;
+  uintptr_t arg;
+  unsigned int due;
+  bool active;
+};
 
 enum test_failure_e
 {
@@ -104,9 +131,31 @@ static unsigned int g_nak_due;
 static enum test_failure_e g_failure;
 static bool g_soft_reset;
 static bool g_reenter;
+static bool g_runtime;
+static bool g_irqenabled;
+static bool g_delayed_stop;
+static bool g_flush_stuck;
+static xcpt_t g_handler;
+static void *g_irqarg;
+static struct wdog_s *g_watchdog;
+static unsigned int g_unbinds;
+static unsigned int g_disconnects;
+static uint32_t g_rxstatus[256];
+static unsigned int g_rxhead;
+static unsigned int g_rxtail;
+static uint32_t g_rxwords[4096];
+static unsigned int g_rxread;
+static unsigned int g_rxwrite;
+static uint32_t g_txwords[9][4096];
+static unsigned int g_txcount[9];
+static unsigned int g_txflush[64];
+static unsigned int g_ntxflush;
+static unsigned int g_nrxflush;
 
 void arm_usbinitialize(void);
 void arm_usbuninitialize(void);
+static void test_dispatch(void);
+static void test_tick(void);
 
 /****************************************************************************
  * Private Functions
@@ -150,9 +199,87 @@ static uint32_t *test_register(uintptr_t address)
 
 static uint32_t getreg32(uintptr_t address)
 {
-  uint32_t *reg = test_register(address);
+  uint32_t *reg;
+  unsigned int ep;
 
   g_reads++;
+  if (address == STM32_OTG_DFIFO(0))
+    {
+      assert(g_rxread < g_rxwrite);
+      return g_rxwords[g_rxread++];
+    }
+
+  reg = test_register(address);
+  if (g_runtime && address == STM32_OTG_GRXSTSP)
+    {
+      uint32_t status;
+
+      assert(g_rxhead < g_rxtail);
+      status = g_rxstatus[g_rxhead++];
+      if ((status & OTG_GRXST_PKTSTS_MASK) == OTG_GRXST_PKTSTS_GONAK)
+        {
+          g_core[STM32_OTG_GINTSTS_OFFSET / 4] |= OTG_GINT_GONAKEFF;
+        }
+
+      return status;
+    }
+
+  if (g_runtime && address == STM32_OTG_GINTSTS)
+    {
+      uint32_t status = *reg & ~(OTG_GINT_RXFLVL | OTG_GINT_IEPINT |
+                                OTG_GINT_OEPINT);
+
+      if (g_rxhead < g_rxtail)
+        {
+          status |= OTG_GINT_RXFLVL;
+        }
+
+      for (ep = 0; ep < 9; ep++)
+        {
+          if ((g_core[STM32_OTG_DAINTMSK_OFFSET / 4] &
+               OTG_DAINT_IN(ep)) != 0 &&
+              (g_core[STM32_OTG_DIEPINT_OFFSET(ep) / 4] &
+               (g_core[STM32_OTG_DIEPMSK_OFFSET / 4] |
+                ((g_core[STM32_OTG_DIEPEMPMSK_OFFSET / 4] &
+                  (1u << ep)) != 0 ? OTG_DIEPINT_TXFE : 0))) != 0)
+            {
+              status |= OTG_GINT_IEPINT;
+            }
+
+          if ((g_core[STM32_OTG_DAINTMSK_OFFSET / 4] &
+               OTG_DAINT_OUT(ep)) != 0 &&
+              (g_core[STM32_OTG_DOEPINT_OFFSET(ep) / 4] &
+               g_core[STM32_OTG_DOEPMSK_OFFSET / 4]) != 0)
+            {
+              status |= OTG_GINT_OEPINT;
+            }
+        }
+
+      return status;
+    }
+
+  if (g_runtime && address == STM32_OTG_DAINT)
+    {
+      uint32_t status = 0;
+
+      for (ep = 0; ep < 9; ep++)
+        {
+          if (g_core[STM32_OTG_DIEPINT_OFFSET(ep) / 4] &
+              (OTG_DIEPINT_W1C_MASK | OTG_DIEPINT_TXFE))
+            {
+              status |= OTG_DAINT_IN(ep);
+            }
+
+          if (g_core[STM32_OTG_DOEPINT_OFFSET(ep) / 4] &
+              OTG_DOEPINT_W1C_MASK)
+            {
+              status |= OTG_DAINT_OUT(ep);
+            }
+        }
+
+      return status;
+    }
+
   if (address == STM32_RCC_SR)
     {
       if ((g_rcc[STM32_RCC_CR_OFFSET / 4] & RCC_CR_HSEON) != 0)
@@ -197,7 +324,7 @@ static uint32_t getreg32(uintptr_t address)
           g_soft_reset = true;
         }
 
-      if (g_failure != TEST_TX_FLUSH)
+      if (g_failure != TEST_TX_FLUSH && !g_flush_stuck)
         {
           *reg &= ~OTG_GRSTCTL_TXFFLSH;
         }
@@ -222,7 +349,7 @@ static uint32_t getreg32(uintptr_t address)
           *reg |= OTG_GINT_GINAKEFF | OTG_GINT_GONAKEFF;
         }
     }
-  else if (address == STM32_OTG_DCTL && g_time >= g_nak_due &&
+  else if (!g_runtime && address == STM32_OTG_DCTL && g_time >= g_nak_due &&
            g_failure != TEST_NAK)
     {
       *reg |= OTG_DCTL_GINSTS | OTG_DCTL_GONSTS;
@@ -267,7 +394,21 @@ static void test_core_reset(void)
 
 static void putreg32(uint32_t value, uintptr_t address)
 {
-  uint32_t *reg = test_register(address);
+  uint32_t *reg;
+
+  if (address >= STM32_OTG_DFIFO(0) &&
+      address <= STM32_OTG_DFIFO(8))
+    {
+      unsigned int ep = (address - STM32_OTG_DFIFO(0)) / 0x1000;
+
+      assert(address == STM32_OTG_DFIFO(ep));
+      assert(g_txcount[ep] < 4096);
+      g_txwords[ep][g_txcount[ep]++] = value;
+      g_writes++;
+      return;
+    }
+
+  reg = test_register(address);
 
   g_writes++;
   if (address == STM32_RCC_AHB5RSTSR)
@@ -383,8 +524,26 @@ static void putreg32(uint32_t value, uintptr_t address)
   else if (address == STM32_OTG_GRSTCTL)
     {
       assert((*reg & OTG_GRSTCTL_AHBIDL) != 0);
+      if (g_runtime)
+        {
+          assert((*reg & (OTG_GRSTCTL_TXFFLSH |
+                         OTG_GRSTCTL_RXFFLSH)) == 0);
+          if ((value & OTG_GRSTCTL_TXFFLSH) != 0)
+            {
+              assert(g_ntxflush < 64);
+              g_txflush[g_ntxflush++] =
+                (value & OTG_GRSTCTL_TXFNUM_MASK) >>
+                OTG_GRSTCTL_TXFNUM_SHIFT;
+            }
+
+          if ((value & OTG_GRSTCTL_RXFFLSH) != 0)
+            {
+              g_nrxflush++;
+            }
+        }
+
       *reg = value | OTG_GRSTCTL_AHBIDL;
-      g_reset_due = g_time + 2;
+      g_reset_due = g_time + (g_runtime ? 0 : 2);
     }
   else if (address == STM32_OTG_GUSBCFG)
     {
@@ -394,8 +553,26 @@ static void putreg32(uint32_t value, uintptr_t address)
     }
   else if (address == STM32_OTG_DCTL)
     {
-      assert((value & OTG_DCTL_SDIS) != 0);
+      assert(g_runtime || (value & OTG_DCTL_SDIS) != 0);
       *reg = value & ~(OTG_DCTL_SGINAK | OTG_DCTL_SGONAK);
+      if (g_runtime)
+        {
+          if ((value & OTG_DCTL_SGONAK) != 0 && !g_delayed_stop &&
+              (*reg & OTG_DCTL_GONSTS) == 0)
+            {
+              assert(g_rxtail < 256);
+              g_rxstatus[g_rxtail++] = OTG_GRXST_PKTSTS_GONAK;
+              *reg |= OTG_DCTL_GONSTS;
+            }
+
+          if ((value & OTG_DCTL_CGONAK) != 0)
+            {
+              *reg &= ~OTG_DCTL_GONSTS;
+              g_core[STM32_OTG_GINTSTS_OFFSET / 4] &=
+                ~OTG_GINT_GONAKEFF;
+            }
+        }
+
       if ((value & (OTG_DCTL_SGINAK | OTG_DCTL_SGONAK)) != 0)
         {
           g_nak_due = g_time + 2;
@@ -403,7 +580,7 @@ static void putreg32(uint32_t value, uintptr_t address)
     }
   else if (address == STM32_OTG_GCCFG)
     {
-      assert((value & OTG_GCCFG_VBVALOVAL) == 0);
+      assert(g_runtime || (value & OTG_GCCFG_VBVALOVAL) == 0);
       *reg = value;
     }
   else if (address == STM32_OTG_GINTSTS ||
@@ -412,16 +589,59 @@ static void putreg32(uint32_t value, uintptr_t address)
       uint32_t mask = address == STM32_OTG_GINTSTS ?
                       OTG_GINTSTS_W1C_MASK : OTG_GOTGINT_W1C_MASK;
 
-      assert(value == mask);
+      assert((value & ~mask) == 0);
       *reg &= ~value;
     }
   else if (address >= STM32_OTG_BASE + 0x900 &&
            address <= STM32_OTG_BASE + 0xc08 &&
            (address & 0x1f) == 8)
     {
-      assert(value == (address < STM32_OTG_BASE + 0xb00 ?
-                      OTG_DIEPINT_W1C_MASK : OTG_DOEPINT_W1C_MASK));
+      assert((value & ~(address < STM32_OTG_BASE + 0xb00 ?
+                       OTG_DIEPINT_W1C_MASK : OTG_DOEPINT_W1C_MASK)) == 0);
       *reg &= ~value;
+    }
+  else if (g_runtime && address >= STM32_OTG_DIEPCTL(0) &&
+           address <= STM32_OTG_DOEPCTL(8) &&
+           ((address - STM32_OTG_BASE) & 0x1f) == 0)
+    {
+      bool in = address < STM32_OTG_DOEPCTL(0);
+      unsigned int ep = (address - (in ? STM32_OTG_DIEPCTL(0) :
+                                   STM32_OTG_DOEPCTL(0))) / 32;
+      uint32_t *interrupt = &g_core[(in ? STM32_OTG_DIEPINT_OFFSET(ep) :
+                                   STM32_OTG_DOEPINT_OFFSET(ep)) / 4];
+
+      *reg = value;
+      if ((value & OTG_EPCTL_CNAK) != 0)
+        {
+          *reg &= ~OTG_EPCTL_NAKSTS;
+          if (in)
+            {
+              *interrupt &= ~OTG_DIEPINT_INEPNE;
+            }
+        }
+
+      if ((value & OTG_EPCTL_SNAK) != 0 && !g_delayed_stop)
+        {
+          *reg |= OTG_EPCTL_NAKSTS;
+          if (in)
+            {
+              *interrupt |= OTG_DIEPINT_INEPNE;
+            }
+        }
+
+      if ((value & OTG_EPCTL_EPDIS) != 0 && !g_delayed_stop)
+        {
+          if (!in)
+            {
+              assert(g_core[STM32_OTG_GINTSTS_OFFSET / 4] &
+                     OTG_GINT_GONAKEFF);
+            }
+
+          *reg &= ~(OTG_EPCTL_EPENA | OTG_EPCTL_EPDIS);
+          *interrupt |= in ? OTG_DIEPINT_EPDISD : OTG_DOEPINT_EPDISD;
+        }
+
+      *reg &= ~(OTG_EPCTL_CNAK | OTG_EPCTL_SNAK);
     }
   else if ((address == STM32_OTG_GRXFSIZ && g_failure == TEST_RX_SIZE) ||
            (address == STM32_OTG_DIEPTXF(8) && g_failure == TEST_TX_SIZE) ||
@@ -468,11 +688,85 @@ static void up_disable_irq(int irq)
 {
   assert(irq == STM32_IRQ_OTG);
   g_irqdisables++;
+  g_irqenabled = false;
+}
+
+static void up_enable_irq(int irq)
+{
+  assert(irq == STM32_IRQ_OTG && g_handler != NULL);
+  g_irqenabled = true;
+}
+
+static int irq_attach(int irq, xcpt_t handler, void *arg)
+{
+  assert(irq == STM32_IRQ_OTG);
+  g_handler = handler;
+  g_irqarg = arg;
+  return OK;
+}
+
+static int irq_detach(int irq)
+{
+  assert(irq == STM32_IRQ_OTG);
+  g_handler = NULL;
+  g_irqarg = NULL;
+  return OK;
+}
+
+static clock_t clock_systime_ticks(void)
+{
+  return g_time / 1000;
+}
+
+static int wd_start(struct wdog_s *wdog, clock_t delay,
+                    wdentry_t callback, uintptr_t arg)
+{
+  assert(delay > 0 && callback != NULL);
+  wdog->callback = callback;
+  wdog->arg = arg;
+  wdog->due = (unsigned int)clock_systime_ticks() + (unsigned int)delay;
+  wdog->active = true;
+  g_watchdog = wdog;
+  return OK;
+}
+
+static int wd_cancel(struct wdog_s *wdog)
+{
+  wdog->active = false;
+  return OK;
+}
+
+static int nxsem_post(sem_t *sem)
+{
+  assert(sem != NULL);
+  sem->count++;
+  return OK;
+}
+
+static int nxsem_wait_uninterruptible(sem_t *sem)
+{
+  unsigned int turns = 0;
+
+  assert(sem != NULL && g_critical == 0);
+  while (sem->count == 0)
+    {
+      assert(turns++ < 1000);
+      if (g_irqenabled)
+        {
+          test_dispatch();
+        }
+
+      test_tick();
+    }
+
+  sem->count--;
+  return OK;
 }
 
 static void up_udelay(unsigned int delay)
 {
   assert(g_critical == 0);
+  assert(!g_runtime);
   g_time += delay;
   if ((g_failure == TEST_HSE_SETTLE &&
        delay == BOARD_USB_HSE_STABILIZATION_US) ||
@@ -508,6 +802,62 @@ static int test_bind(struct usbdevclass_driver_s *driver,
   return 0;
 }
 
+static void test_unbind(struct usbdevclass_driver_s *driver,
+                        struct usbdev_s *dev)
+{
+  assert(driver != NULL && dev != NULL);
+  g_unbinds++;
+}
+
+static void test_disconnect(struct usbdevclass_driver_s *driver,
+                            struct usbdev_s *dev)
+{
+  assert(driver != NULL && dev != NULL);
+  g_disconnects++;
+}
+
+static uint8_t g_control_data[4096];
+static size_t g_control_length;
+static unsigned int g_setups;
+static unsigned int g_completions;
+static struct usbdev_req_s *g_control_req;
+
+static void test_complete(struct usbdev_ep_s *ep, struct usbdev_req_s *req)
+{
+  unsigned int *count = req->priv;
+
+  assert(ep != NULL && count != NULL);
+  (*count)++;
+}
+
+static int test_setup(struct usbdevclass_driver_s *driver,
+                      struct usbdev_s *dev, const struct usb_ctrlreq_s *ctrl,
+                      uint8_t *dataout, size_t outlen)
+{
+  assert(driver != NULL && dev != NULL && ctrl != NULL);
+  g_setups++;
+  if ((ctrl->type & USB_DIR_IN) != 0)
+    {
+      assert(g_control_req == NULL);
+      g_control_req = dev->ep0->ops->allocreq(dev->ep0);
+      assert(g_control_req != NULL);
+      g_control_req->buf = g_control_data;
+      g_control_req->len = g_control_length;
+      g_control_req->callback = test_complete;
+      g_control_req->priv = &g_completions;
+      return EP_SUBMIT(dev->ep0, g_control_req);
+    }
+
+  assert(outlen <= sizeof(g_control_data));
+  g_control_length = outlen;
+  if (outlen != 0)
+    {
+      memcpy(g_control_data, dataout, outlen);
+    }
+
+  return OK;
+}
+
 static void test_fixture(enum test_failure_e failure)
 {
   memset(&g_otgdev, 0, sizeof(g_otgdev));
@@ -524,6 +874,25 @@ static void test_fixture(enum test_failure_e failure)
   g_ipsr = 0;
   g_errors = 0;
   g_reenter = false;
+  g_runtime = false;
+  g_irqenabled = false;
+  g_handler = NULL;
+  g_irqarg = NULL;
+  g_watchdog = NULL;
+  g_delayed_stop = false;
+  g_flush_stuck = false;
+  g_binds = 0;
+  g_unbinds = 0;
+  g_disconnects = 0;
+  g_setups = 0;
+  g_completions = 0;
+  g_control_req = NULL;
+  g_control_length = 0;
+  g_rxhead = g_rxtail = 0;
+  g_rxread = g_rxwrite = 0;
+  memset(g_txcount, 0, sizeof(g_txcount));
+  g_ntxflush = 0;
+  g_nrxflush = 0;
   g_hse_ready = 0;
   g_phy_released = 0;
   g_rcc[STM32_RCC_AHB4ENR_OFFSET / 4] = RCC_AHB4ENR_PWREN;
@@ -563,7 +932,7 @@ static void test_initialized(void)
   unsigned int start = 512;
   uint32_t fifo;
 
-  assert(g_otgdev.initialized);
+  assert(g_otgdev.state == USBSTATE_READY);
   assert(g_otgdev.initresult == OK);
   assert(g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS);
   assert((g_core[STM32_OTG_GCCFG_OFFSET / 4] &
@@ -608,7 +977,8 @@ static void test_initialized(void)
   assert(start == total);
   assert(g_time >= BOARD_USB_HSE_STABILIZATION_US + 25000 + 50);
   assert(g_irqdisables != 0);
-  assert(g_otgdev.usbdev.ops == NULL && g_otgdev.usbdev.ep0 == NULL);
+  assert(g_otgdev.usbdev.ops != NULL && g_otgdev.usbdev.ep0 != NULL);
+  assert(g_handler != NULL && !g_irqenabled);
   assert(g_binds == 0);
 }
 
@@ -625,10 +995,16 @@ static void test_lifecycle(struct usbdevclass_driver_s *driver)
   before = g_writes;
   arm_usbinitialize();
   assert(g_writes == before);
-  assert(usbdev_register(driver) == -ENOSYS);
-  assert(g_writes == before);
+  g_runtime = true;
+  assert(usbdev_register(driver) == OK);
+  assert(g_binds == 1 && g_irqenabled);
+  assert(g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS);
+  assert(usbdev_unregister(driver) == OK);
+  assert(g_unbinds == 1);
+  g_runtime = false;
   arm_usbuninitialize();
-  assert(!g_otgdev.initialized && g_otgdev.initresult == -ENODEV);
+  assert(g_otgdev.state == USBSTATE_OFF &&
+         g_otgdev.initresult == -ENODEV);
   assert(g_rcc[STM32_RCC_AHB5ENR_OFFSET / 4] == 1);
   assert((g_rcc[STM32_RCC_AHB5RSTR_OFFSET / 4] & TEST_RESETS) ==
          TEST_RESETS);
@@ -640,6 +1016,7 @@ static void test_lifecycle(struct usbdevclass_driver_s *driver)
   arm_usbuninitialize();
   assert(g_writes == before);
   arm_usbinitialize();
+  g_binds = 0;
   test_initialized();
 
   for (fault = TEST_RESET; fault <= TEST_RX_FLUSH; fault++)
@@ -648,7 +1025,7 @@ static void test_lifecycle(struct usbdevclass_driver_s *driver)
       arm_usbinitialize();
       ret = g_otgdev.initresult;
       assert(ret < 0 && ret != -ENOSYS);
-      assert(!g_otgdev.initialized);
+      assert(g_otgdev.state != USBSTATE_READY);
       assert(usbdev_register(driver) == ret);
       assert(g_time <= 250000);
       assert(g_errors != 0 && g_critical == 0);
@@ -761,12 +1138,1110 @@ static void test_lifecycle(struct usbdevclass_driver_s *driver)
       arm_usbinitialize();
       g_failure = fault;
       arm_usbuninitialize();
-      assert(!g_otgdev.initialized && g_otgdev.initresult == -EACCES);
-      assert(g_otgdev.resets_owned);
+      assert(g_otgdev.state != USBSTATE_READY &&
+             g_otgdev.initresult == -EACCES);
+      assert((g_otgdev.resources & USBRES_RESETS) != 0);
       assert(g_errors != 0);
       g_failure = TEST_NONE;
       arm_usbinitialize();
       test_initialized();
+    }
+}
+
+/****************************************************************************
+ * FIFO-mode device API tests
+ ****************************************************************************/
+
+static void test_dispatch(void)
+{
+  unsigned int reads = g_reads;
+  unsigned int time = g_time;
+
+  assert(g_handler != NULL && g_irqenabled);
+  assert(g_handler(STM32_IRQ_OTG, NULL, g_irqarg) == OK);
+  assert(g_time == time);
+  assert(g_reads - reads < 1000);
+}
+
+static void test_tick(void)
+{
+  unsigned int reads = g_reads;
+
+  g_time += 1000;
+  if (g_watchdog != NULL && g_watchdog->active &&
+      (unsigned int)clock_systime_ticks() >= g_watchdog->due)
+    {
+      wdentry_t callback = g_watchdog->callback;
+      uintptr_t arg = g_watchdog->arg;
+      unsigned int time = g_time;
+
+      g_watchdog->active = false;
+      callback(arg);
+      assert(g_time == time && g_reads - reads < 1000);
+    }
+}
+
+static void test_pump(void)
+{
+  unsigned int i;
+
+  for (i = 0; i < 12; i++)
+    {
+      if (!g_irqenabled)
+        {
+          break;
+        }
+
+      test_dispatch();
+      test_tick();
+    }
+}
+
+static void test_event(uint32_t event)
+{
+  g_core[STM32_OTG_GINTSTS_OFFSET / 4] |= event;
+  test_dispatch();
+}
+
+static void test_pending_xfrc(struct usbdev_ep_s *ep)
+{
+  unsigned int number = ep->eplog & USB_EPNO_MASK;
+  bool in = (ep->eplog & USB_DIR_IN) != 0 || number == 0;
+
+  g_core[(in ? STM32_OTG_DIEPCTL_OFFSET(number) :
+          STM32_OTG_DOEPCTL_OFFSET(number)) / 4] &= ~OTG_EPCTL_EPENA;
+  g_core[(in ? STM32_OTG_DIEPINT_OFFSET(number) :
+          STM32_OTG_DOEPINT_OFFSET(number)) / 4] |= OTG_DIEPINT_XFRC;
+}
+
+static void test_xfrc(struct usbdev_ep_s *ep)
+{
+  test_pending_xfrc(ep);
+  test_dispatch();
+}
+
+static void test_receive(unsigned int ep, uint32_t kind,
+                          const uint8_t *data, size_t length)
+{
+  size_t offset;
+
+  assert(g_rxtail < 256 && length <= 1024);
+  if (kind == OTG_GRXST_PKTSTS_SETUPRECVD && ep == 0)
+    {
+      g_core[STM32_OTG_DIEPCTL_OFFSET(0) / 4] &= ~OTG_EPCTL_STALL;
+      g_core[STM32_OTG_DOEPCTL_OFFSET(0) / 4] &= ~OTG_EPCTL_STALL;
+      g_core[STM32_OTG_DIEPCTL_OFFSET(0) / 4] |= OTG_EPCTL_DPID;
+      g_core[STM32_OTG_DOEPCTL_OFFSET(0) / 4] |= OTG_EPCTL_DPID;
+    }
+
+  g_rxstatus[g_rxtail++] = ep | ((uint32_t)length << 4) | kind;
+  for (offset = 0; offset < length; offset += 4)
+    {
+      uint32_t word = 0;
+      size_t byte;
+
+      for (byte = 0; byte < 4 && offset + byte < length; byte++)
+        {
+          word |= (uint32_t)data[offset + byte] << (8 * byte);
+        }
+
+      assert(g_rxwrite < 4096);
+      g_rxwords[g_rxwrite++] = word;
+    }
+
+  test_dispatch();
+  assert(g_rxread == g_rxwrite);
+}
+
+static struct usbdev_s *test_online(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = &g_otgdev.usbdev;
+  unsigned int ep;
+
+  test_fixture(TEST_NONE);
+  arm_usbinitialize();
+  test_initialized();
+  g_runtime = true;
+  assert(usbdev_register(driver) == OK);
+  for (ep = 0; ep < 9; ep++)
+    {
+      g_core[STM32_OTG_DTXFSTS_OFFSET(ep) / 4] = 1024;
+    }
+
+  assert((DEV_CONNECT(dev)) == -ENOTCONN);
+  assert(g_errors != 0);
+  assert(g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS);
+  assert(stm32_usbdev_vbus(true) == OK);
+  assert((g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS) == 0);
+  test_event(OTG_GINT_USBRST);
+  test_pump();
+#ifdef CONFIG_STM32_N6_OTGDEV_FS
+  g_core[STM32_OTG_DSTS_OFFSET / 4] = OTG_DSTS_ENUMSPD_FS;
+#else
+  g_core[STM32_OTG_DSTS_OFFSET / 4] = OTG_DSTS_ENUMSPD_HS;
+#endif
+  test_event(OTG_GINT_ENUMDNE);
+  assert(g_otgdev.state == USBSTATE_ENUMERATED);
+  return dev;
+}
+
+static void test_offline(struct usbdevclass_driver_s *driver)
+{
+  assert(usbdev_unregister(driver) == OK);
+  g_runtime = false;
+  arm_usbuninitialize();
+  assert(g_otgdev.state == USBSTATE_OFF);
+}
+
+static int test_configure(struct usbdev_ep_s *ep, unsigned int type,
+                           unsigned int mps)
+{
+  struct usb_epdesc_s desc =
+  {
+    .len = USB_SIZEOF_EPDESC,
+    .type = USB_DESC_TYPE_ENDPOINT,
+    .addr = ep->eplog,
+    .attr = type,
+    .mxpacketsize = {(uint8_t)mps, (uint8_t)(mps >> 8)},
+    .interval = 1
+  };
+
+  assert(EP_DISABLE(ep) == OK);
+  test_pump();
+  return EP_CONFIGURE(ep, &desc, true);
+}
+
+static struct usbdev_req_s *test_request(struct usbdev_ep_s *ep,
+                                         uint8_t *buffer, size_t length,
+                                         unsigned int *completions)
+{
+  struct usbdev_req_s *req = ep->ops->allocreq(ep);
+
+  assert(req != NULL);
+  req->buf = buffer;
+  req->len = length;
+  req->callback = test_complete;
+  req->priv = completions;
+  return req;
+}
+
+static void test_fifo_bytes(unsigned int ep, unsigned int start,
+                             const uint8_t *data, size_t length)
+{
+  size_t byte;
+
+  for (byte = 0; byte < length; byte++)
+    {
+      assert(((g_txwords[ep][start + byte / 4] >>
+               (8 * (byte % 4))) & 255) == data[byte]);
+    }
+
+  if ((length & 3) != 0)
+    {
+      assert((g_txwords[ep][start + length / 4] >>
+              (8 * (length & 3))) == 0);
+    }
+}
+
+static void test_allocations(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *in[9] =
+  {
+    NULL
+  };
+
+  struct usbdev_ep_s *out[9] =
+  {
+    NULL
+  };
+
+  unsigned int ep;
+
+  assert(DEV_ALLOCEP(dev, 9, true, USB_EP_ATTR_XFER_BULK) == NULL);
+  assert(DEV_ALLOCEP(dev, 1, true, USB_EP_ATTR_XFER_ISOC) == NULL);
+  for (ep = 1; ep < 9; ep++)
+    {
+      bool enabled = ep <= 2;
+
+#ifdef TEST_USB_CUSTOM_FIFO
+      enabled |= ep == 8;
+#endif
+      in[ep] = DEV_ALLOCEP(dev, ep, true, ep == 2 ?
+                          USB_EP_ATTR_XFER_BULK : USB_EP_ATTR_XFER_INT);
+      assert((in[ep] != NULL) == enabled);
+      out[ep] = DEV_ALLOCEP(dev, ep, false, USB_EP_ATTR_XFER_BULK);
+      assert(out[ep] != NULL && out[ep] != in[ep]);
+      assert(DEV_ALLOCEP(dev, ep, false, USB_EP_ATTR_XFER_BULK) == NULL);
+      if (in[ep] != NULL)
+        {
+          unsigned int type = ep == 2 ? USB_EP_ATTR_XFER_BULK :
+                                       USB_EP_ATTR_XFER_INT;
+          unsigned int mps = 64;
+
+#ifndef CONFIG_STM32_N6_OTGDEV_FS
+          if (ep == 2)
+            {
+              mps = 512;
+            }
+
+#endif
+          assert(test_configure(in[ep], type, 0) < 0);
+          assert(test_configure(in[ep], type, mps) == OK);
+        }
+    }
+
+#ifdef CONFIG_STM32_N6_OTGDEV_FS
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 63) < 0);
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 8) == OK);
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 16) == OK);
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 32) == OK);
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 64) == OK);
+  assert(test_configure(in[1], USB_EP_ATTR_XFER_INT, 65) < 0);
+#else
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 64) < 0);
+  assert(test_configure(out[1], USB_EP_ATTR_XFER_BULK, 512) == OK);
+  assert(test_configure(in[1], USB_EP_ATTR_XFER_INT, 512) < 0);
+  assert(test_configure(in[2], USB_EP_ATTR_XFER_BULK, 512) == OK);
+  assert(test_configure(out[2], USB_EP_ATTR_XFER_INT, 1025) < 0);
+#endif
+  {
+    struct usb_epdesc_s invalid =
+    {
+      .len = USB_SIZEOF_EPDESC,
+      .type = USB_DESC_TYPE_ENDPOINT,
+      .addr = 2,
+      .attr = USB_EP_ATTR_XFER_INT,
+      .mxpacketsize = {64, 0},
+      .interval = 1
+    };
+
+    assert(EP_CONFIGURE(in[1], &invalid, true) < 0);
+    invalid.addr = in[1]->eplog;
+    invalid.attr = USB_EP_ATTR_XFER_ISOC;
+    assert(EP_CONFIGURE(in[1], &invalid, true) < 0);
+  }
+
+  for (ep = 1; ep < 9; ep++)
+    {
+      if (in[ep] != NULL)
+        {
+          DEV_FREEEP(dev, in[ep]);
+        }
+
+      DEV_FREEEP(dev, out[ep]);
+    }
+
+  test_pump();
+  test_offline(driver);
+}
+
+static void test_transfers(struct usbdevclass_driver_s *driver)
+{
+  static const size_t lengths[] =
+  {
+    1, 2, 3, 4, 63, 64, 65, 127, 129
+  };
+
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *in = DEV_ALLOCEP(dev, 1, true, USB_EP_ATTR_XFER_INT);
+  struct usbdev_ep_s *out = DEV_ALLOCEP(dev, 1, false, USB_EP_ATTR_XFER_INT);
+  uint8_t bytes[260];
+  uint8_t received[260];
+  unsigned int count;
+  size_t i;
+
+  assert(in != NULL && out != NULL);
+  assert(test_configure(in, USB_EP_ATTR_XFER_INT, 64) == OK);
+  assert(test_configure(out, USB_EP_ATTR_XFER_INT, 64) == OK);
+  for (i = 0; i < sizeof(bytes); i++)
+    {
+      bytes[i] = (uint8_t)(i * 7 + 3);
+    }
+
+  for (i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++)
+    {
+      struct usbdev_req_s *req;
+      size_t sent = 0;
+
+      count = 0;
+      g_txcount[1] = 0;
+      req = test_request(in, bytes + 1, lengths[i], &count);
+      assert(EP_SUBMIT(in, req) == OK);
+      assert(req->xfrd == 0 && count == 0);
+      while (sent < lengths[i])
+        {
+          size_t packet = lengths[i] - sent;
+          unsigned int start = (unsigned int)((sent + 3) / 4);
+
+          if (packet > 64)
+            {
+              packet = 64;
+            }
+
+          test_dispatch();
+          assert(req->xfrd == sent);
+          test_fifo_bytes(1, start, bytes + 1 + sent, packet);
+          assert(g_txcount[1] == start + (packet + 3) / 4);
+          test_xfrc(in);
+          sent += packet;
+          assert(req->xfrd == sent);
+        }
+
+      assert(count == 1 && req->result == OK);
+      in->ops->freereq(in, req);
+
+      count = 0;
+      memset(received, 0xa5, sizeof(received));
+      req = test_request(out, received + 1, lengths[i], &count);
+      assert(EP_SUBMIT(out, req) == OK);
+      sent = 0;
+      while (sent < lengths[i])
+        {
+          size_t packet = lengths[i] - sent;
+
+          if (packet > 64)
+            {
+              packet = 64;
+            }
+
+          test_receive(1, OTG_GRXST_PKTSTS_OUTRECVD, bytes + 1 + sent,
+                       packet);
+          test_xfrc(out);
+          sent += packet;
+        }
+
+      assert(count == 1 && req->result == OK && req->xfrd == lengths[i]);
+      assert(memcmp(received + 1, bytes + 1, lengths[i]) == 0);
+      assert(received[0] == 0xa5 && received[lengths[i] + 1] == 0xa5);
+      out->ops->freereq(out, req);
+    }
+
+  {
+    struct usbdev_req_s *req;
+
+    count = 0;
+    req = test_request(in, bytes + 1, 64, &count);
+    req->flags = USBDEV_REQFLAGS_NULLPKT;
+    assert(EP_SUBMIT(in, req) == OK);
+    test_xfrc(in);
+    assert(req->xfrd == 64 && count == 0);
+    assert((g_core[STM32_OTG_DIEPTSIZ_OFFSET(1) / 4] &
+            OTG_EPTSIZ_XFRSIZ_MASK) == 0);
+    test_xfrc(in);
+    assert(count == 1 && req->result == OK);
+    in->ops->freereq(in, req);
+  }
+
+  {
+    struct usbdev_req_s *req;
+    unsigned int errors = g_errors;
+
+    count = 0;
+    req = test_request(in, NULL, 1, &count);
+    assert(EP_SUBMIT(in, req) < 0);
+    assert(count == 0 && g_errors > errors);
+    req->len = 0;
+    assert(EP_SUBMIT(in, req) == OK);
+    test_xfrc(in);
+    assert(count == 1 && req->result == OK && req->xfrd == 0);
+    in->ops->freereq(in, req);
+  }
+
+  for (i = 0; i < 3; i++)
+    {
+      struct usbdev_req_s *req;
+      size_t packet = i == 0 ? 0 : i == 1 ? 3 : 9;
+
+      count = 0;
+      memset(received, 0xa5, sizeof(received));
+      req = test_request(out, received + 1, i == 2 ? 3 : 128, &count);
+      assert(EP_SUBMIT(out, req) == OK);
+      test_receive(1, OTG_GRXST_PKTSTS_OUTRECVD, bytes + 1, packet);
+      test_xfrc(out);
+      test_pump();
+      assert(count == 1);
+      assert(req->result == (i == 2 ? -EOVERFLOW : OK));
+      assert(req->xfrd == (i == 2 ? 3 : packet));
+      assert(received[0] == 0xa5 &&
+             received[(i == 2 ? 3 : 128) + 1] == 0xa5);
+      out->ops->freereq(out, req);
+    }
+
+  test_offline(driver);
+}
+
+static void test_out_cancel(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *out = DEV_ALLOCEP(dev, 1, false,
+                                       USB_EP_ATTR_XFER_INT);
+  struct usbdev_ep_s *sibling = DEV_ALLOCEP(dev, 2, false,
+                                           USB_EP_ATTR_XFER_INT);
+  struct usbdev_req_s *req[3];
+  uint8_t buffers[3][130];
+  uint8_t payload[64];
+  unsigned int counts[3] =
+  {
+    0
+  };
+
+  unsigned int i;
+  unsigned int flushes;
+
+  assert(test_configure(out, USB_EP_ATTR_XFER_INT, 64) == OK);
+  assert(test_configure(sibling, USB_EP_ATTR_XFER_INT, 64) == OK);
+  memset(buffers, 0xa5, sizeof(buffers));
+  memset(payload, 0x5a, sizeof(payload));
+  req[0] = test_request(out, buffers[0] + 1, 128, &counts[0]);
+  req[1] = test_request(out, buffers[1] + 1, 128, &counts[1]);
+  req[2] = test_request(sibling, buffers[2] + 1, 128, &counts[2]);
+  assert(EP_SUBMIT(out, req[0]) == OK);
+  assert(EP_SUBMIT(out, req[1]) == OK);
+  assert(EP_SUBMIT(sibling, req[2]) == OK);
+  assert(EP_CANCEL(out, req[1]) == OK);
+  assert(counts[1] == 1 && req[1]->result == -ECONNRESET);
+  flushes = g_nrxflush;
+  assert(EP_CANCEL(out, req[0]) == OK);
+  test_pump();
+  assert(counts[0] == 1 && counts[2] == 0);
+  assert(req[0]->result == -ECONNRESET);
+  assert(g_nrxflush == flushes);
+  assert((g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_GONSTS) == 0);
+  assert((g_core[STM32_OTG_GRSTCTL_OFFSET / 4] &
+          OTG_GRSTCTL_RXFFLSH) == 0);
+  test_receive(2, OTG_GRXST_PKTSTS_OUTRECVD, payload, sizeof(payload));
+  test_xfrc(sibling);
+  test_receive(2, OTG_GRXST_PKTSTS_OUTRECVD, payload, 3);
+  test_xfrc(sibling);
+  assert(counts[2] == 1 && req[2]->result == OK && req[2]->xfrd == 67);
+  assert(memcmp(buffers[2] + 1, payload, 64) == 0);
+  for (i = 0; i < 3; i++)
+    {
+      assert(buffers[i][0] == 0xa5 && buffers[i][129] == 0xa5);
+      (i == 2 ? sibling : out)->ops->freereq(i == 2 ? sibling : out,
+                                            req[i]);
+    }
+
+  test_offline(driver);
+}
+
+static void test_stop_progress(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *ep[2];
+  struct usbdev_req_s *req[2];
+  unsigned int counts[2] =
+  {
+    0
+  };
+
+  uint8_t buffer[65] =
+  {
+    0
+  };
+
+  unsigned int before;
+  unsigned int i;
+
+  for (i = 0; i < 2; i++)
+    {
+      ep[i] = DEV_ALLOCEP(dev, i + 1, true, USB_EP_ATTR_XFER_INT);
+      assert(test_configure(ep[i], USB_EP_ATTR_XFER_INT, 64) == OK);
+      req[i] = test_request(ep[i], buffer + 1, 64, &counts[i]);
+      assert(EP_SUBMIT(ep[i], req[i]) == OK);
+    }
+
+  before = g_ntxflush;
+  g_delayed_stop = true;
+  assert(EP_CANCEL(ep[0], req[0]) == OK);
+  test_dispatch();
+  assert(counts[0] == 0 && counts[1] == 0);
+  assert(g_ntxflush == before);
+  g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4] |= OTG_EPCTL_NAKSTS;
+  g_core[STM32_OTG_DIEPINT_OFFSET(1) / 4] |= OTG_DIEPINT_INEPNE;
+  test_dispatch();
+  test_tick();
+  assert(counts[0] == 0 && g_ntxflush == before);
+  g_delayed_stop = false;
+  g_flush_stuck = true;
+  g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4] &=
+    ~(OTG_EPCTL_EPENA | OTG_EPCTL_EPDIS);
+  g_core[STM32_OTG_DIEPINT_OFFSET(1) / 4] |= OTG_DIEPINT_EPDISD;
+  test_dispatch();
+  test_tick();
+  assert(g_ntxflush == before + 1 && g_txflush[before] == 1);
+  assert(counts[0] == 0);
+  assert(EP_CANCEL(ep[1], req[1]) == OK);
+  test_dispatch();
+  test_tick();
+  assert(g_ntxflush == before + 1);
+  g_flush_stuck = false;
+  test_pump();
+  assert(g_ntxflush == before + 2 && g_txflush[before + 1] == 2);
+  assert(counts[0] == 1 && counts[1] == 1);
+  assert(req[0]->result == -ECONNRESET && req[1]->result == -ECONNRESET);
+  for (i = 0; i < 2; i++)
+    {
+      ep[i]->ops->freereq(ep[i], req[i]);
+    }
+
+  test_offline(driver);
+}
+
+static void test_queue_cancel(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *in = DEV_ALLOCEP(dev, 1, true, USB_EP_ATTR_XFER_INT);
+  struct usbdev_req_s *req[3];
+  unsigned int counts[3] =
+  {
+    0
+  };
+
+  uint8_t bytes[65] =
+  {
+    0
+  };
+
+  unsigned int i;
+
+  assert(test_configure(in, USB_EP_ATTR_XFER_INT, 64) == OK);
+  for (i = 0; i < 3; i++)
+    {
+      req[i] = test_request(in, bytes + 1, 64, &counts[i]);
+      assert(EP_SUBMIT(in, req[i]) == OK);
+    }
+
+  assert(EP_CANCEL(in, req[1]) == OK);
+  assert(counts[1] == 1 && req[1]->result == -ECONNRESET);
+  assert(counts[0] == 0 && counts[2] == 0);
+  assert(EP_CANCEL(in, req[0]) == OK);
+  test_pump();
+  assert(counts[0] == 1 && req[0]->result == -ECONNRESET);
+  assert(counts[2] == 0);
+  test_xfrc(in);
+  assert(counts[2] == 1 && req[2]->result == OK);
+  for (i = 0; i < 3; i++)
+    {
+      in->ops->freereq(in, req[i]);
+    }
+
+  assert(EP_STALL(in) == OK);
+  test_pump();
+  assert(g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4] & OTG_EPCTL_STALL);
+  assert(EP_RESUME(in) == OK);
+  assert((g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4] & OTG_EPCTL_STALL) == 0);
+  assert(g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4] & OTG_EPCTL_SD0PID);
+  test_offline(driver);
+}
+
+static void test_control_setup(uint8_t type, uint8_t request,
+                                uint16_t value, uint16_t index,
+                                uint16_t length)
+{
+  struct usb_ctrlreq_s ctrl =
+  {
+    .type = type,
+    .req = request,
+    .value = {(uint8_t)value, (uint8_t)(value >> 8)},
+    .index = {(uint8_t)index, (uint8_t)(index >> 8)},
+    .len = {(uint8_t)length, (uint8_t)(length >> 8)}
+  };
+
+  test_receive(0, OTG_GRXST_PKTSTS_SETUPRECVD,
+               (const uint8_t *)&ctrl, sizeof(ctrl));
+  test_receive(0, OTG_GRXST_PKTSTS_SETUPDONE, NULL, 0);
+  g_core[STM32_OTG_DOEPINT_OFFSET(0) / 4] |= OTG_DOEPINT_STUP;
+  test_dispatch();
+}
+
+static void test_control_status_out(void)
+{
+  test_receive(0, OTG_GRXST_PKTSTS_OUTRECVD, NULL, 0);
+  g_core[STM32_OTG_DOEPINT_OFFSET(0) / 4] |= OTG_DOEPINT_XFRC;
+  test_dispatch();
+}
+
+static void test_control_free(struct usbdev_s *dev)
+{
+  assert(g_control_req != NULL);
+  dev->ep0->ops->freereq(dev->ep0, g_control_req);
+  g_control_req = NULL;
+}
+
+static void test_ep0(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  uint8_t data[193];
+  unsigned int i;
+  unsigned int before;
+
+  assert(dev->ep0->maxpacket == 64);
+  test_control_setup(0, USB_REQ_SETADDRESS, 17, 0, 0);
+  assert((g_core[STM32_OTG_DCFG_OFFSET / 4] & OTG_DCFG_DAD_MASK) == 0);
+  test_xfrc(dev->ep0);
+  assert((g_core[STM32_OTG_DCFG_OFFSET / 4] & OTG_DCFG_DAD_MASK) ==
+         (17u << 4));
+  for (i = 0; i < sizeof(data); i++)
+    {
+      data[i] = (uint8_t)(i + 23);
+    }
+
+  memcpy(g_control_data, data, sizeof(data));
+  g_control_length = 129;
+  g_txcount[0] = 0;
+  before = g_setups;
+  test_control_setup(USB_DIR_IN, USB_REQ_GETDESCRIPTOR,
+                     USB_DESC_TYPE_DEVICE << 8, 0, 255);
+  assert(g_setups == before + 1 && g_control_req != NULL);
+  assert(g_control_req->xfrd == 0);
+  test_fifo_bytes(0, 0, data, 64);
+  test_xfrc(dev->ep0);
+  assert(g_control_req->xfrd == 64 && g_completions == 0);
+  test_fifo_bytes(0, 16, data + 64, 64);
+  test_xfrc(dev->ep0);
+  test_fifo_bytes(0, 32, data + 128, 1);
+  test_xfrc(dev->ep0);
+  assert(g_completions == 1 && g_control_req->result == OK);
+  test_control_status_out();
+  test_control_free(dev);
+
+  g_control_length = 128;
+  before = g_completions;
+  test_control_setup(USB_DIR_IN | USB_REQ_TYPE_VENDOR, 0x55, 0, 0, 255);
+  test_xfrc(dev->ep0);
+  test_xfrc(dev->ep0);
+  assert(g_completions == before);
+  assert((g_core[STM32_OTG_DIEPTSIZ_OFFSET(0) / 4] &
+          OTG_DIEPTSIZ0_XFRSIZ_MASK) == 0);
+  test_xfrc(dev->ep0);
+  assert(g_completions == before + 1);
+  test_control_status_out();
+  test_control_free(dev);
+
+  for (i = 0; i < 2; i++)
+    {
+      unsigned int packet;
+
+      before = g_setups;
+      test_control_setup(i == 0 ? USB_REQ_TYPE_CLASS : USB_REQ_TYPE_VENDOR,
+                         0x56, 0, 0, 129);
+      assert(g_setups == before);
+      for (packet = 0; packet < 3; packet++)
+        {
+          test_receive(0, OTG_GRXST_PKTSTS_OUTRECVD,
+                       data + packet * 64, packet == 2 ? 1 : 64);
+          g_core[STM32_OTG_DOEPINT_OFFSET(0) / 4] |= OTG_DOEPINT_XFRC;
+          test_dispatch();
+        }
+
+      assert(g_setups == before + 1 && g_control_length == 129);
+      assert(memcmp(g_control_data, data, 129) == 0);
+      test_xfrc(dev->ep0);
+    }
+
+  before = g_setups;
+  test_control_setup(USB_REQ_TYPE_VENDOR, 0x57, 0, 0, 4097);
+  assert(g_setups == before);
+  assert(g_core[STM32_OTG_DIEPCTL_OFFSET(0) / 4] & OTG_EPCTL_STALL);
+  test_control_setup(0, USB_REQ_SETADDRESS, 128, 0, 0);
+  assert(g_core[STM32_OTG_DIEPCTL_OFFSET(0) / 4] & OTG_EPCTL_STALL);
+  test_control_setup(USB_DIR_IN, USB_REQ_SETADDRESS, 1, 0, 0);
+  assert(g_core[STM32_OTG_DIEPCTL_OFFSET(0) / 4] & OTG_EPCTL_STALL);
+  test_control_setup(0, USB_REQ_SETADDRESS, 18, 0, 0);
+  assert((g_core[STM32_OTG_DIEPCTL_OFFSET(0) / 4] & OTG_EPCTL_STALL) == 0);
+  test_xfrc(dev->ep0);
+  assert((g_core[STM32_OTG_DCFG_OFFSET / 4] & OTG_DCFG_DAD_MASK) ==
+         (18u << 4));
+
+  g_control_length = 129;
+  before = g_completions;
+  test_control_setup(USB_DIR_IN | USB_REQ_TYPE_VENDOR, 0x55, 0, 0, 255);
+  assert(g_control_req != NULL);
+  test_control_setup(0, USB_REQ_SETADDRESS, 19, 0, 0);
+  test_pump();
+  assert(g_completions == before + 1 && g_control_req->result < 0);
+  test_control_free(dev);
+  test_xfrc(dev->ep0);
+  assert((g_core[STM32_OTG_DCFG_OFFSET / 4] & OTG_DCFG_DAD_MASK) ==
+         (19u << 4));
+  test_offline(driver);
+}
+
+static void test_abort_events(struct usbdevclass_driver_s *driver)
+{
+  unsigned int event;
+
+  for (event = 0; event < 4; event++)
+    {
+      struct usbdev_s *dev = test_online(driver);
+      struct usbdev_ep_s *in = DEV_ALLOCEP(dev, 1, true,
+                                          USB_EP_ATTR_XFER_INT);
+      struct usbdev_req_s *req[2];
+      unsigned int counts[2] =
+      {
+        0
+      };
+
+      unsigned int disconnects;
+      uint8_t bytes[65] =
+      {
+        0
+      };
+
+      assert(test_configure(in, USB_EP_ATTR_XFER_INT, 64) == OK);
+      req[0] = test_request(in, bytes + 1, 64, &counts[0]);
+      req[1] = test_request(in, bytes + 1, 64, &counts[1]);
+      assert(EP_SUBMIT(in, req[0]) == OK);
+      assert(EP_SUBMIT(in, req[1]) == OK);
+      disconnects = g_disconnects;
+      if (event == 0)
+        {
+          test_event(OTG_GINT_USBRST);
+          test_pump();
+        }
+      else if (event == 1)
+        {
+          assert(stm32_usbdev_vbus(false) == OK);
+          test_pump();
+          assert(stm32_usbdev_vbus(false) == OK);
+          assert(g_disconnects == disconnects + 1);
+        }
+      else
+        {
+          unsigned int i;
+
+          g_delayed_stop = event == 2;
+          g_flush_stuck = event == 3;
+          assert(EP_CANCEL(in, req[0]) == OK);
+          for (i = 0; i < 1000 && g_otgdev.state != USBSTATE_FAULT; i++)
+            {
+              test_pump();
+            }
+
+          assert(g_otgdev.state == USBSTATE_FAULT);
+          assert(g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS);
+          assert(g_rcc[STM32_RCC_AHB5RSTR_OFFSET / 4] &
+                 STM32_OTG_RCC_RST);
+        }
+
+      assert(counts[0] == 1 && counts[1] == 1);
+      assert(req[0]->result < 0 && req[1]->result < 0);
+      in->ops->freereq(in, req[0]);
+      in->ops->freereq(in, req[1]);
+      g_delayed_stop = false;
+      g_flush_stuck = false;
+      if (event < 2)
+        {
+          test_pump();
+          assert(counts[0] == 1 && counts[1] == 1);
+          test_offline(driver);
+        }
+      else
+        {
+          g_runtime = false;
+          arm_usbuninitialize();
+        }
+    }
+}
+
+static void test_rebind(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *ep[2];
+  struct usbdev_req_s *req[3];
+  unsigned int counts[3] =
+  {
+    0
+  };
+
+  unsigned int time;
+  unsigned int cycle;
+  unsigned int i;
+  uint8_t buffers[3][65] =
+  {
+    {
+      0
+    }
+  };
+
+  ep[0] = DEV_ALLOCEP(dev, 1, true, USB_EP_ATTR_XFER_INT);
+  ep[1] = DEV_ALLOCEP(dev, 1, false, USB_EP_ATTR_XFER_INT);
+  for (i = 0; i < 2; i++)
+    {
+      assert(test_configure(ep[i], USB_EP_ATTR_XFER_INT, 64) == OK);
+    }
+
+  for (i = 0; i < 3; i++)
+    {
+      struct usbdev_ep_s *endpoint = ep[i == 2 ? 1 : 0];
+
+      req[i] = test_request(endpoint, buffers[i] + 1, 64, &counts[i]);
+      assert(EP_SUBMIT(endpoint, req[i]) == OK);
+    }
+
+  assert(usbdev_unregister(driver) == OK);
+  assert(g_otgdev.state == USBSTATE_READY && g_otgdev.driver == NULL);
+  assert(g_otgdev.link == LINK_PRESENT);
+  assert(!g_irqenabled);
+  for (i = 0; i < 3; i++)
+    {
+      struct usbdev_ep_s *endpoint = ep[i == 2 ? 1 : 0];
+
+      assert(counts[i] == 1 && req[i]->result == -ESHUTDOWN);
+      endpoint->ops->freereq(endpoint, req[i]);
+    }
+
+  for (cycle = 0; cycle < 3; cycle++)
+    {
+      time = g_time;
+      assert(usbdev_register(driver) == OK);
+      assert(g_irqenabled && g_otgdev.driver == driver);
+      assert(g_time == time);
+      assert((DEV_CONNECT(dev)) == OK);
+      assert((g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS) == 0);
+      assert(usbdev_unregister(driver) == OK);
+      assert(!g_irqenabled && g_otgdev.state == USBSTATE_READY);
+      assert(g_otgdev.link == LINK_PRESENT);
+    }
+
+  assert(g_binds == 4 && g_unbinds == 4);
+  for (i = 0; i < 3; i++)
+    {
+      assert(counts[i] == 1);
+    }
+
+  g_runtime = false;
+  arm_usbuninitialize();
+  assert(g_otgdev.state == USBSTATE_OFF);
+}
+
+static void test_vbus_race(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *ep = DEV_ALLOCEP(dev, 1, true, USB_EP_ATTR_XFER_INT);
+  struct usbdev_req_s *req;
+  unsigned int count = 0;
+  unsigned int disconnected = g_disconnects;
+  uint8_t buffer[65] =
+  {
+    0
+  };
+
+  assert(test_configure(ep, USB_EP_ATTR_XFER_INT, 64) == OK);
+  req = test_request(ep, buffer + 1, 64, &count);
+  assert(EP_SUBMIT(ep, req) == OK);
+  g_delayed_stop = true;
+  assert(stm32_usbdev_vbus(false) == OK);
+  assert(g_otgdev.state == USBSTATE_DETACHING);
+  assert(count == 0);
+  assert(stm32_usbdev_vbus(true) == OK);
+  assert(g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS);
+  g_delayed_stop = false;
+  g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4] |= OTG_EPCTL_NAKSTS;
+  g_core[STM32_OTG_DIEPINT_OFFSET(1) / 4] |= OTG_DIEPINT_INEPNE;
+  test_pump();
+  if (count != 1 || req->result != -ESHUTDOWN)
+    {
+      fprintf(stderr, "VBUS race: count=%u result=%d state=%d "
+              "epstate=%d link=%d flush=%d ctl=%08x intr=%08x\n",
+              count, req->result, g_otgdev.state,
+              g_otgdev.epin[1].state, g_otgdev.link, g_otgdev.flush,
+              g_core[STM32_OTG_DIEPCTL_OFFSET(1) / 4],
+              g_core[STM32_OTG_DIEPINT_OFFSET(1) / 4]);
+    }
+
+  assert(count == 1 && req->result == -ESHUTDOWN);
+  assert(g_disconnects == disconnected + 1);
+  assert((g_core[STM32_OTG_DCTL_OFFSET / 4] & OTG_DCTL_SDIS) == 0);
+  assert(g_core[STM32_OTG_GCCFG_OFFSET / 4] & OTG_GCCFG_VBVALOVAL);
+  ep->ops->freereq(ep, req);
+  test_offline(driver);
+}
+
+static void test_suspend_queue(struct usbdevclass_driver_s *driver)
+{
+  struct usbdev_s *dev = test_online(driver);
+  struct usbdev_ep_s *ep = DEV_ALLOCEP(dev, 1, true, USB_EP_ATTR_XFER_INT);
+  struct usbdev_req_s *req[2];
+  unsigned int counts[2] =
+  {
+    0
+  };
+
+  uint8_t buffer[65] =
+  {
+    0
+  };
+
+  unsigned int written;
+  unsigned int i;
+
+  assert(test_configure(ep, USB_EP_ATTR_XFER_INT, 64) == OK);
+  for (i = 0; i < 2; i++)
+    {
+      req[i] = test_request(ep, buffer + 1, 64, &counts[i]);
+      assert(EP_SUBMIT(ep, req[i]) == OK);
+    }
+
+  written = g_txcount[1];
+  test_event(OTG_GINT_USBSUSP);
+  assert(g_otgdev.state == USBSTATE_SUSPENDED);
+  test_xfrc(ep);
+  assert(counts[0] == 1 && req[0]->result == OK);
+  assert(counts[1] == 0 && req[1]->xfrd == 0);
+  assert(g_txcount[1] == written);
+  test_event(OTG_GINT_WKUPINT);
+  assert(g_otgdev.state == USBSTATE_ENUMERATED);
+  assert(g_txcount[1] == written + 16);
+  test_xfrc(ep);
+  assert(counts[1] == 1 && req[1]->result == OK && req[1]->xfrd == 64);
+  for (i = 0; i < 2; i++)
+    {
+      ep->ops->freereq(ep, req[i]);
+    }
+
+  test_offline(driver);
+}
+
+static void test_halt_queue(struct usbdevclass_driver_s *driver)
+{
+  unsigned int direction;
+  unsigned int pending;
+
+  for (direction = 0; direction < 2; direction++)
+    {
+      for (pending = 0; pending < 2; pending++)
+        {
+          struct usbdev_s *dev = test_online(driver);
+          bool in = direction == 0;
+          struct usbdev_ep_s *ep = DEV_ALLOCEP(dev, 1, in,
+                                              USB_EP_ATTR_XFER_INT);
+          struct usbdev_req_s *req[2];
+          unsigned int counts[2] =
+          {
+            0
+          };
+
+          uint8_t buffers[2][130];
+          uint8_t payload[64];
+          size_t sent = pending != 0 ? 64 : 0;
+          unsigned int i;
+
+          memset(buffers, 0xa5, sizeof(buffers));
+          memset(payload, 0x5a, sizeof(payload));
+          assert(test_configure(ep, USB_EP_ATTR_XFER_INT, 64) == OK);
+          req[0] = test_request(ep, buffers[0] + 1, 128, &counts[0]);
+          req[1] = test_request(ep, buffers[1] + 1, 3, &counts[1]);
+          assert(EP_SUBMIT(ep, req[0]) == OK);
+          assert(EP_SUBMIT(ep, req[1]) == OK);
+          if (pending != 0)
+            {
+              if (!in)
+                {
+                  test_receive(1, OTG_GRXST_PKTSTS_OUTRECVD,
+                               payload, sizeof(payload));
+                }
+
+              test_pending_xfrc(ep);
+            }
+
+          assert(EP_STALL(ep) == OK);
+          test_pump();
+          assert(counts[0] == 0 && counts[1] == 0);
+          assert(req[0]->xfrd == sent && req[1]->xfrd == 0);
+          assert(g_core[(in ? STM32_OTG_DIEPCTL_OFFSET(1) :
+                         STM32_OTG_DOEPCTL_OFFSET(1)) / 4] &
+                 OTG_EPCTL_STALL);
+          assert(EP_RESUME(ep) == OK);
+          assert(g_core[(in ? STM32_OTG_DIEPCTL_OFFSET(1) :
+                         STM32_OTG_DOEPCTL_OFFSET(1)) / 4] &
+                 OTG_EPCTL_SD0PID);
+          test_dispatch();
+          assert(counts[0] == 0 && counts[1] == 0);
+          while (sent < 128)
+            {
+              if (!in)
+                {
+                  test_receive(1, OTG_GRXST_PKTSTS_OUTRECVD,
+                               payload, sizeof(payload));
+                }
+
+              test_xfrc(ep);
+              sent += 64;
+              assert(req[0]->xfrd == sent);
+            }
+
+          assert(counts[0] == 1 && counts[1] == 0);
+          assert(req[0]->result == OK);
+          if (!in)
+            {
+              test_receive(1, OTG_GRXST_PKTSTS_OUTRECVD, payload, 3);
+            }
+
+          test_xfrc(ep);
+          assert(counts[1] == 1 && req[1]->result == OK &&
+                 req[1]->xfrd == 3);
+          for (i = 0; i < 2; i++)
+            {
+              assert(buffers[i][0] == 0xa5 &&
+                     buffers[i][req[i]->len + 1] == 0xa5);
+              ep->ops->freereq(ep, req[i]);
+            }
+
+          test_offline(driver);
+        }
+    }
+}
+
+static void test_cancel_pending_ack(struct usbdevclass_driver_s *driver)
+{
+  unsigned int zlp;
+
+  for (zlp = 0; zlp < 2; zlp++)
+    {
+      struct usbdev_s *dev = test_online(driver);
+      struct usbdev_ep_s *ep = DEV_ALLOCEP(dev, 1, true,
+                                          USB_EP_ATTR_XFER_INT);
+      struct usbdev_req_s *req[2];
+      unsigned int counts[2] =
+      {
+        0
+      };
+
+      uint8_t buffer[129] =
+      {
+        0
+      };
+
+      unsigned int i;
+
+      assert(test_configure(ep, USB_EP_ATTR_XFER_INT, 64) == OK);
+      req[0] = test_request(ep, buffer + 1, zlp != 0 ? 64 : 128,
+                            &counts[0]);
+      req[1] = test_request(ep, buffer + 1, 3, &counts[1]);
+      if (zlp != 0)
+        {
+          req[0]->flags = USBDEV_REQFLAGS_NULLPKT;
+        }
+
+      assert(EP_SUBMIT(ep, req[0]) == OK);
+      assert(EP_SUBMIT(ep, req[1]) == OK);
+      test_pending_xfrc(ep);
+      assert(EP_CANCEL(ep, req[0]) == OK);
+      test_pump();
+      assert(counts[0] == 1 && req[0]->result == -ECONNRESET &&
+             req[0]->xfrd == 64);
+      assert(counts[1] == 0 && req[1]->xfrd == 0);
+      test_xfrc(ep);
+      assert(counts[1] == 1 && req[1]->result == OK && req[1]->xfrd == 3);
+      for (i = 0; i < 2; i++)
+        {
+          ep->ops->freereq(ep, req[i]);
+        }
+
+      test_offline(driver);
     }
 }
 
@@ -778,12 +2253,20 @@ int main(void)
 {
   const struct usbdevclass_driverops_s ops =
   {
-    .bind = test_bind
+    .bind = test_bind,
+    .unbind = test_unbind,
+    .setup = test_setup,
+    .disconnect = test_disconnect
   };
 
   struct usbdevclass_driver_s driver =
   {
-    .ops = &ops
+    .ops = &ops,
+#ifdef CONFIG_STM32_N6_OTGDEV_FS
+    .speed = USB_SPEED_FULL
+#else
+    .speed = USB_SPEED_HIGH
+#endif
   };
 
   struct usbdevclass_driver_s invalid =
@@ -907,11 +2390,19 @@ int main(void)
             RCC_CCIPR6_OTGPHY2CKREFSEL;
   assert((updated & 0x333) == clocks);
 
+#ifdef CONFIG_ARCH_TRUSTZONE_NONSECURE
+  assert(usbdev_register(&driver) == -EACCES);
+#else
   assert(usbdev_register(&driver) == -ENODEV);
+#endif
   assert(usbdev_register(NULL) == -EINVAL);
   assert(usbdev_register(&invalid) == -EINVAL);
   assert(usbdev_unregister(NULL) == -EINVAL);
+#ifdef CONFIG_ARCH_TRUSTZONE_NONSECURE
+  assert(usbdev_unregister(&driver) == -EACCES);
+#else
   assert(usbdev_unregister(&driver) == -ENODEV);
+#endif
   assert(g_binds == 0);
 #ifdef CONFIG_ARCH_TRUSTZONE_NONSECURE
   test_fixture(TEST_NONE);
@@ -919,8 +2410,32 @@ int main(void)
   assert(g_otgdev.initresult == -EACCES);
   assert(g_reads == 0 && g_writes == 0 && g_irqdisables == 0);
   (void)test_lifecycle;
+  (void)test_allocations;
+  (void)test_transfers;
+  (void)test_queue_cancel;
+  (void)test_out_cancel;
+  (void)test_stop_progress;
+  (void)test_ep0;
+  (void)test_abort_events;
+  (void)test_rebind;
+  (void)test_vbus_race;
+  (void)test_suspend_queue;
+  (void)test_halt_queue;
+  (void)test_cancel_pending_ack;
 #else
   test_lifecycle(&driver);
+  test_allocations(&driver);
+  test_transfers(&driver);
+  test_queue_cancel(&driver);
+  test_out_cancel(&driver);
+  test_stop_progress(&driver);
+  test_ep0(&driver);
+  test_abort_events(&driver);
+  test_rebind(&driver);
+  test_vbus_race(&driver);
+  test_suspend_queue(&driver);
+  test_halt_queue(&driver);
+  test_cancel_pending_ack(&driver);
 #endif
   return 0;
 }

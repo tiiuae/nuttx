@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 
-"""Check N6 USB registers, bounded initialization, cleanup, and config guards."""
+"""Exercise N6 FIFO USB device APIs, MMIO faults, and configuration guards."""
 
 import os
 import pathlib
 import re
 import shlex
+import shutil
 import subprocess
-import tempfile
 
 
 def without_includes(path):
@@ -41,8 +41,10 @@ def main():
     )
     compiler = shlex.split(os.environ.get("HOSTCC", "cc"))
     common = ["CONFIG_STM32_STM32N6XXXX", "CONFIG_STM32_N6_OTGDEV", "CONFIG_USBDEV"]
-    with tempfile.TemporaryDirectory(prefix="stm32n6-usb-") as temporary:
-        executable = pathlib.Path(temporary) / "usb-scaffold"
+    work = directory / f".usb-host-{os.getpid()}"
+    work.mkdir()
+    try:
+        executable = work / "usb-scaffold"
         command = compiler + [
             "-x",
             "c",
@@ -50,10 +52,13 @@ def main():
             "-Wall",
             "-Wextra",
             "-Werror",
+            "-Wsign-compare",
             "-o",
             str(executable),
             "-",
         ]
+        if os.environ.get("HOST_USB_SANITIZE"):
+            command += ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
         for port in (1, 2):
             for mode in ("fs", "hs", "custom", "nonsecure"):
                 defines = common + [f"CONFIG_STM32_N6_OTG{port}"]
@@ -124,6 +129,8 @@ def main():
             assert result.returncode != 0, defines
             assert message in result.stderr, result.stderr
         print(f"Rejected {len(invalid)} unsupported configurations: PASS")
+    finally:
+        shutil.rmtree(work)
 
 
 if __name__ == "__main__":
