@@ -164,6 +164,49 @@ endchoice
 
 endmenu
 
+menuconfig STM32_N6_OTGDEV
+	bool "STM32N6 USB OTG device initialization"
+	depends on EXPERIMENTAL
+	default n
+	select USBDEV
+	---help---
+		Initialize the selected STM32N6 USB controller and integrated
+		PHY with bounded waits. The board must supply a qualified HSE
+		clock/settling contract. The current Nucleo settling allowance
+		is experimental and requires physical qualification.
+
+		Endpoint transfers are not implemented yet: class registration
+		fails with ENOSYS after successful hardware initialization.
+		The device stays disconnected and IRQs stay masked. No board
+		GPIO, Type-C protection, or VBUS source gates are configured.
+
+		Only one integrated HS controller can be selected. Host, DMA,
+		isochronous, composite, and superspeed configurations are rejected
+		at build time. Keep this disabled on operational boards.
+
+if STM32_N6_OTGDEV
+
+choice
+	prompt "USB device controller"
+	default STM32_N6_OTG1
+
+config STM32_N6_OTG1
+	bool "USB1 OTG HS"
+
+config STM32_N6_OTG2
+	bool "USB2 OTG HS"
+
+endchoice
+
+config STM32_N6_OTGDEV_FS
+	bool "Force full-speed device operation"
+	default y
+	---help---
+		Use full-speed device mode with the integrated HS PHY for initial
+		bring-up. Do not enable USBDEV_DUALSPEED with this option.
+
+endif # STM32_N6_OTGDEV
+
 choice
 	prompt "STM32 N6 Chip Selection"
 	default ARCH_CHIP_STM32N657X0

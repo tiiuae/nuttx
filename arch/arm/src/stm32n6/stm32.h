@@ -39,6 +39,7 @@
 #include "chip.h"
 #include "stm32_gpio.h"
 #include "stm32_lowputc.h"
+#include "stm32_otg.h"
 #include "stm32_pwr.h"
 #include "stm32_rcc.h"
 #include "stm32_i2c.h"

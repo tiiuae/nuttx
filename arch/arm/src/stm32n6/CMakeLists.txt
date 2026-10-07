@@ -52,6 +52,10 @@ if(CONFIG_STM32_I2C)
   list(APPEND SRCS stm32_i2c.c)
 endif()
 
+if(CONFIG_STM32_N6_OTGDEV)
+  list(APPEND SRCS stm32_otgdev.c)
+endif()
+
 if(CONFIG_STM32_TIM)
   list(APPEND SRCS stm32_tim.c)
 endif()
