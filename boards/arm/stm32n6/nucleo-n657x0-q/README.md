@@ -38,7 +38,7 @@ The application USB connector is **CN8**, connected to **USB1 OTG HS**
 through dedicated OTG1_HSDM/HSDP pads (UM3417 section 7.11, Table 8).
 
 The architecture now has default-off, experimental
-`CONFIG_STM32_N6_OTGDEV` initialization support, with an exclusive
+`CONFIG_STM32_N6_OTGDEV` FIFO-mode device support, with an exclusive
 USB1/USB2 choice.
 USB1 is the controller connected to CN8. Forced full speed
 (`CONFIG_STM32_N6_OTGDEV_FS`) defaults on; combining it with
@@ -54,11 +54,46 @@ disabled, all endpoint interrupts masked, software session-valid
 inactive, and the device soft-disconnected. No GPIO or TCPP03 registers
 are touched.
 
-Endpoint operations are not implemented: class registration returns
-`-ENOSYS` after successful hardware initialization, or the retained
-initialization error after failure, without binding the class.
-Existing defconfigs remain USB-disabled. This is not yet an enumerating
-USB device, CDC-ACM connection, or USB console.
+The driver implements NuttX endpoint/request operations, EP0 control
+transactions, deferred SET_ADDRESS, bulk/interrupt transfers, queues,
+targeted cancellation, and halt/clear-halt. Class registration binds
+without repeating hardware initialization, enables the IRQ, and reports
+retained initialization errors if hardware setup failed. Controller,
+attachment, EP0, endpoint, request, and maintenance phases use explicit
+state enums; resource ownership is tracked separately with named bits.
+
+Connection requires both a class `DEV_CONNECT()` request and
+`stm32_usbdev_vbus(true)` from qualified board policy. Without qualified
+VBUS, `DEV_CONNECT()` records the request and returns `-ENOTCONN`;
+the device remains disconnected. The board notification must represent
+actual VBUS plus a safe Type-C sink/protection arrangement, not merely
+board power or the TCPP03 interrupt pin. VBUS loss cancels transfers and
+notifies the class; later qualified presence permits reconnection.
+The driver never configures the provider gate or infers VBUS from the PHY.
+
+EP0 uses 64-byte packets and a separate static control OUT buffer
+(`CONFIG_USBDEV_SETUP_MAXDATASIZE`, default 4096 bytes). Larger control
+OUT requests stall explicitly. FIFO slots configured with zero TX size
+are unavailable for IN endpoint allocation despite their reserved
+minimum physical depth. Descriptor packet sizes must fit the negotiated
+speed and assigned FIFO capacity. The default layout reserves 3776 of
+4096 bytes: RX 2048, EP0 TX 256, EP1 TX 64, EP2 TX 1024, and EP3-8 TX
+64 each. Defaults match CDC interrupt IN on EP1 and bulk IN on EP2.
+
+Active cancellation/disable/halt follows the NAK, endpoint-disabled,
+and FIFO-flush phases without delay loops in the IRQ handler. Watchdog
+polling bounds each hardware wait to 20 ms plus timer-tick rounding;
+timeout disconnects and holds the selected subsystem in reset.
+Halt retains queued requests, and clear-halt resets DATA0 before resuming.
+Unregistration waits for quiescence in thread context; request callbacks
+must follow the usual NuttX USB interrupt-context restrictions.
+Suspend retains clocks and notifies the class; remote wakeup and deep
+USB power management are not implemented.
+
+Existing defconfigs remain USB-disabled. No board VBUS/Type-C integration,
+CDC bring-up configuration, or USB console has been enabled. Physical
+forced-FS enumeration and CDC traffic still need qualification; host
+register/FIFO tests do not establish wire-level operation.
 
 Initialization takes over the selected controller and its PHY resets;
 teardown holds them in reset rather than restoring a bootloader USB
@@ -98,7 +133,7 @@ cannot be used as a digital GPIO-high VBUS detector. I2C2 has onboard
 1.5-kohm pull-ups to VDDIO. RM0486 section 72.4.2 rules out using the
 OTG PHY as the board VBUS detector. Physical rail checks, CC behavior,
 I2C timing, and attach/detach handling remain qualification gates;
-native USB attachment and transfers are not implemented yet.
+board-managed native USB attachment is not implemented yet.
 
 ## Prerequisites
 
