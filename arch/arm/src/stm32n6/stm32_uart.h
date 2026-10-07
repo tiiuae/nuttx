@@ -41,6 +41,23 @@
 
 /* Sanity checks */
 
+#if defined(CONFIG_USART1_RXDMA) || defined(CONFIG_USART2_RXDMA) || \
+    defined(CONFIG_USART3_RXDMA) || defined(CONFIG_UART4_RXDMA) || \
+    defined(CONFIG_UART5_RXDMA) || defined(CONFIG_USART6_RXDMA) || \
+    defined(CONFIG_UART7_RXDMA) || defined(CONFIG_UART8_RXDMA) || \
+    defined(CONFIG_UART9_RXDMA) || defined(CONFIG_USART10_RXDMA)
+#  error "STM32N6 serial RX DMA is not implemented"
+#endif
+
+#if !defined(CONFIG_STM32_GPDMA1) && \
+    (defined(CONFIG_USART1_TXDMA) || defined(CONFIG_USART2_TXDMA) || \
+     defined(CONFIG_USART3_TXDMA) || defined(CONFIG_UART4_TXDMA) || \
+     defined(CONFIG_UART5_TXDMA) || defined(CONFIG_USART6_TXDMA) || \
+     defined(CONFIG_UART7_TXDMA) || defined(CONFIG_UART8_TXDMA) || \
+     defined(CONFIG_UART9_TXDMA) || defined(CONFIG_USART10_TXDMA))
+#  error "STM32N6 serial TX DMA requires CONFIG_STM32_GPDMA1"
+#endif
+
 #if !defined(CONFIG_STM32_USART1)
 #  undef CONFIG_STM32_USART1_SERIALDRIVER
 #  undef CONFIG_STM32_USART1_1WIREDRIVER
