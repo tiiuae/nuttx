@@ -45,17 +45,26 @@ def check_dma_abort(directory, chip, compiler, temporary):
     source = source.replace("/* DMA_TYPES */",
                             extract(dma, r"enum stm32_dma_abort_state_e") +
                             ";\n" +
+                            extract(dma, r"enum stm32_dma_transfer_state_e") +
+                            ";\n" +
                             extract(dma, r"struct stm32_dma_channel_s"))
     start = dma.index("#define STM32_DMA_INTERRUPT_MASK")
     end = dma.index("\n\n", start)
     source = source.replace("/* DMA_INTERRUPTS */", dma[start:end])
     source = source.replace("/* DMA_ROUTINES */",
                             "\n".join(function(dma, name) for name in (
-                                "stm32_dma_stop", "stm32_dmastop",
-                                "stm32_dmaabort")))
+                                "stm32_dma_in_flight", "stm32_dma_busy",
+                                "stm32_dma_check_config", "stm32_dmafree",
+                                "stm32_dmasetup", "stm32_dmallibuild",
+                                "stm32_dmacallback", "stm32_dma_interrupt",
+                                "stm32_dmastart", "stm32_dma_stop",
+                                "stm32_dmastop", "stm32_dmaabort",
+                                "stm32_dmastatus")))
     executable = pathlib.Path(temporary) / "dma-abort"
+    # Static descriptors must fit the driver's 32-bit DMA address space.
     subprocess.run(compiler + ["-x", "c", "-std=c11", "-Wall", "-Wextra",
-                               "-Werror", "-I" + str(directory / "include"),
+                               "-Werror", "-fno-pie", "-no-pie",
+                               "-I" + str(directory / "include"),
                                "-I" + str(chip), "-o", str(executable), "-"],
                    input=source, text=True, check=True)
     subprocess.run([str(executable)], check=True)
