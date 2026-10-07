@@ -85,9 +85,9 @@ struct stm32_dma_config_s
 struct stm32_dma_status_s
 {
   uint32_t flags;                /* Accumulated status flags since last start */
-  size_t remaining;              /* Remaining bytes */
+  size_t remaining;              /* Remaining bytes; 0 during stop/recovery */
   int error;                     /* Last driver/transfer error */
-  bool in_flight;
+  bool in_flight;                /* Includes cache preparation and recovery */
 };
 
 enum stm32_dma_list_mode_e
@@ -139,6 +139,12 @@ int stm32_dma_initialize(void);
  */
 
 DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request);
+
+/* Setup, list build, and free return -EBUSY while starting, running,
+ * stopping, or awaiting recovery. After a fatal transfer error, stop/reset
+ * must succeed before the channel can be reconfigured or freed.
+ */
+
 int stm32_dmafree(DMA_HANDLE handle);
 int stm32_dmasetup(DMA_HANDLE handle,
                    const struct stm32_dma_config_s *config);
@@ -163,10 +169,18 @@ int stm32_dmallibuild(DMA_HANDLE handle,
                       size_t count, struct stm32_dma_lli_s *descriptors,
                       size_t capacity, enum stm32_dma_list_mode_e mode);
 int stm32_dmacallback(DMA_HANDLE handle, dma_callback_t callback, void *arg);
+
+/* Start a freshly programmed transfer. After completion, setup or list build
+ * must reload the hardware-modified count and addresses before another start.
+ */
+
 int stm32_dmastart(DMA_HANDLE handle);
 
 /* Abort a transfer using the RM0486 suspend/wait/reset sequence.  A timeout
- * is returned if the hardware does not reach the requested state.
+ * is returned if the hardware does not reach the requested state. Concurrent
+ * start/stop/abort/setup/list build/free operations on this channel return
+ * -EBUSY while the stop sequence is in progress. On failure, retain buffers
+ * and retry stop/abort; setup and free remain blocked until recovery succeeds.
  */
 
 int stm32_dmastop(DMA_HANDLE handle);

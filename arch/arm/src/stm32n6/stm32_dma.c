@@ -59,6 +59,18 @@ enum stm32_dma_abort_state_e
   STM32_DMA_ABORT_UNKNOWN
 };
 
+enum stm32_dma_transfer_state_e
+{
+  STM32_DMA_UNCONFIGURED = 0,
+  STM32_DMA_READY,
+  STM32_DMA_STARTING,
+  STM32_DMA_RUNNING,
+  STM32_DMA_COMPLETE,
+  STM32_DMA_ERROR,
+  STM32_DMA_STOPPING,
+  STM32_DMA_RECOVERY
+};
+
 struct stm32_dma_channel_s
 {
   enum stm32_dma_controller_e controller;
@@ -67,9 +79,7 @@ struct stm32_dma_channel_s
   int irq;
   bool initialized;
   bool allocated;
-  bool configured;
-  bool in_flight;
-  bool starting;
+  enum stm32_dma_transfer_state_e state;
   enum stm32_dma_abort_state_e abort_state;
   size_t abort_transferred; /* Only meaningful in STM32_DMA_ABORT_VALID */
   struct stm32_dma_request_s request;
@@ -151,6 +161,23 @@ static inline void stm32_dma_putreg(
   const struct stm32_dma_channel_s *channel, uint32_t offset, uint32_t value)
 {
   putreg32(value, channel->base + offset);
+}
+
+static bool stm32_dma_in_flight(
+  const struct stm32_dma_channel_s *channel)
+{
+  return channel->state == STM32_DMA_STARTING ||
+         channel->state == STM32_DMA_RUNNING ||
+         channel->state == STM32_DMA_STOPPING ||
+         channel->state == STM32_DMA_RECOVERY;
+}
+
+static bool stm32_dma_busy(const struct stm32_dma_channel_s *channel)
+{
+  /* An error requires an explicit stop/reset before channel reuse. */
+
+  return stm32_dma_in_flight(channel) ||
+         channel->state == STM32_DMA_ERROR;
 }
 
 static struct stm32_dma_channel_s *stm32_dma_getchannel(DMA_HANDLE handle)
@@ -611,26 +638,31 @@ static int stm32_dma_interrupt(int irq, void *context, void *arg)
                    raw_status);
   status = stm32_dma_status_from_register(raw_status);
 
+  flags = enter_critical_section();
+  channel->status |= status;
+  if (!channel->allocated || channel->state != STM32_DMA_RUNNING)
+    {
+      leave_critical_section(flags);
+      return 0;
+    }
+
   if ((status & (DMA_STATUS_TCF | DMA_STATUS_FATAL)) != 0)
     {
       stm32_dma_cache_invalidate_current(channel);
     }
 
-  flags = enter_critical_section();
-  channel->status |= status;
   if ((status & DMA_STATUS_FATAL) != 0)
     {
       channel->error = -EIO;
-      channel->in_flight = false;
+      channel->state = STM32_DMA_ERROR;
     }
   else if ((status & DMA_STATUS_TCF) != 0)
     {
       if (channel->descriptor_count == 0)
         {
-          channel->in_flight = false;
+          channel->state = STM32_DMA_COMPLETE;
         }
-      else if (channel->list_mode == STM32_DMA_LIST_CIRCULAR ||
-               channel->list_mode == STM32_DMA_LIST_PINGPONG)
+      else if (channel->list_mode != STM32_DMA_LIST_TERMINAL)
         {
           channel->descriptor_index =
             (channel->descriptor_index + 1) % channel->descriptor_count;
@@ -641,11 +673,11 @@ static int stm32_dma_interrupt(int irq, void *context, void *arg)
         }
       else
         {
-          channel->in_flight = false;
+          channel->state = STM32_DMA_COMPLETE;
         }
     }
 
-  callback = channel->allocated ? channel->callback : NULL;
+  callback = channel->callback;
   callback_arg = channel->callback_arg;
   leave_critical_section(flags);
 
@@ -707,9 +739,8 @@ static int stm32_dma_initialize_controller(
 
       flags = enter_critical_section();
       channel->allocated = false;
-      channel->configured = false;
-      channel->in_flight = false;
-      channel->starting = false;
+      channel->state = STM32_DMA_UNCONFIGURED;
+      channel->abort_state = STM32_DMA_ABORT_NONE;
       channel->descriptors = NULL;
       channel->descriptor_count = 0;
       channel->descriptor_index = 0;
@@ -847,9 +878,8 @@ DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request)
       channel = &g_dma_channels[first + i];
       channel->allocated = true;
       channel->request = *request;
-      channel->configured = false;
-      channel->in_flight = false;
-      channel->starting = false;
+      channel->state = STM32_DMA_UNCONFIGURED;
+      channel->abort_state = STM32_DMA_ABORT_NONE;
       channel->descriptors = NULL;
       channel->descriptor_count = 0;
       channel->descriptor_index = 0;
@@ -881,11 +911,7 @@ int stm32_dmafree(DMA_HANDLE handle)
     {
       ret = -EINVAL;
     }
-  else if (channel->starting)
-    {
-      ret = -EBUSY;
-    }
-  else if (channel->in_flight ||
+  else if (stm32_dma_busy(channel) ||
            (stm32_dma_getreg(channel,
                              STM32_DMA_CXCR_OFFSET(channel->channel)) &
             STM32_DMA_CR_EN) != 0)
@@ -898,7 +924,7 @@ int stm32_dmafree(DMA_HANDLE handle)
       stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
                        STM32_DMA_FLAG_CLEAR_MASK);
       channel->allocated = false;
-      channel->configured = false;
+      channel->state = STM32_DMA_UNCONFIGURED;
       channel->descriptors = NULL;
       channel->descriptor_count = 0;
       channel->descriptor_index = 0;
@@ -931,7 +957,7 @@ int stm32_dmasetup(DMA_HANDLE handle,
       goto out;
     }
 
-  if (channel->in_flight ||
+  if (stm32_dma_busy(channel) ||
       (stm32_dma_getreg(channel,
                         STM32_DMA_CXCR_OFFSET(channel->channel)) &
        STM32_DMA_CR_EN) != 0)
@@ -972,7 +998,7 @@ int stm32_dmasetup(DMA_HANDLE handle,
   channel->descriptor_count = 0;
   channel->descriptor_index = 0;
   channel->list_mode = STM32_DMA_LIST_TERMINAL;
-  channel->configured = true;
+  channel->state = STM32_DMA_READY;
   channel->abort_state = STM32_DMA_ABORT_NONE;
   channel->status = 0;
   channel->error = 0;
@@ -1031,7 +1057,7 @@ int stm32_dmallibuild(DMA_HANDLE handle,
       goto out;
     }
 
-  if (channel->in_flight ||
+  if (stm32_dma_busy(channel) ||
       (stm32_dma_getreg(channel,
                         STM32_DMA_CXCR_OFFSET(channel->channel)) &
        STM32_DMA_CR_EN) != 0)
@@ -1096,7 +1122,8 @@ int stm32_dmallibuild(DMA_HANDLE handle,
   channel->descriptor_count = count;
   channel->descriptor_index = 0;
   channel->list_mode = mode;
-  channel->configured = true;
+  channel->state = STM32_DMA_READY;
+  channel->abort_state = STM32_DMA_ABORT_NONE;
   channel->status = 0;
   channel->error = 0;
 
@@ -1177,17 +1204,17 @@ int stm32_dmastart(DMA_HANDLE handle)
       goto out;
     }
 
-  if (!channel->configured)
+  control = stm32_dma_getreg(channel,
+                             STM32_DMA_CXCR_OFFSET(channel->channel));
+  if (stm32_dma_busy(channel) || (control & STM32_DMA_CR_EN) != 0)
     {
-      ret = -EINVAL;
+      ret = -EBUSY;
       goto out;
     }
 
-  control = stm32_dma_getreg(channel,
-                             STM32_DMA_CXCR_OFFSET(channel->channel));
-  if (channel->in_flight || (control & STM32_DMA_CR_EN) != 0)
+  if (channel->state != STM32_DMA_READY)
     {
-      ret = -EBUSY;
+      ret = -EINVAL;
       goto out;
     }
 
@@ -1196,7 +1223,8 @@ int stm32_dmastart(DMA_HANDLE handle)
       for (i = 0; i < STM32_DMA_CHANNELS; i++)
         {
           other = &g_dma_channels[i];
-          if (other != channel && other->allocated && other->in_flight &&
+          if (other != channel && other->allocated &&
+              stm32_dma_busy(other) &&
               other->controller == channel->controller &&
               other->request.request == channel->request.request)
             {
@@ -1212,14 +1240,12 @@ int stm32_dmastart(DMA_HANDLE handle)
       goto out;
     }
 
-  channel->starting = true;
-  channel->in_flight = true;
+  channel->state = STM32_DMA_STARTING;
   leave_critical_section(flags);
 
   stm32_dma_cache_prepare(channel);
 
   flags = enter_critical_section();
-  channel->starting = false;
   stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
                    STM32_DMA_FLAG_CLEAR_MASK);
   channel->status = 0;
@@ -1228,6 +1254,7 @@ int stm32_dmastart(DMA_HANDLE handle)
   channel->abort_state = STM32_DMA_ABORT_NONE;
   control = (channel->config.priority << STM32_DMA_CR_PRIO_SHIFT) |
             STM32_DMA_INTERRUPT_MASK | STM32_DMA_CR_EN;
+  channel->state = STM32_DMA_RUNNING;
   stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel),
                    control);
 
@@ -1241,6 +1268,7 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
   struct stm32_dma_channel_s *channel = stm32_dma_getchannel(handle);
   irqstate_t flags;
   uint32_t control;
+  uint32_t raw_status;
   volatile unsigned int timeout;
   bool was_enabled;
   bool was_active;
@@ -1259,14 +1287,16 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
       return -EINVAL;
     }
 
-  if (channel->starting)
+  if (channel->state == STM32_DMA_STARTING ||
+      channel->state == STM32_DMA_STOPPING)
     {
       leave_critical_section(flags);
       return -EBUSY;
     }
 
   if (transferred != NULL &&
-      (!channel->configured || channel->descriptor_count != 0 ||
+      (channel->state == STM32_DMA_UNCONFIGURED ||
+       channel->descriptor_count != 0 ||
        channel->request.direction != STM32_DMA_MEMORY_TO_PERIPHERAL))
     {
       leave_critical_section(flags);
@@ -1275,13 +1305,25 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
 
   control = stm32_dma_getreg(channel,
                              STM32_DMA_CXCR_OFFSET(channel->channel));
-  was_active = channel->in_flight;
+  if (channel->state == STM32_DMA_UNCONFIGURED &&
+      (control & STM32_DMA_CR_EN) == 0)
+    {
+      channel->error = 0;
+      leave_critical_section(flags);
+      return 0;
+    }
+
+  was_active = stm32_dma_in_flight(channel);
   was_enabled = (control & STM32_DMA_CR_EN) != 0;
+  channel->state = STM32_DMA_STOPPING;
+  up_disable_irq(channel->irq);
   if (was_enabled)
     {
-      up_disable_irq(channel->irq);
+      /* EN ignores writes of zero; do not re-enable a completed channel. */
+
       stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel),
-                       (control & ~STM32_DMA_INTERRUPT_MASK) |
+                       (control & ~(STM32_DMA_INTERRUPT_MASK |
+                                    STM32_DMA_CR_EN)) |
                        STM32_DMA_CR_SUSP);
     }
 
@@ -1293,7 +1335,10 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
         {
           if ((stm32_dma_getreg(channel,
                                 STM32_DMA_CXSR_OFFSET(channel->channel)) &
-               STM32_DMA_FLAG_SUSPF) != 0)
+               STM32_DMA_FLAG_SUSPF) != 0 ||
+              (stm32_dma_getreg(channel,
+                                STM32_DMA_CXCR_OFFSET(channel->channel)) &
+               STM32_DMA_CR_EN) == 0)
             {
               break;
             }
@@ -1301,14 +1346,13 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
 
       if (timeout == 0)
         {
-          flags = enter_critical_section();
-          channel->error = -ETIMEDOUT;
-          leave_critical_section(flags);
-          up_enable_irq(channel->irq);
-          return -ETIMEDOUT;
+          ret = -ETIMEDOUT;
+          goto failed;
         }
     }
 
+  raw_status = stm32_dma_getreg(channel,
+                                STM32_DMA_CXSR_OFFSET(channel->channel));
   if (transferred != NULL &&
       channel->abort_state == STM32_DMA_ABORT_VALID)
     {
@@ -1320,23 +1364,19 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
     {
       size_t remaining;
       size_t buffered;
-      uint32_t status;
       uint32_t fifo_mask;
 
-      status = stm32_dma_getreg(channel,
-                                STM32_DMA_CXSR_OFFSET(channel->channel));
       if (channel->abort_state == STM32_DMA_ABORT_UNKNOWN ||
           (channel->status & DMA_STATUS_DTEF) != 0 ||
-          (status & STM32_DMA_FLAG_DTEF) != 0)
+          (raw_status & STM32_DMA_FLAG_DTEF) != 0)
         {
           /* A bus error does not identify whether the failing destination
            * write had side effects. Do not invent an exact retry boundary.
            */
 
-          channel->error = -EIO;
           channel->abort_state = STM32_DMA_ABORT_UNKNOWN;
-          up_enable_irq(channel->irq);
-          return -EIO;
+          ret = -EIO;
+          goto failed;
         }
 
       fifo_mask = channel->controller == STM32_DMA_CONTROLLER_GPDMA1 ?
@@ -1344,14 +1384,13 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
       remaining = stm32_dma_getreg(channel,
                        STM32_DMA_CXBR1_OFFSET(channel->channel)) &
                   STM32_DMA_BR1_BNDT_MASK;
-      buffered = ((status & fifo_mask) >> STM32_DMA_SR_FIFOL_SHIFT) *
+      buffered = ((raw_status & fifo_mask) >> STM32_DMA_SR_FIFOL_SHIFT) *
                  channel->config.width;
       if (remaining + buffered > channel->config.nbytes)
         {
-          channel->error = -EIO;
           channel->abort_state = STM32_DMA_ABORT_UNKNOWN;
-          up_enable_irq(channel->irq);
-          return -EIO;
+          ret = -EIO;
+          goto failed;
         }
 
       completed = channel->config.nbytes - remaining - buffered;
@@ -1359,7 +1398,16 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
       channel->abort_state = STM32_DMA_ABORT_VALID;
     }
 
-  /* RM0486 requires reset only after the channel has reached SUSPF. */
+  /* RM0486 permits reset when suspended or already disabled. */
+
+  if (channel->abort_state == STM32_DMA_ABORT_NONE)
+    {
+      /* A discard without a snapshot cannot support an exact abort retry
+       * if the reset fails after destroying the hardware counters.
+       */
+
+      channel->abort_state = STM32_DMA_ABORT_UNKNOWN;
+    }
 
   stm32_dma_putreg(channel, STM32_DMA_CXCR_OFFSET(channel->channel),
                    STM32_DMA_CR_RESET);
@@ -1375,11 +1423,8 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
 
   if (timeout == 0)
     {
-      flags = enter_critical_section();
-      channel->error = -ETIMEDOUT;
-      leave_critical_section(flags);
-      up_enable_irq(channel->irq);
-      return -ETIMEDOUT;
+      ret = -ETIMEDOUT;
+      goto failed;
     }
 
   stm32_dma_putreg(channel, STM32_DMA_CXFCR_OFFSET(channel->channel),
@@ -1391,26 +1436,25 @@ static int stm32_dma_stop(DMA_HANDLE handle, size_t *transferred)
       stm32_dma_cache_invalidate_current(channel);
     }
 
-  if (was_enabled)
-    {
-      up_enable_irq(channel->irq);
-    }
-
   flags = enter_critical_section();
-  channel->in_flight = false;
-  channel->configured = false;
-  if (was_enabled)
-    {
-      channel->status |= DMA_STATUS_SUSPF;
-    }
-
-  channel->error = ret;
+  channel->state = STM32_DMA_UNCONFIGURED;
+  channel->status |= stm32_dma_status_from_register(raw_status);
+  channel->error = 0;
+  up_enable_irq(channel->irq);
   leave_critical_section(flags);
   if (transferred != NULL)
     {
       *transferred = completed;
     }
 
+  return 0;
+
+failed:
+  flags = enter_critical_section();
+  channel->state = STM32_DMA_RECOVERY;
+  channel->error = ret;
+  up_enable_irq(channel->irq);
+  leave_critical_section(flags);
   return ret;
 }
 
@@ -1448,12 +1492,15 @@ int stm32_dmastatus(DMA_HANDLE handle, struct stm32_dma_status_s *status)
   else
     {
       status->flags = channel->status;
-      status->remaining = channel->configured ?
+      status->remaining =
+        channel->state != STM32_DMA_UNCONFIGURED &&
+        channel->state != STM32_DMA_STOPPING &&
+        channel->state != STM32_DMA_RECOVERY ?
         stm32_dma_getreg(channel,
                          STM32_DMA_CXBR1_OFFSET(channel->channel)) &
         STM32_DMA_BR1_BNDT_MASK : 0;
       status->error = channel->error;
-      status->in_flight = channel->in_flight;
+      status->in_flight = stm32_dma_in_flight(channel);
     }
 
   leave_critical_section(flags);

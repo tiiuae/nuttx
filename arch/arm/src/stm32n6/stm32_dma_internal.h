@@ -25,44 +25,7 @@
 
 static inline uint8_t stm32_dma_status_from_register(uint32_t status)
 {
-  uint8_t result = 0;
-
-  if ((status & STM32_DMA_FLAG_TCF) != 0)
-    {
-      result |= DMA_STATUS_TCF;
-    }
-
-  if ((status & STM32_DMA_FLAG_HTF) != 0)
-    {
-      result |= DMA_STATUS_HTF;
-    }
-
-  if ((status & STM32_DMA_FLAG_DTEF) != 0)
-    {
-      result |= DMA_STATUS_DTEF;
-    }
-
-  if ((status & STM32_DMA_FLAG_ULEF) != 0)
-    {
-      result |= DMA_STATUS_ULEF;
-    }
-
-  if ((status & STM32_DMA_FLAG_USEF) != 0)
-    {
-      result |= DMA_STATUS_USEF;
-    }
-
-  if ((status & STM32_DMA_FLAG_SUSPF) != 0)
-    {
-      result |= DMA_STATUS_SUSPF;
-    }
-
-  if ((status & STM32_DMA_FLAG_TOF) != 0)
-    {
-      result |= DMA_STATUS_TOF;
-    }
-
-  return result;
+  return (status & STM32_DMA_FLAG_CLEAR_MASK) >> 8;
 }
 
 static inline unsigned int stm32_dma_find_free_channel(uint32_t used_mask,
@@ -115,8 +78,7 @@ static inline uint32_t stm32_dma_lli_link(uintptr_t address, size_t index,
     {
       next = address + (index + 1) * sizeof(struct stm32_dma_lli_s);
     }
-  else if (mode == STM32_DMA_LIST_CIRCULAR ||
-           mode == STM32_DMA_LIST_PINGPONG)
+  else if (mode != STM32_DMA_LIST_TERMINAL)
     {
       next = address;
     }
