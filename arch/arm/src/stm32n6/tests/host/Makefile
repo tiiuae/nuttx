@@ -5,9 +5,11 @@ TEST_SOURCES := stm32_dma_helpers_test.c stm32_i2c_timing_test.c \
 TEST_INCLUDES := -Iinclude -I$(STM32N6_DIR)
 TEST_CFLAGS := -std=c11 -Wall -Wextra -Werror -pthread
 
-.PHONY: check check-serial check-serial-build
+.PHONY: check check-common check-spi check-serial check-serial-build
 
-check:
+check: check-common check-spi
+
+check-common:
 	@set -e; \
 	for source in $(TEST_SOURCES); do \
 	  tmp=$$(mktemp); \
@@ -19,8 +21,11 @@ check:
 	done
 	@HOSTCC="$(HOSTCC)" python3 stm32_serial_driver_test.py
 
+check-spi:
+	@HOSTCC="$(HOSTCC)" python3 -B stm32_spi_driver_test.py
+
 check-serial: TEST_SOURCES = stm32_serial_format_test.c
-check-serial: check
+check-serial: check-common
 
 check-serial-build:
 	@python3 stm32_serial_build_test.py
