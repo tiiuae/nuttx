@@ -170,6 +170,17 @@ int stm32_dmastart(DMA_HANDLE handle);
  */
 
 int stm32_dmastop(DMA_HANDLE handle);
+
+/* Abort a configured, single-block memory-to-peripheral transfer and return
+ * the bytes accepted by the destination, excluding prefetched FIFO data.
+ * The snapshot is taken after suspension and before reset (RM0486 19.8.8).
+ * A data bus error cannot establish the failed write's side effects and
+ * returns -EIO without resetting. On failure, retain the buffer and do not
+ * retry the transfer. Explicit discard may use stm32_dmastop(), but cannot
+ * claim an exact transferred-byte count.
+ */
+
+int stm32_dmaabort(DMA_HANDLE handle, size_t *transferred);
 int stm32_dmastatus(DMA_HANDLE handle, struct stm32_dma_status_s *status);
 
 #endif /* __ARCH_ARM_SRC_STM32N6_STM32_DMA_H */
