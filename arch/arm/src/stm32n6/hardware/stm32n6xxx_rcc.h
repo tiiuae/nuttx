@@ -111,7 +111,7 @@
 #define STM32_RCC_APB2ENCR_OFFSET     0x126c  /* APB2 clock enable clear register */
 #define STM32_RCC_APB1LLPENCR_OFFSET  0x12a4  /* APB1L low-power clock enable clear register */
 #define STM32_RCC_APB2LPENCR_OFFSET   0x12ac  /* APB2 low-power clock enable clear register */
-#define STM32_RCC_APB4LENCR_OFFSET   0x1274  /* APB4L clock enable clear register */
+#define STM32_RCC_APB4LENCR_OFFSET    0x1274  /* APB4L clock enable clear register */
 
 #define STM32_RCC_CSR_OFFSET          0x0800  /* Clock status (set) register */
 
