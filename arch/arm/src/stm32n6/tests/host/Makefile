@@ -5,9 +5,10 @@ TEST_SOURCES := stm32_dma_helpers_test.c stm32_i2c_timing_test.c \
 TEST_INCLUDES := -Iinclude -I$(STM32N6_DIR)
 TEST_CFLAGS := -std=c11 -Wall -Wextra -Werror -pthread
 
-.PHONY: check check-common check-spi check-tim check-serial check-serial-build
+.PHONY: check check-common check-spi check-tim check-serial check-serial-build \
+	check-usb
 
-check: check-common check-spi check-tim
+check: check-common check-spi check-tim check-usb
 
 check-common:
 	@set -e; \
@@ -32,3 +33,6 @@ check-serial: check-common
 
 check-serial-build:
 	@python3 stm32_serial_build_test.py
+
+check-usb:
+	@HOSTCC="$(HOSTCC)" python3 -B stm32_usb_scaffold_test.py
