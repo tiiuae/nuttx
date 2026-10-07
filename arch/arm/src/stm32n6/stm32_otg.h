@@ -17,6 +17,7 @@
 #ifdef CONFIG_STM32_N6_OTGDEV
 
 #include <arch/irq.h>
+#include <stdbool.h>
 #include "hardware/stm32n6xxx_memorymap.h"
 #include "hardware/stm32n6xxx_otg.h"
 #include "hardware/stm32n6xxx_rcc.h"
@@ -73,6 +74,12 @@
 #  define STM32_OTG_RCC_OTHER_EN        (RCC_AHB5ENR_OTG1EN | \
                                         RCC_AHB5ENR_OTGPHY1EN)
 #endif
+
+/* The board must qualify Type-C sink/protection policy and actual VBUS
+ * before reporting presence. This notification never controls VBUS sourcing.
+ */
+
+int stm32_usbdev_vbus(bool present);
 
 #endif /* CONFIG_STM32_N6_OTGDEV */
 #endif /* __ARCH_ARM_SRC_STM32N6_STM32_OTG_H */

@@ -165,7 +165,7 @@ endchoice
 endmenu
 
 menuconfig STM32_N6_OTGDEV
-	bool "STM32N6 USB OTG device initialization"
+	bool "STM32N6 USB OTG device"
 	depends on EXPERIMENTAL
 	default n
 	select USBDEV
@@ -175,10 +175,10 @@ menuconfig STM32_N6_OTGDEV
 		clock/settling contract. The current Nucleo settling allowance
 		is experimental and requires physical qualification.
 
-		Endpoint transfers are not implemented yet: class registration
-		fails with ENOSYS after successful hardware initialization.
-		The device stays disconnected and IRQs stay masked. No board
-		GPIO, Type-C protection, or VBUS source gates are configured.
+		Supports control, bulk, and interrupt transfers through the
+		integrated FIFO RAM. Connection requires a bound class and an
+		explicit, board-qualified VBUS notification. No board GPIO,
+		Type-C protection, or VBUS source gates are configured here.
 
 		Only one integrated HS controller can be selected. Host, DMA,
 		isochronous, composite, and superspeed configurations are rejected
@@ -204,6 +204,16 @@ config STM32_N6_OTGDEV_FS
 	---help---
 		Use full-speed device mode with the integrated HS PHY for initial
 		bring-up. Do not enable USBDEV_DUALSPEED with this option.
+
+config USBDEV_SETUP_MAXDATASIZE
+	int "Maximum control OUT payload"
+	default 4096
+	range 128 65535
+	---help---
+		Storage for multi-packet control OUT requests, independent of
+		EP0's 64-byte packet size. Larger requests are stalled explicitly.
+		This buffer is statically allocated; do not increase it unless
+		the bound class requires a larger control payload.
 
 endif # STM32_N6_OTGDEV
 
