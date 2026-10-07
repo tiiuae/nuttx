@@ -102,12 +102,15 @@
 #define PWR_SVMCR2_VDDIO5SV       (1 << 8)  /* Bit 8: VddIO5 supply valid */
 #define PWR_SVMCR2_VDDIO5VRSEL    (1 << 16) /* Bit 16: VddIO5 high-speed low-voltage */
 
-/* Supply Voltage Monitoring Control Register 3 (PWR_SVMCR3) - VddIO2/3 */
+/* Supply Voltage Monitoring Control Register 3 (PWR_SVMCR3) */
 
+#define PWR_SVMCR3_USB33VMEN      (1u << 2)  /* USB 3.3 V monitor enable */
 #define PWR_SVMCR3_VDDIO2SV       (1 << 8)  /* Bit 8: VddIO2 supply valid */
 #define PWR_SVMCR3_VDDIO3SV       (1 << 9)  /* Bit 9: VddIO3 supply valid */
+#define PWR_SVMCR3_USB33SV        (1u << 10) /* USB 3.3 V supply valid */
 #define PWR_SVMCR3_VDDIO2VRSEL    (1 << 16) /* Bit 16: VddIO2 high-speed low-voltage */
 #define PWR_SVMCR3_VDDIO3VRSEL    (1 << 17) /* Bit 17: VddIO3 high-speed low-voltage */
+#define PWR_SVMCR3_USB33RDY       (1u << 18) /* USB 3.3 V monitor status */
 #define PWR_SVMCR3_VDDIOVRSEL     (1 << 24) /* Bit 24: Vdd I/O voltage range select, 1=1.8V */
 
 #endif /* __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_PWR_H */
