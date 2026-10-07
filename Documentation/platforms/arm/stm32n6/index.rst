@@ -26,14 +26,14 @@ Peripheral Support
 
 The following list indicates peripherals supported in NuttX:
 
-==========  =======  ============================================================
+==========  =======  ====================================================================
 Peripheral  Support  Notes
-==========  =======  ============================================================
+==========  =======  ====================================================================
 GPIO        Yes      GPIO-backed EXTI lines 0-15 via ``stm32_gpiosetevent()``
-PWR         Yes      Partial.
-RCC         Yes      PLL1 clock tree.
+PWR         Partial  Board power and I/O voltage setup.
+RCC         Partial  PLL1 system clock setup and selected peripheral clock gates.
 SPI         Partial  SPI1-SPI6 polling master; board-owned chip select
-USART       Yes      USART1 only.
+USART       Partial  USART1-3/6/10 and UART4/5/7/8/9 serial drivers.
 
 ADC         No
 DCACHE      Partial  Cache maintenance through ARMv8-M primitives
@@ -54,7 +54,57 @@ SDMMC       No
 TIM         Partial  TIM1-TIM18 driver; no board PWM/DShot client yet
 USB         No
 XSPI        No
-==========  =======  ============================================================
+==========  =======  ====================================================================
+
+RCC Support
+===========
+
+The STM32N6 RCC support configures the board's PLL1-based CPU and system
+clock tree and enables selected clocks needed by NuttX. For the
+Nucleo-N657X0-Q, PLL1 is fed by the 64 MHz HSI: M=4 and N=50 produce an
+800 MHz VCO, and IC1 divides it to a 200 MHz CPU clock. IC2, IC6, and IC11
+provide the system clock inputs; the configured bus prescalers result in
+50 MHz HCLK, PCLK1, and PCLK2. The 600/800 MHz CPU operating points are not
+currently configured.
+
+If an earlier boot stage has already switched the CPU and system clocks to
+the expected PLL1 outputs, startup checks the bus prescalers and leaves the
+locked clock configuration in place. Otherwise it configures PLL1, its
+output dividers, the system clock switch, and the bus prescalers. Startup
+also enables the SRAM and GPIO banks and PWR clocks, plus selected DMA and
+USART1 clocks. Other peripheral drivers manage their own instance clocks
+when initialized; RCC support does not enable every peripheral.
+
+The initialization does not program the shared HSI divider (HSIDIV). Serial,
+SPI, and I2C kernel-clock users that select ``hsi_div_ck`` therefore inherit
+its current value from reset or an earlier boot stage. They must account for
+the active divider and keep the shared clock configuration stable while in
+use. This is partial RCC support, not a general runtime clock-management API.
+
+USART Support
+=============
+
+The serial driver in ``arch/arm/src/stm32n6/stm32_serial.c`` provides
+conditional instances for USART1, USART2, USART3, USART6, USART10, UART4,
+UART5, UART7, UART8, and UART9. Each enabled instance requires board TX/RX
+pin definitions; optional RTS/CTS flow control also requires matching board
+pins. Instances use the HSI-derived kernel clock selected through their RCC
+kernel-clock mux and account for the inherited HSIDIV value.
+
+The driver supports interrupt-driven serial I/O, an early polled console,
+7- or 8-bit payloads, no/even/odd parity, and one or two stop bits. With
+``CONFIG_SERIAL_TERMIOS``, supported format and baud settings can be changed
+at runtime. TX DMA is optional through GPDMA1; RX DMA is not implemented.
+The DMA, termios, and flow-control options do not imply that a board has
+electrically routed or validated the corresponding pins and signals.
+
+On the Nucleo-N657X0-Q, USART1 on PE5/PE6 is the ST-LINK VCOM console.
+USART3 on PD8/PD9 is an optional Arduino D1/D0 test-port route enabled in
+the ``nsh-test`` configuration; its target-level serial qualification is
+pending. The other serial instances need separate board pin assignments.
+See the :doc:`Nucleo-N657X0-Q board description
+<boards/nucleo-n657x0-q/index>` for the board routes and configuration
+details.
 
 I2C Support
 ===========
