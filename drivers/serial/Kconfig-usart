@@ -899,4 +899,11 @@ config USART10_OFLOWCONTROL
 	default n
 	select SERIAL_OFLOWCONTROL
 
+config USART10_TXDMA
+	bool "USART10 Tx DMA support"
+	default n
+	select SERIAL_TXDMA
+	---help---
+		Enable Tx DMA transfers on USART10
+
 endmenu

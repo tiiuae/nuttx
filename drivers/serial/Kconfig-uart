@@ -748,4 +748,11 @@ config UART9_OFLOWCONTROL
 	default n
 	select SERIAL_OFLOWCONTROL
 
+config UART9_TXDMA
+	bool "UART9 Tx DMA support"
+	default n
+	select SERIAL_TXDMA
+	---help---
+		Enable Tx DMA transfers on UART9
+
 endmenu

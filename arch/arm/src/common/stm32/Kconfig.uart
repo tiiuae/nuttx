@@ -24,6 +24,7 @@ config STM32_USART1_HAVE_RXDMA
 
 config STM32_USART1_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA2)
 	default y if STM32_STM32F0 && (STM32_DMA2)
 	default y if STM32_STM32F10XX && (STM32_DMA1)
@@ -58,6 +59,7 @@ config STM32_USART2_HAVE_RXDMA
 
 config STM32_USART2_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA1)
 	default y if STM32_STM32F0 && (STM32_DMA1)
 	default y if STM32_STM32F10XX && (STM32_DMA1)
@@ -92,6 +94,7 @@ config STM32_USART3_HAVE_RXDMA
 
 config STM32_USART3_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA1)
 	default y if STM32_STM32F0 && (STM32_DMA1)
 	default y if STM32_STM32F10XX && (STM32_DMA1)
@@ -126,6 +129,7 @@ config STM32_UART4_HAVE_RXDMA
 
 config STM32_UART4_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA1)
 	default y if STM32_STM32F0 && (STM32_DMA1)
 	default y if STM32_STM32F10XX && (STM32_DMA1)
@@ -160,6 +164,7 @@ config STM32_UART5_HAVE_RXDMA
 
 config STM32_UART5_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA1)
 	default y if STM32_STM32F0 && (STM32_DMA1)
 	default y if STM32_STM32F10XX && (STM32_DMA1)
@@ -187,6 +192,7 @@ config STM32_USART6_HAVE_RXDMA
 
 config STM32_USART6_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA2)
 	default y if STM32_STM32F0 && (STM32_DMA2)
 	default y if STM32_STM32F20XX && (STM32_DMA2)
@@ -208,6 +214,7 @@ config STM32_UART7_HAVE_RXDMA
 
 config STM32_UART7_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA1)
 	default y if STM32_STM32F0 && (STM32_DMA1)
 	default y if STM32_STM32F779AX && (STM32_DMA1)
@@ -227,6 +234,7 @@ config STM32_UART8_HAVE_RXDMA
 
 config STM32_UART8_HAVE_TXDMA
 	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 	default y if STM32_STM32C0 && (STM32_DMA1)
 	default y if STM32_STM32F0 && (STM32_DMA1)
 	default y if STM32_STM32F779AX && (STM32_DMA1)
@@ -236,6 +244,14 @@ config STM32_UART8_HAVE_TXDMA
 
 config STM32_1WIREDRIVER
 	bool
+
+config STM32_UART9_HAVE_TXDMA
+	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
+
+config STM32_USART10_HAVE_TXDMA
+	bool
+	default y if ARCH_CHIP_STM32N6 && STM32_GPDMA1
 
 config USART1_RXDMA
 	bool
@@ -332,6 +348,14 @@ config UART8_TXDMA
 	depends on STM32_UART8 && UART8_SERIALDRIVER && STM32_UART8_HAVE_TXDMA
 	---help---
 	In high data rate usage, Tx DMA may reduce CPU load
+
+config UART9_TXDMA
+	bool
+	depends on STM32_UART9 && UART9_SERIALDRIVER && STM32_UART9_HAVE_TXDMA
+
+config USART10_TXDMA
+	bool
+	depends on STM32_USART10 && USART10_SERIALDRIVER && STM32_USART10_HAVE_TXDMA
 
 config STM32_SERIAL_DISABLE_REORDERING
 	bool "Disable reordering of ttySx devices."
