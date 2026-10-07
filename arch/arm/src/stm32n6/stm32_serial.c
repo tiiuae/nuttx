@@ -58,15 +58,19 @@
 #include "arm_internal.h"
 
 #if defined(CONFIG_SERIAL_TXDMA) && defined(CONFIG_STM32_GPDMA1) && \
-    defined(CONFIG_USART1_TXDMA) && \
-    defined(CONFIG_STM32_USART1_SERIALDRIVER)
-#  define STM32_USART1_TXDMA
+    (defined(CONFIG_USART1_TXDMA) || defined(CONFIG_USART2_TXDMA) || \
+     defined(CONFIG_USART3_TXDMA) || defined(CONFIG_UART4_TXDMA) || \
+     defined(CONFIG_UART5_TXDMA) || defined(CONFIG_USART6_TXDMA) || \
+     defined(CONFIG_UART7_TXDMA) || defined(CONFIG_UART8_TXDMA) || \
+     defined(CONFIG_UART9_TXDMA) || defined(CONFIG_USART10_TXDMA))
+#  define STM32_SERIAL_TXDMA
 #endif
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
 #  include "stm32_dma.h"
-#  if defined(CONFIG_STM32_GPDMA1) && defined(CONFIG_USART1_TXDMA)
-#    include "hardware/stm32n6xxx_dmasigmap.h"
+#  define USART_TXDMA_BLOCK_MAX 65535
+#  if CONSOLE_UART > 0
+#    define USART_DEBUG_BUFSIZE 128
 #  endif
 #endif
 
@@ -107,6 +111,15 @@
 /****************************************************************************
  * Private Types
  ****************************************************************************/
+
+#ifdef STM32_SERIAL_TXDMA
+enum stm32_serial_txdma_state_e
+{
+  STM32_SERIAL_TXDMA_IDLE = 0,
+  STM32_SERIAL_TXDMA_BATCH, /* TX buffer owned, no block started */
+  STM32_SERIAL_TXDMA_BLOCK  /* Block started, requires completion or abort */
+};
+#endif
 
 struct stm32_serial_s
 {
@@ -155,11 +168,14 @@ struct stm32_serial_s
   uint32_t          sw_gpio;
 #endif
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
   DMA_HANDLE        txdma;
   uintptr_t         txdma_buffer;
   size_t            txdma_length;
-  volatile bool     txdma_active;
+  size_t            txdma_block;
+  volatile enum stm32_serial_txdma_state_e txdma_state;
+  bool              txdma_was_idle;
+  int               txdma_error;
   volatile bool     txdma_fallback;
 #endif
 };
@@ -191,13 +207,17 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable);
 static bool stm32serial_txready(struct uart_dev_s *dev);
 static bool stm32serial_txempty(struct uart_dev_s *dev);
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
 static void stm32serial_dmainitialize(struct stm32_serial_s *priv);
 static void stm32serial_dmasend(struct uart_dev_s *dev);
 static void stm32serial_dmatxavail(struct uart_dev_s *dev);
 static void stm32serial_dmatxcallback(DMA_HANDLE handle, uint8_t status,
                                       void *arg);
+static int stm32serial_dmaabort(struct stm32_serial_s *priv, bool discard);
 static void stm32serial_dmafallback(struct stm32_serial_s *priv, int error);
+#if CONSOLE_UART > 0
+static bool stm32serial_debugsend(struct stm32_serial_s *priv);
+#endif
 #endif
 
 #ifdef CONFIG_PM
@@ -208,6 +228,13 @@ static int  stm32serial_pmprepare(struct pm_callback_s *cb, int domain,
 /****************************************************************************
  * Private Data
  ****************************************************************************/
+
+#if defined(STM32_SERIAL_TXDMA) && CONSOLE_UART > 0
+static char g_debugbuffer[USART_DEBUG_BUFSIZE];
+static unsigned int g_debughead;
+static unsigned int g_debugtail;
+static bool g_debugoverflow;
+#endif
 
 static const struct uart_ops_s g_uart_ops =
 {
@@ -228,7 +255,7 @@ static const struct uart_ops_s g_uart_ops =
   .txempty        = stm32serial_txempty,
 };
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
 static const struct uart_ops_s g_uart_dma_ops =
 {
   .setup          = stm32serial_setup,
@@ -274,7 +301,7 @@ static struct stm32_serial_s g_usart1priv =
           .size = CONFIG_USART1_TXBUFSIZE,
           .buffer = g_usart1txbuffer
         },
-#ifdef STM32_USART1_TXDMA
+#ifdef CONFIG_USART1_TXDMA
       .ops = &g_uart_dma_ops,
 #else
       .ops = &g_uart_ops,
@@ -324,7 +351,11 @@ static struct stm32_serial_s g_usart2priv =
           .size = CONFIG_USART2_TXBUFSIZE,
           .buffer = g_usart2txbuffer
         },
+#ifdef CONFIG_USART2_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_usart2priv
     },
   .config = &g_usart_config[1],
@@ -370,7 +401,11 @@ static struct stm32_serial_s g_usart3priv =
           .size = CONFIG_USART3_TXBUFSIZE,
           .buffer = g_usart3txbuffer
         },
+#ifdef CONFIG_USART3_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_usart3priv
     },
   .config = &g_usart_config[2],
@@ -416,7 +451,11 @@ static struct stm32_serial_s g_uart4priv =
           .size = CONFIG_UART4_TXBUFSIZE,
           .buffer = g_uart4txbuffer
         },
+#ifdef CONFIG_UART4_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_uart4priv
     },
   .config = &g_usart_config[3],
@@ -462,7 +501,11 @@ static struct stm32_serial_s g_uart5priv =
           .size = CONFIG_UART5_TXBUFSIZE,
           .buffer = g_uart5txbuffer
         },
+#ifdef CONFIG_UART5_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_uart5priv
     },
   .config = &g_usart_config[4],
@@ -508,7 +551,11 @@ static struct stm32_serial_s g_usart6priv =
           .size = CONFIG_USART6_TXBUFSIZE,
           .buffer = g_usart6txbuffer
         },
+#ifdef CONFIG_USART6_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_usart6priv
     },
   .config = &g_usart_config[5],
@@ -554,7 +601,11 @@ static struct stm32_serial_s g_uart7priv =
           .size = CONFIG_UART7_TXBUFSIZE,
           .buffer = g_uart7txbuffer
         },
+#ifdef CONFIG_UART7_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_uart7priv
     },
   .config = &g_usart_config[6],
@@ -600,7 +651,11 @@ static struct stm32_serial_s g_uart8priv =
           .size = CONFIG_UART8_TXBUFSIZE,
           .buffer = g_uart8txbuffer
         },
+#ifdef CONFIG_UART8_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_uart8priv
     },
   .config = &g_usart_config[7],
@@ -646,7 +701,11 @@ static struct stm32_serial_s g_uart9priv =
           .size = CONFIG_UART9_TXBUFSIZE,
           .buffer = g_uart9txbuffer
         },
+#ifdef CONFIG_UART9_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_uart9priv
     },
   .config = &g_usart_config[8],
@@ -692,7 +751,11 @@ static struct stm32_serial_s g_usart10priv =
           .size = CONFIG_USART10_TXBUFSIZE,
           .buffer = g_usart10txbuffer
         },
+#ifdef CONFIG_USART10_TXDMA
+      .ops = &g_uart_dma_ops,
+#else
       .ops = &g_uart_ops,
+#endif
       .priv = &g_usart10priv
     },
   .config = &g_usart_config[9],
@@ -903,11 +966,18 @@ static bool stm32serial_busy(struct stm32_serial_s *priv)
 {
   uint32_t sr;
 
-#ifdef STM32_USART1_TXDMA
-  if (priv->txdma_active)
+#ifdef STM32_SERIAL_TXDMA
+  if (priv->txdma_state != STM32_SERIAL_TXDMA_IDLE)
     {
       return true;
     }
+
+#if CONSOLE_UART > 0
+  if (priv->dev.isconsole && g_debughead != g_debugtail)
+    {
+      return true;
+    }
+#endif
 #endif
 
   sr = stm32serial_getreg(priv, STM32_USART_ISR_OFFSET);
@@ -1105,34 +1175,30 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
 {
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
+  irqstate_t flags = enter_critical_section();
   int ret;
 
   /* Disable all interrupts */
 
   stm32serial_disableusartint(priv, NULL);
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
   if (priv->txdma != NULL)
     {
-      uint32_t cr3;
-      cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
-      stm32serial_putreg(priv, STM32_USART_CR3_OFFSET,
-                         cr3 & ~USART_CR3_DMAT);
-
-      ret = stm32_dmastop(priv->txdma);
+      ret = stm32serial_dmaabort(priv, true);
       if (ret < 0)
         {
           _err("ERROR: USART TX DMA stop failed: %d\n", ret);
           priv->shutdown_error = ret;
-          return;
+          goto out;
         }
-
-      priv->txdma_active = false;
 
       ret = stm32_dmafree(priv->txdma);
       if (ret < 0)
         {
           _err("ERROR: USART TX DMA release failed: %d\n", ret);
+          priv->shutdown_error = ret;
+          goto out;
         }
       else
         {
@@ -1153,7 +1219,7 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
     {
       _err("ERROR: USART disable failed: %d\n", ret);
       priv->shutdown_error = ret;
-      return;
+      goto out;
     }
 
   /* Disable the peripheral before removing its register bus clock. */
@@ -1195,6 +1261,9 @@ static void stm32serial_shutdown(struct uart_dev_s *dev)
       stm32_unconfiggpio(priv->config->rts_gpio);
     }
 #endif
+
+out:
+  leave_critical_section(flags);
 }
 
 /****************************************************************************
@@ -1219,7 +1288,7 @@ static int stm32serial_attach(struct uart_dev_s *dev)
     (struct stm32_serial_s *)dev->priv;
   int ret;
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
   /* Early serial setup runs before arm_dma_initialize(). */
 
   if (dev->ops != &g_uart_ops && priv->txdma == NULL)
@@ -1259,6 +1328,15 @@ static void stm32serial_detach(struct uart_dev_s *dev)
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
 
+#ifdef STM32_SERIAL_TXDMA
+  /* Keep DMA-console debug TX serviced across close. */
+
+  if (dev->isconsole && priv->txdma != NULL)
+    {
+      return;
+    }
+
+#endif
   up_disable_irq(priv->config->irq);
   irq_detach(priv->config->irq);
 }
@@ -1362,6 +1440,14 @@ static int stm32serial_interrupt(int irq, void *context, void *arg)
       if ((sr & USART_ISR_TXE) != 0 &&
           (priv->ie & USART_CR1_TXEIE) != 0)
         {
+#if defined(STM32_SERIAL_TXDMA) && CONSOLE_UART > 0
+          if (stm32serial_debugsend(priv))
+            {
+              handled = true;
+              continue;
+            }
+
+#endif
           /* Transmit data register empty ... process outgoing bytes */
 
           uart_xmitchars(&priv->dev);
@@ -1515,6 +1601,51 @@ static int stm32serial_ioctl(struct file *filep, int cmd,
 
   switch (cmd)
     {
+#ifdef STM32_SERIAL_TXDMA
+      case TCFLSH:
+        {
+          irqstate_t flags = enter_critical_section();
+
+          ret = OK;
+          if ((arg == TCOFLUSH || arg == TCIOFLUSH) &&
+              priv->txdma_state != STM32_SERIAL_TXDMA_IDLE)
+            {
+              ret = stm32serial_dmaabort(priv, true);
+            }
+
+          if (ret == OK)
+            {
+              /* Abort and discard atomically; upper-half fallback has a gap
+               * where a new DMA batch could take ownership before the flush.
+               */
+
+              if (arg == TCOFLUSH || arg == TCIOFLUSH)
+                {
+                  dev->xmit.tail = dev->xmit.head;
+                  uart_datasent(dev);
+#if CONSOLE_UART > 0
+                  if (dev->isconsole && g_debughead != g_debugtail)
+                    {
+                      stm32serial_restoreusartint(priv,
+                        priv->ie | USART_CR1_TXEIE);
+                    }
+
+#endif
+                }
+
+              if (arg == TCIFLUSH || arg == TCIOFLUSH)
+                {
+                  dev->recv.tail = dev->recv.head;
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+                  stm32serial_rxflowcontrol(dev, 0, false);
+#endif
+                }
+            }
+
+          leave_critical_section(flags);
+        }
+        break;
+#endif
 #ifdef CONFIG_SERIAL_TIOCSERGSTRUCT
     case TIOCSERGSTRUCT:
       {
@@ -1909,52 +2040,59 @@ static void stm32serial_send(struct uart_dev_s *dev, int ch)
                      (uint32_t)ch & (priv->bits == 7 ? 0x7f : 0xff));
 }
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
 /****************************************************************************
  * Name: stm32serial_dmainitialize
  *
  * Description:
- *   Allocate the GPDMA1 USART1 TX request. If unavailable, retain the
+ *   Allocate the port's GPDMA1 TX request. If unavailable, retain the
  *   interrupt-driven transmit path.
  *
  ****************************************************************************/
 
 static void stm32serial_dmainitialize(struct stm32_serial_s *priv)
 {
+  struct stm32_dma_request_s request =
+  {
+    .controller = STM32_DMA_CONTROLLER_GPDMA1,
+    .direction = STM32_DMA_MEMORY_TO_PERIPHERAL,
+    .request = priv->config->txrequest,
+    .peripheral_address = priv->config->base + STM32_USART_TDR_OFFSET
+  };
+
+  int ret;
+
   priv->txdma = NULL;
-  priv->txdma_active = false;
+  priv->txdma_state = STM32_SERIAL_TXDMA_IDLE;
+  priv->txdma_error = OK;
   priv->txdma_fallback = true;
 
-#if defined(CONFIG_STM32_GPDMA1) && defined(CONFIG_USART1_TXDMA)
-  {
-    struct stm32_dma_request_s request =
+  priv->txdma = stm32_dmachannel(&request);
+  if (priv->txdma == NULL)
     {
-      .controller = STM32_DMA_CONTROLLER_GPDMA1,
-      .direction = STM32_DMA_MEMORY_TO_PERIPHERAL,
-      .request = priv->config->txrequest,
-      .peripheral_address = priv->config->base + STM32_USART_TDR_OFFSET
-    };
-    int ret;
+      _warn("WARNING: USART TX DMA channel unavailable; using interrupts\n");
+      return;
+    }
 
-    priv->txdma = stm32_dmachannel(&request);
-    if (priv->txdma == NULL)
-      {
-        _warn("WARNING: USART TX DMA channel unavailable; using interrupts\n");
-        return;
-      }
+  ret = stm32_dmacallback(priv->txdma, stm32serial_dmatxcallback, priv);
+  if (ret < 0)
+    {
+      _err("ERROR: USART TX DMA callback setup failed: %d\n", ret);
+      ret = stm32_dmafree(priv->txdma);
+      if (ret < 0)
+        {
+          priv->txdma_error = ret;
+          _err("ERROR: USART TX DMA release failed: %d\n", ret);
+        }
+      else
+        {
+          priv->txdma = NULL;
+        }
 
-    ret = stm32_dmacallback(priv->txdma, stm32serial_dmatxcallback, priv);
-    if (ret < 0)
-      {
-        _err("ERROR: USART TX DMA callback setup failed: %d\n", ret);
-        stm32_dmafree(priv->txdma);
-        priv->txdma = NULL;
-        return;
-      }
+      return;
+    }
 
-    priv->txdma_fallback = false;
-  }
-#endif
+  priv->txdma_fallback = false;
 }
 
 /****************************************************************************
@@ -1987,7 +2125,9 @@ static void stm32serial_dmasend(struct uart_dev_s *dev)
   config.source_address = priv->txdma_buffer;
   config.destination_address =
     priv->config->base + STM32_USART_TDR_OFFSET;
-  config.nbytes = priv->txdma_length;
+  priv->txdma_block = priv->txdma_length > USART_TXDMA_BLOCK_MAX ?
+                      USART_TXDMA_BLOCK_MAX : priv->txdma_length;
+  config.nbytes = priv->txdma_block;
   config.width = 1;
   config.priority = 1;
   config.source_increment = true;
@@ -2000,14 +2140,18 @@ static void stm32serial_dmasend(struct uart_dev_s *dev)
       return;
     }
 
-  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
-  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 | USART_CR3_DMAT);
+  stm32serial_putreg(priv, STM32_USART_ICR_OFFSET, USART_ICR_TCCF);
 
   ret = stm32_dmastart(priv->txdma);
   if (ret < 0)
     {
       stm32serial_dmafallback(priv, ret);
+      return;
     }
+
+  priv->txdma_state = STM32_SERIAL_TXDMA_BLOCK;
+  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 | USART_CR3_DMAT);
 }
 
 /****************************************************************************
@@ -2024,23 +2168,100 @@ static void stm32serial_dmatxavail(struct uart_dev_s *dev)
   struct stm32_serial_s *priv = (struct stm32_serial_s *)dev->priv;
   irqstate_t flags;
 
-  if (priv->txdma == NULL || priv->txdma_fallback)
+  flags = enter_critical_section();
+  if (priv->txdma_error != OK ||
+      priv->txdma_state != STM32_SERIAL_TXDMA_IDLE)
     {
-      stm32serial_txint(dev, true);
+      leave_critical_section(flags);
       return;
     }
 
-  flags = enter_critical_section();
-  if (!priv->txdma_active && dev->xmit.head != dev->xmit.tail)
+#if CONSOLE_UART > 0
+  if (dev->isconsole && g_debughead != g_debugtail &&
+      !(priv->txdma_fallback && dev->xmit.head != dev->xmit.tail))
     {
-      priv->txdma_active = true;
+      stm32serial_restoreusartint(priv, priv->ie | USART_CR1_TXEIE);
+      leave_critical_section(flags);
+      return;
+    }
+
+#endif
+
+  if (priv->txdma == NULL || priv->txdma_fallback)
+    {
+      priv->txdma_fallback = true;
+      stm32serial_txint(dev, true);
+    }
+  else if (dev->xmit.head != dev->xmit.tail)
+    {
+      priv->txdma_state = STM32_SERIAL_TXDMA_BATCH;
       priv->txdma_buffer = 0;
       priv->txdma_length = 0;
+      priv->txdma_was_idle =
+        (stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) &
+         USART_ISR_TC) != 0;
       dev->dmatx.nbytes = 0;
+      stm32serial_restoreusartint(priv, priv->ie & ~USART_CR1_TXEIE);
       uart_xmitchars_dma(dev);
     }
 
   leave_critical_section(flags);
+}
+
+static int stm32serial_dmaabort(struct stm32_serial_s *priv, bool discard)
+{
+  size_t transferred = 0;
+  bool progress_known = true;
+  int ret;
+
+  if (priv->txdma_state == STM32_SERIAL_TXDMA_BLOCK)
+    {
+      ret = stm32_dmaabort(priv->txdma, &transferred);
+      if (ret == -EIO && discard)
+        {
+          _warn("WARNING: USART TX DMA discarding unknown progress\n");
+          progress_known = false;
+          ret = stm32_dmastop(priv->txdma);
+        }
+    }
+  else
+    {
+      ret = stm32_dmastop(priv->txdma);
+    }
+
+  if (ret < 0)
+    {
+      priv->txdma_error = ret;
+      _err("ERROR: USART TX DMA abort failed: %d; retaining TX ownership\n",
+           ret);
+      return ret;
+    }
+
+  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET,
+                     stm32serial_getreg(priv, STM32_USART_CR3_OFFSET) &
+                     ~USART_CR3_DMAT);
+  priv->dev.dmatx.nbytes += transferred;
+  if (progress_known && priv->txdma_state != STM32_SERIAL_TXDMA_IDLE &&
+      priv->txdma_was_idle &&
+      priv->dev.dmatx.nbytes == 0 &&
+      (stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) & USART_ISR_TC) == 0)
+    {
+      uint32_t cr1 = stm32serial_getreg(priv, STM32_USART_CR1_OFFSET);
+
+      /* No TDR write: reset idle TE to reassert TC (RM0486 65.8.11). */
+
+      stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, cr1 & ~USART_CR1_TE);
+      stm32serial_putreg(priv, STM32_USART_CR1_OFFSET, cr1);
+    }
+
+  priv->txdma_state = STM32_SERIAL_TXDMA_IDLE;
+  priv->txdma_buffer = 0;
+  priv->txdma_length = 0;
+  priv->txdma_block = 0;
+  priv->txdma_was_idle = false;
+  priv->txdma_error = OK;
+  uart_xmitchars_done(&priv->dev);
+  return OK;
 }
 
 /****************************************************************************
@@ -2048,35 +2269,20 @@ static void stm32serial_dmatxavail(struct uart_dev_s *dev)
  *
  * Description:
  *   Disable the failed DMA path and retry queued bytes using UART
- *   interrupts. Resetting nbytes keeps the TX buffer intact for retry.
+ *   interrupts only after accounting for all bytes accepted by the USART.
  *
  ****************************************************************************/
 
 static void stm32serial_dmafallback(struct stm32_serial_s *priv, int error)
 {
-  uint32_t cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
-  int ret;
-
-  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 & ~USART_CR3_DMAT);
-
-  if (priv->txdma != NULL)
+  priv->txdma_fallback = true;
+  if (priv->txdma != NULL && stm32serial_dmaabort(priv, false) < 0)
     {
-      ret = stm32_dmastop(priv->txdma);
-      if (ret < 0)
-        {
-          _err("ERROR: USART TX DMA abort failed: %d\n", ret);
-          return;
-        }
+      return;
     }
 
-  priv->txdma_active = false;
-  priv->txdma_fallback = true;
-  priv->txdma_buffer = 0;
-  priv->txdma_length = 0;
-  priv->dev.dmatx.nbytes = 0;
   _err("ERROR: USART TX DMA failed (%d); using interrupts\n", error);
-  uart_xmitchars_done(&priv->dev);
-  stm32serial_txint(&priv->dev, true);
+  stm32serial_dmatxavail(&priv->dev);
 }
 
 /****************************************************************************
@@ -2092,41 +2298,101 @@ static void stm32serial_dmatxcallback(DMA_HANDLE handle, uint8_t status,
                                       void *arg)
 {
   struct stm32_serial_s *priv = (struct stm32_serial_s *)arg;
+  irqstate_t flags = enter_critical_section();
   uint32_t cr3;
 
-  UNUSED(handle);
+  if (handle != priv->txdma ||
+      priv->txdma_state != STM32_SERIAL_TXDMA_BLOCK ||
+      priv->txdma_error != OK)
+    {
+      goto out;
+    }
 
   if ((status & (DMA_STATUS_FATAL | DMA_STATUS_TOF | DMA_STATUS_SUSPF)) != 0)
     {
       stm32serial_dmafallback(priv, -EIO);
-      return;
+      goto out;
     }
 
   if ((status & DMA_STATUS_TCF) == 0)
     {
-      return;
+      goto out;
     }
 
-  priv->dev.dmatx.nbytes += priv->txdma_length;
+  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
+  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 & ~USART_CR3_DMAT);
+  priv->txdma_state = STM32_SERIAL_TXDMA_BATCH;
+  priv->dev.dmatx.nbytes += priv->txdma_block;
+  priv->txdma_buffer += priv->txdma_block;
+  priv->txdma_length -= priv->txdma_block;
+
+  if (priv->txdma_length > 0)
+    {
+      stm32serial_dmasend(&priv->dev);
+      goto out;
+    }
 
   if (priv->dev.dmatx.nlength > 0)
     {
       priv->txdma_buffer = (uintptr_t)priv->dev.dmatx.nbuffer;
       priv->txdma_length = priv->dev.dmatx.nlength;
-      priv->dev.dmatx.length = priv->dev.dmatx.nlength;
       priv->dev.dmatx.nlength = 0;
       stm32serial_dmasend(&priv->dev);
-      return;
+      goto out;
     }
 
-  cr3 = stm32serial_getreg(priv, STM32_USART_CR3_OFFSET);
-  stm32serial_putreg(priv, STM32_USART_CR3_OFFSET, cr3 & ~USART_CR3_DMAT);
-  priv->txdma_active = false;
+  priv->txdma_state = STM32_SERIAL_TXDMA_IDLE;
   priv->txdma_buffer = 0;
   priv->txdma_length = 0;
   uart_xmitchars_done(&priv->dev);
   uart_dmatxavail(&priv->dev);
+out:
+  leave_critical_section(flags);
 }
+
+#if CONSOLE_UART > 0
+static bool stm32serial_debugsend(struct stm32_serial_s *priv)
+{
+  static const char overflow[] = "\r\nERROR: USART debug TX overflow\r\n";
+  irqstate_t flags = enter_critical_section();
+  unsigned int i;
+
+  if (!priv->dev.isconsole || g_debughead == g_debugtail ||
+      (priv->txdma_fallback &&
+       priv->dev.xmit.head != priv->dev.xmit.tail))
+    {
+      leave_critical_section(flags);
+      return false;
+    }
+
+  while (g_debughead != g_debugtail && stm32serial_txready(&priv->dev))
+    {
+      stm32serial_send(&priv->dev, g_debugbuffer[g_debugtail]);
+      g_debugtail = (g_debugtail + 1) % USART_DEBUG_BUFSIZE;
+    }
+
+  if (g_debughead == g_debugtail)
+    {
+      if (g_debugoverflow)
+        {
+          g_debugoverflow = false;
+          for (i = 0; i < sizeof(overflow) - 1; i++)
+            {
+              g_debugbuffer[g_debughead] = overflow[i];
+              g_debughead = (g_debughead + 1) % USART_DEBUG_BUFSIZE;
+            }
+        }
+      else
+        {
+          stm32serial_restoreusartint(priv, priv->ie & ~USART_CR1_TXEIE);
+          stm32serial_dmatxavail(&priv->dev);
+        }
+    }
+
+  leave_critical_section(flags);
+  return true;
+}
+#endif
 #endif
 
 /****************************************************************************
@@ -2143,7 +2409,13 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable)
     (struct stm32_serial_s *)dev->priv;
   irqstate_t flags;
 
-#ifdef STM32_USART1_TXDMA
+#ifdef STM32_SERIAL_TXDMA
+  if (priv->txdma_error != OK ||
+      priv->txdma_state != STM32_SERIAL_TXDMA_IDLE)
+    {
+      return;
+    }
+
   if (priv->txdma != NULL && !priv->txdma_fallback)
     {
       if (enable)
@@ -2178,6 +2450,7 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable)
           leave_critical_section(flags);
           return;
         }
+
 #  endif
 
       stm32serial_restoreusartint(priv, ie);
@@ -2193,6 +2466,15 @@ static void stm32serial_txint(struct uart_dev_s *dev, bool enable)
     {
       /* Disable the TX interrupt */
 
+#if defined(STM32_SERIAL_TXDMA) && CONSOLE_UART > 0
+      if (dev->isconsole && g_debughead != g_debugtail &&
+          dev->xmit.head == dev->xmit.tail)
+        {
+          stm32serial_restoreusartint(priv, priv->ie | USART_CR1_TXEIE);
+          leave_critical_section(flags);
+          return;
+        }
+#endif
       stm32serial_restoreusartint(priv, priv->ie & ~USART_CR1_TXEIE);
     }
 
@@ -2229,11 +2511,18 @@ static bool stm32serial_txempty(struct uart_dev_s *dev)
   struct stm32_serial_s *priv =
     (struct stm32_serial_s *)dev->priv;
 
-#ifdef STM32_USART1_TXDMA
-  if (priv->txdma_active)
+#ifdef STM32_SERIAL_TXDMA
+  if (priv->txdma_state != STM32_SERIAL_TXDMA_IDLE)
     {
       return false;
     }
+
+#if CONSOLE_UART > 0
+  if (dev->isconsole && g_debughead != g_debugtail)
+    {
+      return false;
+    }
+#endif
 #endif
 
   return ((stm32serial_getreg(priv, STM32_USART_ISR_OFFSET) &
@@ -2454,6 +2743,42 @@ void up_putc(int ch)
   uint16_t ie;
 
   flags = spin_lock_irqsave(&priv->lock);
+#ifdef STM32_SERIAL_TXDMA
+  if (priv->txdma_state != STM32_SERIAL_TXDMA_IDLE ||
+      g_debughead != g_debugtail ||
+      (priv->txdma != NULL && priv->txdma_fallback &&
+       priv->dev.xmit.head != priv->dev.xmit.tail))
+    {
+      unsigned int space = (g_debugtail + USART_DEBUG_BUFSIZE -
+                            g_debughead - 1) % USART_DEBUG_BUFSIZE;
+      unsigned int needed = ch == '\n' ? 2 : 1;
+
+      if (space < needed)
+        {
+          g_debugoverflow = true;
+        }
+      else
+        {
+          if (ch == '\n')
+            {
+              g_debugbuffer[g_debughead] = '\r';
+              g_debughead = (g_debughead + 1) % USART_DEBUG_BUFSIZE;
+            }
+
+          g_debugbuffer[g_debughead] = ch;
+          g_debughead = (g_debughead + 1) % USART_DEBUG_BUFSIZE;
+        }
+
+      if (priv->txdma_state == STM32_SERIAL_TXDMA_IDLE)
+        {
+          stm32serial_setusartint(priv, priv->ie | USART_CR1_TXEIE);
+        }
+
+      spin_unlock_irqrestore(&priv->lock, flags);
+      return;
+    }
+
+#endif
   ie = priv->ie;
   stm32serial_setusartint(priv, 0);
 
