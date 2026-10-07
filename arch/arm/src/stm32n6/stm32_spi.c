@@ -79,6 +79,13 @@
 #define SPI_SR_ERRORS               (SPI_SR_MODF | SPI_SR_TIFRE | \
                                      SPI_SR_CRCE | SPI_SR_OVR | SPI_SR_UDR)
 
+enum stm32_spi_state_e
+{
+  SPI_STATE_UNINITIALIZED = 0,
+  SPI_STATE_READY,
+  SPI_STATE_FAULTED
+};
+
 struct stm32_spi_priv_s
 {
   struct spi_dev_s dev;
@@ -97,10 +104,7 @@ struct stm32_spi_priv_s
   uint8_t nbits;
   enum spi_mode_e mode;
   int last_error;
-  bool lock_initialized;
-  bool reset_done;
-  bool initialized;
-  bool faulted;
+  enum stm32_spi_state_e state;
 };
 
 struct spi_deadline_s
@@ -179,6 +183,7 @@ static const struct spi_ops_s g_spi_ops =
                              selmask, selval)                            \
   {                                                                      \
     .dev             = { &g_spi_ops },                                   \
+    .lock            = NXMUTEX_INITIALIZER,                              \
     .base            = (b),                                              \
     .rcc_enable      = (en),                                             \
     .rcc_reset_set   = (rstset),                                         \
@@ -478,22 +483,10 @@ static int spi_initialize(struct stm32_spi_priv_s *priv)
   int ret;
 
   flags = enter_critical_section();
-  if (priv->initialized)
+  if (priv->state != SPI_STATE_UNINITIALIZED)
     {
       leave_critical_section(flags);
       return OK;
-    }
-
-  if (!priv->lock_initialized)
-    {
-      ret = nxmutex_init(&priv->lock);
-      if (ret < 0)
-        {
-          leave_critical_section(flags);
-          return ret;
-        }
-
-      priv->lock_initialized = true;
     }
 
   if (!spi_dwt_initialize())
@@ -520,12 +513,8 @@ static int spi_initialize(struct stm32_spi_priv_s *priv)
       return ret;
     }
 
-  if (!priv->reset_done)
-    {
-      putreg32(priv->rcc_reset_mask, priv->rcc_reset_set);
-      putreg32(priv->rcc_reset_mask, priv->rcc_reset_clear);
-      priv->reset_done = true;
-    }
+  putreg32(priv->rcc_reset_mask, priv->rcc_reset_set);
+  putreg32(priv->rcc_reset_mask, priv->rcc_reset_clear);
 
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, 0);
   spi_putreg(priv, STM32_SPI_IER_OFFSET, 0);
@@ -542,7 +531,7 @@ static int spi_initialize(struct stm32_spi_priv_s *priv)
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI | SPI_CR1_SPE);
   up_udelay(1);
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
-  priv->initialized = true;
+  priv->state = SPI_STATE_READY;
   leave_critical_section(flags);
   return OK;
 }
@@ -628,6 +617,26 @@ static uint8_t spi_status(struct spi_dev_s *dev, uint32_t devid)
     }
 }
 
+/* Call with SPE disabled. Only a healthy master can skip reconfiguration. */
+
+static void spi_apply_config(struct stm32_spi_priv_s *priv,
+                             unsigned int offset, uint32_t value)
+{
+  if (priv->state == SPI_STATE_READY &&
+      spi_getreg(priv, offset) == value &&
+      (spi_getreg(priv, STM32_SPI_CFG2_OFFSET) & SPI_CFG2_MASTER) != 0 &&
+      (spi_getreg(priv, STM32_SPI_SR_OFFSET) & SPI_SR_ERRORS) == 0)
+    {
+      return;
+    }
+
+  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
+  spi_putreg(priv, offset, value);
+  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI | SPI_CR1_SPE);
+  up_udelay(1);
+  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
+}
+
 static int spi_apply_mode(struct stm32_spi_priv_s *priv)
 {
   uint32_t cfg2 = SPI_CFG2_AFCNTR | SPI_CFG2_MASTER | SPI_CFG2_SSM |
@@ -659,11 +668,7 @@ static int spi_apply_mode(struct stm32_spi_priv_s *priv)
         return -EINVAL;
     }
 
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
-  spi_putreg(priv, STM32_SPI_CFG2_OFFSET, cfg2);
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI | SPI_CR1_SPE);
-  up_udelay(1);
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
+  spi_apply_config(priv, STM32_SPI_CFG2_OFFSET, cfg2);
   return OK;
 }
 
@@ -685,16 +690,6 @@ static void spi_setmode(struct spi_dev_s *dev, enum spi_mode_e mode)
 static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
 {
   struct stm32_spi_priv_s *priv = (struct stm32_spi_priv_s *)dev;
-  static const uint16_t dividers[] =
-  {
-    2, 4, 8, 16, 32, 64, 128, 256
-  };
-  static const uint32_t mbr[] =
-  {
-    SPI_CFG1_MBR_DIV2, SPI_CFG1_MBR_DIV4, SPI_CFG1_MBR_DIV8,
-    SPI_CFG1_MBR_DIV16, SPI_CFG1_MBR_DIV32, SPI_CFG1_MBR_DIV64,
-    SPI_CFG1_MBR_DIV128, SPI_CFG1_MBR_DIV256
-  };
   uint32_t actual = 0;
   uint32_t kernel_frequency;
   uint32_t cfg1;
@@ -717,9 +712,9 @@ static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
       return 0;
     }
 
-  for (i = 0; i < sizeof(dividers) / sizeof(dividers[0]); i++)
+  for (i = 0; i <= (SPI_CFG1_MBR_MASK >> SPI_CFG1_MBR_SHIFT); i++)
     {
-      uint32_t candidate = kernel_frequency / dividers[i];
+      uint32_t candidate = kernel_frequency >> (i + 1);
 
       if (candidate <= frequency)
         {
@@ -745,12 +740,8 @@ static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
 
   cfg1 = spi_getreg(priv, STM32_SPI_CFG1_OFFSET);
   cfg1 &= ~SPI_CFG1_MBR_MASK;
-  cfg1 |= mbr[i];
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
-  spi_putreg(priv, STM32_SPI_CFG1_OFFSET, cfg1);
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI | SPI_CR1_SPE);
-  up_udelay(1);
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
+  cfg1 |= (uint32_t)i << SPI_CFG1_MBR_SHIFT;
+  spi_apply_config(priv, STM32_SPI_CFG1_OFFSET, cfg1);
 
   priv->kernel_frequency = kernel_frequency;
   priv->frequency = actual;
@@ -781,11 +772,7 @@ static void spi_setbits(struct spi_dev_s *dev, int nbits)
   cfg1 &= ~SPI_CFG1_DSIZE_MASK;
   cfg1 |= nbits == 8 ? SPI_CFG1_DSIZE_8BIT : SPI_CFG1_DSIZE_16BIT;
 
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
-  spi_putreg(priv, STM32_SPI_CFG1_OFFSET, cfg1);
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI | SPI_CR1_SPE);
-  up_udelay(1);
-  spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
+  spi_apply_config(priv, STM32_SPI_CFG1_OFFSET, cfg1);
   priv->nbits = nbits;
   priv->last_error = 0;
 }
@@ -930,7 +917,35 @@ static int spi_drain_rx(struct stm32_spi_priv_s *priv,
   return OK;
 }
 
-static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
+static int spi_receive_frames(struct stm32_spi_priv_s *priv,
+                              uint8_t *buffer, size_t offset, size_t nframes,
+                              size_t *rxframes, uint32_t *status,
+                              const struct spi_deadline_s *deadline)
+{
+  while (spi_rx_pending(*status))
+    {
+      uint16_t frame;
+
+      if (spi_deadline_expired(deadline))
+        {
+          return -ETIMEDOUT;
+        }
+
+      if (*rxframes >= nframes)
+        {
+          return -EIO;
+        }
+
+      frame = spi_read_rxframe(priv);
+      spi_put_rxframe(buffer, offset + *rxframes, priv->nbits, frame);
+      (*rxframes)++;
+      *status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
+    }
+
+  return OK;
+}
+
+static void spi_abort_transfer(struct stm32_spi_priv_s *priv)
 {
   struct spi_deadline_s deadline;
   uint32_t cr1;
@@ -949,7 +964,7 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
           (spi_getreg(priv, STM32_SPI_CFG2_OFFSET) & SPI_CFG2_MASTER) == 0 ||
           (spi_getreg(priv, STM32_SPI_SR_OFFSET) & SPI_SR_MODF) != 0)
         {
-          priv->faulted = true;
+          priv->state = SPI_STATE_FAULTED;
           spierr("ERROR: SPI%u master configuration recovery failed: %d\n",
                  priv->bus, ret < 0 ? ret : -EIO);
         }
@@ -959,15 +974,14 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
 
   if (!spi_deadline_start(&deadline, SPI_ABORT_TIMEOUT_US))
     {
-      priv->faulted = true;
+      priv->state = SPI_STATE_FAULTED;
       spierr("ERROR: SPI%u recovery deadline initialization failed\n",
              priv->bus);
       return;
     }
 
   status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
-  if (started && (cr1 & SPI_CR1_CSTART) != 0 &&
-      (status & SPI_SR_EOT) == 0)
+  if ((cr1 & SPI_CR1_CSTART) != 0 && (status & SPI_SR_EOT) == 0)
     {
       spi_putreg(priv, STM32_SPI_CR1_OFFSET,
                  SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_CSUSP);
@@ -977,7 +991,7 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
         {
           if (spi_deadline_expired(&deadline))
             {
-              priv->faulted = true;
+              priv->state = SPI_STATE_FAULTED;
               spierr("ERROR: SPI%u suspend timed out after transfer failure\n",
                      priv->bus);
               return;
@@ -988,7 +1002,7 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
   ret = spi_drain_rx(priv, &deadline);
   if (ret < 0)
     {
-      priv->faulted = true;
+      priv->state = SPI_STATE_FAULTED;
       spierr("ERROR: SPI%u RX FIFO drain timed out after transfer failure\n",
              priv->bus);
     }
@@ -999,14 +1013,14 @@ static void spi_abort_transfer(struct stm32_spi_priv_s *priv, bool started)
 
 static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
                               const uint8_t *txbuffer, uint8_t *rxbuffer,
-                              size_t offset, size_t nframes, bool *started)
+                              size_t offset, size_t nframes)
 {
   struct spi_deadline_s deadline;
   size_t txframes = 0;
   size_t rxframes = 0;
-  bool extra_rx = false;
   uint32_t status;
   uint32_t cr1;
+  int ret;
 
   if (!spi_deadline_start(&deadline,
                           spi_transfer_timeout_us(priv, nframes)))
@@ -1019,7 +1033,6 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
   spi_putreg(priv, STM32_SPI_CR2_OFFSET,
              (uint32_t)nframes & SPI_CR2_TSIZE_MASK);
 
-  *started = false;
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI | SPI_CR1_SPE);
   while ((spi_getreg(priv, STM32_SPI_SR_OFFSET) & SPI_SR_TXP) == 0)
     {
@@ -1039,7 +1052,6 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
   txframes++;
   cr1 = spi_getreg(priv, STM32_SPI_CR1_OFFSET);
   spi_putreg(priv, STM32_SPI_CR1_OFFSET, cr1 | SPI_CR1_CSTART);
-  *started = true;
 
   for (;;)
     {
@@ -1049,29 +1061,11 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
           return -EIO;
         }
 
-      while (spi_rx_pending(status))
+      ret = spi_receive_frames(priv, rxbuffer, offset, nframes, &rxframes,
+                               &status, &deadline);
+      if (ret < 0)
         {
-          uint16_t frame;
-
-          if (spi_deadline_expired(&deadline))
-            {
-              return -ETIMEDOUT;
-            }
-
-          frame = spi_read_rxframe(priv);
-
-          if (rxframes < nframes)
-            {
-              spi_put_rxframe(rxbuffer, offset + rxframes, priv->nbits,
-                              frame);
-            }
-          else
-            {
-              extra_rx = true;
-            }
-
-          rxframes++;
-          status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
+          return ret;
         }
 
       if (txframes < nframes && (status & SPI_SR_TXP) != 0)
@@ -1090,29 +1084,11 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
               return -EIO;
             }
 
-          while (spi_rx_pending(status))
+          ret = spi_receive_frames(priv, rxbuffer, offset, nframes, &rxframes,
+                                   &status, &deadline);
+          if (ret < 0)
             {
-              uint16_t frame;
-
-              if (spi_deadline_expired(&deadline))
-                {
-                  return -ETIMEDOUT;
-                }
-
-              frame = spi_read_rxframe(priv);
-
-              if (rxframes < nframes)
-                {
-                  spi_put_rxframe(rxbuffer, offset + rxframes, priv->nbits,
-                                  frame);
-                }
-              else
-                {
-                  extra_rx = true;
-                }
-
-              rxframes++;
-              status = spi_getreg(priv, STM32_SPI_SR_OFFSET);
+              return ret;
             }
 
           if (spi_deadline_expired(&deadline))
@@ -1120,17 +1096,12 @@ static int spi_transfer_chunk(struct stm32_spi_priv_s *priv,
               return -ETIMEDOUT;
             }
 
-          if (rxframes == nframes && !extra_rx)
+          if (rxframes == nframes)
             {
               up_udelay(1);
               spi_putreg(priv, STM32_SPI_CR1_OFFSET, SPI_CR1_SSI);
               spi_putreg(priv, STM32_SPI_IFCR_OFFSET, SPI_IFCR_CLEARABLE);
               return OK;
-            }
-
-          if (rxframes > nframes || extra_rx)
-            {
-              return -EIO;
             }
         }
 
@@ -1149,7 +1120,6 @@ static int spi_transfer(struct stm32_spi_priv_s *priv,
   size_t offset = 0;
   size_t wordsize = priv->nbits / 8;
   uint32_t kernel_frequency;
-  bool started;
   int ret = OK;
 
   if (nwords == 0)
@@ -1164,7 +1134,7 @@ static int spi_transfer(struct stm32_spi_priv_s *priv,
       goto failed;
     }
 
-  if (priv->faulted)
+  if (priv->state == SPI_STATE_FAULTED)
     {
       ret = -EIO;
       goto failed;
@@ -1195,11 +1165,10 @@ static int spi_transfer(struct stm32_spi_priv_s *priv,
           nframes = SPI_CR2_TSIZE_MASK;
         }
 
-      started = false;
-      ret = spi_transfer_chunk(priv, tx, rx, offset, nframes, &started);
+      ret = spi_transfer_chunk(priv, tx, rx, offset, nframes);
       if (ret < 0)
         {
-          spi_abort_transfer(priv, started);
+          spi_abort_transfer(priv);
           goto failed;
         }
 

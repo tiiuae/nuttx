@@ -37,6 +37,11 @@ extern "C"
 {
 #endif
 
+/* Repeated initialization preserves configuration and does not recover a
+ * faulted bus. Configuration callbacks validate repeated requests before
+ * skipping unchanged register writes.
+ */
+
 struct spi_dev_s *stm32_spibus_initialize(int bus);
 
 /* Read the last configuration/transfer result without clearing it.
