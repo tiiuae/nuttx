@@ -137,6 +137,9 @@
  */
 
 #define STM32_DMA_BR1_BNDT_MASK        0xffffu
+#define STM32_DMA_SR_FIFOL_SHIFT       16
+#define STM32_GPDMA_SR_FIFOL_MASK      (0xffu << STM32_DMA_SR_FIFOL_SHIFT)
+#define STM32_HPDMA_SR_FIFOL_MASK      (0x1ffu << STM32_DMA_SR_FIFOL_SHIFT)
 #define STM32_DMA_BR1_BRC_SHIFT        16
 #define STM32_DMA_BR1_BRC_MASK         (0x7ffu << STM32_DMA_BR1_BRC_SHIFT)
 #define STM32_DMA_BR1_SDEC             (1u << 28)
