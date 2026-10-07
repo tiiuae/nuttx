@@ -66,6 +66,14 @@
 #define STM32_PCLK1_FREQUENCY   STM32_HCLK_FREQUENCY
 #define STM32_PCLK2_FREQUENCY   STM32_HCLK_FREQUENCY
 
+/* C02 X3 is a 48 MHz crystal; USB uses its direct HSE/2 output.
+ * DS14791 Rev 1 Table 37 gives 2 ms typical startup, without a maximum.
+ * This experimental settling allowance still needs board qualification.
+ */
+
+#define BOARD_USB_HSE_FREQUENCY          48000000ul
+#define BOARD_USB_HSE_STABILIZATION_US   10000u
+
 /* The opt-in I2C2 route follows the Nucleo BSP pin assignment.  Bus use
  * remains disabled by default until the attached wiring is qualified.
  */

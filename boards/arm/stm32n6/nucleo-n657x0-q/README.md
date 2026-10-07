@@ -30,6 +30,76 @@ There is also a `nsh` / `ostest` / `leds` set of configurations that build for
 DEV boot mode (`sram.ld`, loaded by the debugger with `tools/sramload.sh`).
 Those are for quick edit/debug cycles and are not covered here.
 
+## Application USB hardware contract (not yet enabled)
+
+CN10/ST-LINK provides the USART1 console on PE5/PE6; its host
+`/dev/ttyACM*` device does not demonstrate native STM32N6 USB support.
+The application USB connector is **CN8**, connected to **USB1 OTG HS**
+through dedicated OTG1_HSDM/HSDP pads (UM3417 section 7.11, Table 8).
+
+The architecture now has default-off, experimental
+`CONFIG_STM32_N6_OTGDEV` initialization support, with an exclusive
+USB1/USB2 choice.
+USB1 is the controller connected to CN8. Forced full speed
+(`CONFIG_STM32_N6_OTGDEV_FS`) defaults on; combining it with
+`CONFIG_USBDEV_DUALSPEED` is rejected. Host, DMA, isochronous, composite,
+and superspeed configurations are also rejected.
+
+When enabled, initialization performs bounded supply, HSE, PHY, and core
+setup with register readback and stage-aware failure cleanup. It requires
+secure privileged thread execution and the normal startup PWR clock;
+it does not change RIFSC policy. Calls rejected for execution context
+leave hardware untouched. Successful initialization leaves IRQs
+disabled, all endpoint interrupts masked, software session-valid
+inactive, and the device soft-disconnected. No GPIO or TCPP03 registers
+are touched.
+
+Endpoint operations are not implemented: class registration returns
+`-ENOSYS` after successful hardware initialization, or the retained
+initialization error after failure, without binding the class.
+Existing defconfigs remain USB-disabled. This is not yet an enumerating
+USB device, CDC-ACM connection, or USB console.
+
+Initialization takes over the selected controller and its PHY resets;
+teardown holds them in reset rather than restoring a bootloader USB
+session. Cleanup preserves inherited clock gates, unrelated clock
+selectors, and supply enables needed by the other USB port. A newly
+started HSE is rolled back if startup fails, but once stable it is
+retained as a shared board clock across teardown and later failures.
+
+The current bring-up target is MB1940-N657X0Q-C02, with user-confirmed
+CN10 board power and CN9 [1-2]. Retain that arrangement. C02 sheet 8
+shows a separate provider path from the board 5 V rail through SB1/Q2
+to CN8: CN9 [1-2] does not disconnect it. Keep the TCPP03 provider gate
+off to prevent driving the host's VBUS.
+
+C02 sheet 3 confirms X3 is a 48 MHz crystal, not a digital bypass clock.
+The selected PHY reference is HSE/2, 24 MHz: crystal mode, HSEDIV2SEL=1,
+OTGPHY1CKREFSEL=1, and PHY FSEL=2. Initialization enables or verifies this
+clock contract; it rejects a conflicting live HSE configuration.
+HSERDY alone does not establish nominal frequency (RM0486 section 14.3).
+DS14791 Rev 1, Table 37 gives 2 ms typical crystal startup with no maximum.
+`BOARD_USB_HSE_STABILIZATION_US` currently provides an **experimental
+10 ms** settling allowance after HSERDY, not a qualified maximum.
+Physical population, oscillator frequency/startup, rails, and boot
+without a CN8 cable still require board qualification.
+
+C02 sheets 4/9 supply VDD33USB from VDD3V3 through R149 and VDDA18USB
+from VDDA1V8. VDD3V3 and the MCU's VDDIO use separate regulators.
+USB supply initialization therefore needs the independent-supply
+monitor/ready/valid sequence, not an assumption that VDD33USB equals VDD.
+Initialization performs that sequence; VDDA18USB has no software-ready
+monitor and still needs a physical rail check.
+
+CN8 also needs static-sink Type-C/protection handling: TCPP03 is controlled
+over I2C2 PB10/PB11, with PA7 enable and PD2 interrupt; PA11 is analog
+VSENSE, not USB D-. Its 140-kohm/10-kohm divider produces VBUS/15 and
+cannot be used as a digital GPIO-high VBUS detector. I2C2 has onboard
+1.5-kohm pull-ups to VDDIO. RM0486 section 72.4.2 rules out using the
+OTG PHY as the board VBUS detector. Physical rail checks, CC behavior,
+I2C timing, and attach/detach handling remain qualification gates;
+native USB attachment and transfers are not implemented yet.
+
 ## Prerequisites
 
 * `arm-none-eabi-` toolchain (Arm GNU Toolchain, AArch32 bare-metal).
