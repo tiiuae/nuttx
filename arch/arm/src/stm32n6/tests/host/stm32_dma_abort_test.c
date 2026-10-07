@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "stm32_dma_internal.h"
+#include "hardware/stm32n6xxx_dmasigmap.h"
 #include "hardware/stm32n6xxx_gpdma.h"
 #include "hardware/stm32n6xxx_hpdma.h"
 
@@ -25,7 +26,16 @@
 #define UNUSED(value) (void)(value)
 #define STM32_DMA_WAIT_LOOPS 4
 #define STM32_DMA_CHANNELS 32
+#define STM32_DMA_CHANNELS_PER_CONTROLLER 16
+#define STM32_DMA_GPDMA_OFFSET 16
+#define CONFIG_STM32_HPDMA1 1
+#define CONFIG_STM32_HPDMA1_NCHANNELS 3
+#define CONFIG_STM32_HPDMA1_RESERVED_CHANNELS 0
+#define CONFIG_STM32_GPDMA1 1
+#define CONFIG_STM32_GPDMA1_NCHANNELS 3
+#define CONFIG_STM32_GPDMA1_RESERVED_CHANNELS 0
 #define g_channel g_dma_channels[0]
+#define _err(...) (g_errors++)
 /* DMA_INTERRUPTS */
 
 /****************************************************************************
@@ -40,6 +50,7 @@ typedef unsigned int irqstate_t;
  ****************************************************************************/
 
 static struct stm32_dma_channel_s g_dma_channels[STM32_DMA_CHANNELS];
+static bool g_dma_initialized;
 static struct stm32_dma_lli_s g_descriptors[3];
 static uint32_t g_regs[64];
 static unsigned int g_invalidations;
@@ -53,6 +64,8 @@ static bool g_cache_valid;
 static unsigned int g_critical_depth;
 static unsigned int g_prepares;
 static unsigned int g_callbacks;
+static unsigned int g_errors;
+static int g_attach_error;
 static uint8_t g_callback_status;
 static bool g_rearm;
 static void (*g_on_unlock)(void);
@@ -92,6 +105,21 @@ static void up_enable_irq(int irq)
 {
   assert(irq == g_channel.irq);
   g_irq_enabled = true;
+}
+
+static int irq_attach(int irq, int (*handler)(int, void *, void *), void *arg)
+{
+  assert(irq == g_channel.irq && handler != NULL && arg == &g_channel);
+  assert(g_channel.state == STM32_DMA_OFFLINE);
+  return g_attach_error;
+}
+
+static void putreg32(uint32_t value, uintptr_t address)
+{
+  assert(address == STM32_HPDMA1_CXCIDCFGR(0));
+  assert(value == (STM32_HPDMA_CIDCFGR_CFEN |
+                   STM32_HPDMA_CIDCFGR_SCID(1)));
+  assert(g_channel.state == STM32_DMA_OFFLINE);
 }
 
 static struct stm32_dma_channel_s *stm32_dma_getchannel(DMA_HANDLE handle)
@@ -192,7 +220,6 @@ static void reset(void)
   assert(g_critical_depth == 0);
   memset(g_dma_channels, 0, sizeof(g_dma_channels));
   memset(g_regs, 0, sizeof(g_regs));
-  g_channel.allocated = true;
   g_channel.state = STM32_DMA_RUNNING;
   g_channel.config.source_address = 0x20000000;
   g_channel.config.destination_address = 0x40000000;
@@ -208,6 +235,9 @@ static void reset(void)
   g_invalidations = g_resets = 0;
   g_cache_valid = true;
   g_prepares = g_callbacks = 0;
+  g_errors = 0;
+  g_attach_error = 0;
+  g_dma_initialized = false;
   g_callback_status = 0;
   g_rearm = false;
   g_on_unlock = NULL;
@@ -283,7 +313,7 @@ static void check_busy(void)
       assert(status.remaining == 0);
     }
 
-  assert(g_channel.state == state && g_channel.allocated);
+  assert(g_channel.state == state && stm32_dma_allocated(&g_channel));
   assert(g_regs[STM32_DMA_CXCR_OFFSET(0) / 4] == control);
 }
 
@@ -340,6 +370,7 @@ static void test_states(void)
   g_on_invalidate = NULL;
   assert(g_on_unlock == NULL && g_channel.state == STM32_DMA_UNCONFIGURED);
   assert(stm32_dmafree(&g_channel) == 0);
+  assert(g_channel.state == STM32_DMA_FREE);
   assert(stm32_dmastatus(&g_channel, &status) == -EINVAL);
 
   for (i = 0; i < sizeof(errors) / sizeof(errors[0]); i++)
@@ -434,6 +465,100 @@ static void test_states(void)
       assert(stm32_dmastart(&g_channel) ==
              (i == STM32_DMA_COMPLETE ? 0 : -EBUSY));
     }
+}
+
+static void test_allocation(void)
+{
+  const struct stm32_dma_request_s request =
+    {
+      .controller = STM32_DMA_CONTROLLER_HPDMA1,
+      .direction = STM32_DMA_MEMORY_TO_MEMORY,
+      .request = STM32_DMA_REQUEST_NONE,
+      .peripheral_address = 0
+    };
+  struct stm32_dma_request_s other_request = request;
+  struct stm32_dma_config_s config;
+  struct stm32_dma_status_s status;
+  DMA_HANDLE handle;
+  size_t transferred;
+  unsigned int i;
+  int irq = 0;
+
+  reset();
+  config = g_channel.config;
+  memset(g_dma_channels, 0, sizeof(g_dma_channels));
+  memset(g_regs, 0, sizeof(g_regs));
+  assert(g_channel.state == STM32_DMA_OFFLINE);
+  assert(stm32_dmachannel(&request) == NULL);
+
+  for (i = STM32_DMA_OFFLINE; i <= STM32_DMA_FREE; i++)
+    {
+      g_channel.state = i;
+      assert(!stm32_dma_allocated(&g_channel));
+      assert(stm32_dmastart(&g_channel) == -EINVAL);
+      assert(stm32_dmasetup(&g_channel, &config) == -EINVAL);
+      assert(stm32_dmallibuild(&g_channel, &config, 1, g_descriptors, 3,
+                             STM32_DMA_LIST_TERMINAL) == -EINVAL);
+      assert(stm32_dmacallback(&g_channel, callback, &g_callbacks) == -EINVAL);
+      assert(stm32_dmastatus(&g_channel, &status) == -EINVAL);
+      assert(stm32_dmastop(&g_channel) == -EINVAL);
+      transferred = 99;
+      assert(stm32_dmaabort(&g_channel, &transferred) == -EINVAL);
+      assert(transferred == 99);
+      assert(stm32_dmafree(&g_channel) == -EINVAL);
+      g_channel.callback = callback;
+      g_channel.callback_arg = &g_callbacks;
+      interrupt(STM32_DMA_FLAG_TCF | STM32_DMA_FLAG_DTEF);
+      assert(g_channel.state == i && g_callbacks == 0);
+      assert(g_resets == 0 && g_invalidations == 0);
+    }
+
+  g_irq_enabled = false;
+  g_attach_error = -EIO;
+  assert(stm32_dma_initialize_controller(STM32_DMA_CONTROLLER_HPDMA1,
+                                       STM32_HPDMA1_BASE, 0, &irq, 1, 0) ==
+         -EIO);
+  assert(g_channel.state == STM32_DMA_OFFLINE);
+  assert(!g_irq_enabled && g_errors == 1);
+  g_attach_error = 0;
+  assert(stm32_dma_initialize_controller(STM32_DMA_CONTROLLER_HPDMA1,
+                                       STM32_HPDMA1_BASE, 0, &irq, 1, 0) == 0);
+  assert(g_channel.state == STM32_DMA_FREE && g_irq_enabled);
+  assert(g_channel.callback == NULL && g_channel.status == 0);
+  assert(g_dma_channels[1].state == STM32_DMA_OFFLINE);
+
+  g_dma_initialized = true;
+  handle = stm32_dmachannel(&request);
+  assert(handle == &g_channel && g_channel.state == STM32_DMA_UNCONFIGURED);
+  assert(stm32_dma_allocated(&g_channel));
+  assert(stm32_dmachannel(&request) == NULL);
+  assert(stm32_dmastop(handle) == 0);
+  assert(g_channel.state == STM32_DMA_UNCONFIGURED);
+  assert(stm32_dmachannel(&request) == NULL);
+
+  g_dma_channels[1].state = STM32_DMA_FREE;
+  assert(stm32_dmachannel(&request) == &g_dma_channels[1]);
+  assert(g_dma_channels[1].state == STM32_DMA_UNCONFIGURED);
+  assert(stm32_dmachannel(&request) == NULL);
+
+  assert(stm32_dmafree(handle) == 0);
+  assert(g_channel.state == STM32_DMA_FREE);
+  assert(stm32_dmafree(handle) == -EINVAL);
+  g_channel.callback = callback;
+  g_channel.status = DMA_STATUS_DTEF;
+  handle = stm32_dmachannel(&request);
+  assert(handle == &g_channel && g_channel.state == STM32_DMA_UNCONFIGURED);
+  assert(g_channel.callback == NULL && g_channel.status == 0);
+  assert(stm32_dmafree(handle) == 0);
+
+  other_request.controller = STM32_DMA_CONTROLLER_GPDMA1;
+  g_dma_channels[STM32_DMA_GPDMA_OFFSET].state = STM32_DMA_FREE;
+  handle = stm32_dmachannel(&other_request);
+  assert(handle == &g_dma_channels[STM32_DMA_GPDMA_OFFSET]);
+  assert(g_dma_channels[STM32_DMA_GPDMA_OFFSET].state ==
+         STM32_DMA_UNCONFIGURED);
+  assert(g_channel.state == STM32_DMA_FREE);
+  assert(stm32_dmachannel(&other_request) == NULL);
 }
 
 /****************************************************************************
@@ -593,6 +718,7 @@ int main(void)
   assert(stm32_dmastop(&g_channel) == 0);
 
   test_states();
+  test_allocation();
   puts("STM32N6 DMA state and abort snapshot tests passed");
   return 0;
 }

@@ -35,7 +35,7 @@ def function(text, name):
     return extract(
         text,
         r"(?:static\s+(?:inline\s+)?)?"
-        r"(?:void|int|bool|uint32_t)\s+" + name + r"\([^;{]*\)",
+        r"(?:void|int|bool|uint32_t|DMA_HANDLE)\s+" + name + r"\([^;{]*\)",
     )
 
 
@@ -51,18 +51,24 @@ def check_dma_abort(directory, chip, compiler, temporary):
     source = source.replace("/* DMA_INTERRUPTS */", dma[start:end])
     source = source.replace("/* DMA_ROUTINES */",
                             "\n".join(function(dma, name) for name in (
-                                "stm32_dma_recovering", "stm32_dma_in_flight",
-                                "stm32_dma_busy",
+                                "stm32_dma_allocated", "stm32_dma_recovering",
+                                "stm32_dma_in_flight", "stm32_dma_busy",
+                                "stm32_dma_controller_enabled",
+                                "stm32_dma_request_valid",
                                 "stm32_dma_check_config", "stm32_dmafree",
                                 "stm32_dmasetup", "stm32_dmallibuild",
                                 "stm32_dmacallback", "stm32_dma_interrupt",
+                                "stm32_dma_initialize_controller",
+                                "stm32_dmachannel",
                                 "stm32_dmastart", "stm32_dma_stop",
                                 "stm32_dmastop", "stm32_dmaabort",
                                 "stm32_dmastatus")))
     executable = pathlib.Path(temporary) / "dma-abort"
     # Static descriptors must fit the driver's 32-bit DMA address space.
+    # Request validation compares an enum with a signed direction sentinel.
     subprocess.run(compiler + ["-x", "c", "-std=c11", "-Wall", "-Wextra",
-                               "-Werror", "-fno-pie", "-no-pie",
+                               "-Werror", "-Wno-sign-compare",
+                               "-fno-pie", "-no-pie",
                                "-I" + str(directory / "include"),
                                "-I" + str(chip), "-o", str(executable), "-"],
                    input=source, text=True, check=True)

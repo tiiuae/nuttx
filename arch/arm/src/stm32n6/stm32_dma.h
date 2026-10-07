@@ -135,7 +135,9 @@ typedef void (*dma_callback_t)(DMA_HANDLE handle, uint8_t status, void *arg);
 int stm32_dma_initialize(void);
 
 /* Allocate from the explicitly selected controller's non-reserved channel
- * pool.  Returns NULL when the request is invalid or no channel is available.
+ * pool. Only initialized, free channels are eligible. Returns NULL when the
+ * request is invalid or no channel is available. A successful stop retains
+ * allocation; stm32_dmafree() returns the channel to the free pool.
  */
 
 DMA_HANDLE stm32_dmachannel(const struct stm32_dma_request_s *request);
