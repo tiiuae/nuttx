@@ -40,7 +40,8 @@ Features
 
    This is the initial NuttX port for the STM32N6 family. The supported
    peripheral set is intentionally minimal: USART1 (the ST-LINK VCOM
-   console), GPIO, RCC, PWR, the SysTick scheduler timer, the STM32
+   console), optional USART3 (the unqualified D0/D1 test-port route in
+   ``nsh-test``), GPIO, RCC, PWR, the SysTick scheduler timer, the STM32
    TIM1-TIM18 driver, polling SPI master support, opt-in I2C2 master support,
    partial GPDMA1/HPDMA1 support, and the three on-board user LEDs. I2C2
    timing and wiring remain unqualified; initialization fails until valid
@@ -53,6 +54,25 @@ Features
    the board's SRAM2 bootloader and XIP application configurations. The CPU
    is currently clocked at 200 MHz from PLL1. Raising it to the standard
    600 / 800 MHz operating points is deferred to a follow-up change.
+
+USART Support
+=============
+
+USART1 on PE5/PE6 is the console routed to the on-board ST-LINK VCOM and is
+enabled in the board configurations. The ``nsh-test`` configuration also
+enables USART3 on PD8/PD9, routed to Arduino D1/D0 (and Morpho CN15 pins
+35/37); it remains an optional test-port route, not a qualified serial
+interface. No RTS/CTS pins are assigned for USART3. Other USART/UART
+instances supported by the STM32N6 serial driver require board-specific pin
+assignments before use. See the family :doc:`USART support description
+<../../index>` for the driver capabilities and limitations.
+
+The board clock setup provides a 200 MHz CPU clock from PLL1 and 50 MHz
+HCLK/PCLK1/PCLK2. It does not program the shared HSI divider (HSIDIV), which
+is inherited from reset or an earlier boot stage; USART kernel clock setup
+uses ``hsi_div_ck`` and reads the active divider. Keep that clock setting
+stable while serial ports are active. See the family
+:doc:`RCC support description <../../index>` for the clock-tree details.
 
 DMA Support
 ===========
@@ -309,16 +329,19 @@ Pin Mapping
 The regular configurations map the pins required for the serial console.
 Configurations enabling SPI5 also assign PE15, PG1, and PG2 to SPI
 alternate functions and PA3 to BMP280 chip select. The ``nsh-test``
-configuration additionally configures the on-board button input on PC13.
+configuration additionally enables USART3 on PD8/PD9 and configures the
+on-board button input on PC13.
 Configurations enabling board I2C2 bring-up assign PB10/PB11 to AF4
 open-drain SCL/SDA.
 Other GPIOs retain their reset state and are free for application use.
 
-===== ================== ======= =================================
+===== ================== ======= ============================================================
 Pin   Signal              AF      Notes
-===== ================== ======= =================================
+===== ================== ======= ============================================================
 PE5   USART1_TX           AF7     Routed to ST-LINK VCOM (host RX)
 PE6   USART1_RX           AF7     Routed to ST-LINK VCOM (host TX)
+PD8   USART3_TX           AF7     ``nsh-test`` only; Arduino D1 / Morpho CN15-35
+PD9   USART3_RX           AF7     ``nsh-test`` only; Arduino D0 / Morpho CN15-37
 PC13  GPIO input          --      On-board blue user button; active high
 PE15  SPI5_SCK            AF5     Arduino D13 / Morpho CN15-11
 PG1   SPI5_MISO           AF5     Arduino D12 / Morpho CN15-13
@@ -326,7 +349,7 @@ PG2   SPI5_MOSI           AF5     Arduino D11 / Morpho CN15-15
 PA3   SPI5 chip select    --      Arduino D10; active low for BMP280
 PB10  I2C2_SCL            AF4     Opt-in; wiring unqualified
 PB11  I2C2_SDA            AF4     Opt-in; wiring unqualified
-===== ================== ======= =================================
+===== ================== ======= ============================================================
 
 Power Supply
 ============
