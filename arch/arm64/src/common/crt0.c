@@ -26,7 +26,9 @@
 
 #include <nuttx/config.h>
 
+#include <sys/random.h>
 #include <sys/types.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <nuttx/arch.h>
@@ -95,6 +97,10 @@ static void sig_trampoline(void)
 /****************************************************************************
  * Public Data
  ****************************************************************************/
+
+#ifdef CONFIG_STACK_CANARIES
+FAR const void *__stack_chk_guard = &__stack_chk_guard;
+#endif
 
 /* Linker defined symbols to .ctors and .dtors */
 
@@ -169,7 +175,17 @@ static void exec_dtors(void)
 
 void __start(int argc, char *argv[])
 {
+#ifdef CONFIG_STACK_CANARIES
+  uintptr_t guard;
+#endif
   int ret;
+
+#ifdef CONFIG_STACK_CANARIES
+  if (getrandom(&guard, sizeof(guard), 0) == sizeof(guard))
+    {
+      __stack_chk_guard = (FAR const void *)(guard & ~(uintptr_t)0xff);
+    }
+#endif
 
   /* Initialize the reserved area at the beginning of the .bss/.data region
    * that is visible to the RTOS.
