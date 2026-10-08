@@ -75,7 +75,7 @@
  *
  ****************************************************************************/
 
-#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+#if !defined(CONFIG_BUILD_KERNEL) || defined(__KERNEL__)
 int nxsem_set_protocol(FAR sem_t *sem, int protocol)
 {
   FAR sem_t *resolved;
