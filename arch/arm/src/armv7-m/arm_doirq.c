@@ -86,13 +86,6 @@ uint32_t *arm_doirq(int irq, uint32_t *regs)
 
       irq_dispatch(irq, regs);
 #endif
-      if (tcb->sigdeliver)
-        {
-          /* Pendsv able to access running tcb with no critical section */
-
-          up_schedule_sigaction(tcb);
-        }
-
       up_irq_save();
     }
   else
@@ -101,6 +94,10 @@ uint32_t *arm_doirq(int irq, uint32_t *regs)
     }
 
   tcb = this_task();
+  if (tcb->sigdeliver)
+    {
+      up_schedule_sigaction(tcb);
+    }
 
   /* Update scheduler parameters */
 

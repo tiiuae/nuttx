@@ -164,6 +164,7 @@ retry:
 #endif
 
   rtcb->xcp.regs = rtcb->xcp.saved_regs;
+  rtcb->xcp.saved_regs = NULL;
   arm_fullcontextrestore();
   UNUSED(regs);
 }
