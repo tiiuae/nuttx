@@ -380,10 +380,19 @@ static void set_pte_block_desc(uint64_t *pte, uint64_t addr_pa,
       {
         /* Make Normal RW memory as execute never */
 
+        desc |= PTE_BLOCK_DESC_UXN;
+
         if (attrs & MT_EXECUTE_NEVER)
           {
             desc |= PTE_BLOCK_DESC_PXN;
           }
+
+#if !defined(CONFIG_BUILD_FLAT) && !defined(CONFIG_ARCH_USE_TEXT_HEAP)
+        if (attrs & MT_RW)
+          {
+            desc |= PTE_BLOCK_DESC_PXN;
+          }
+#endif
 
         if (mem_type == MT_NORMAL)
           {
