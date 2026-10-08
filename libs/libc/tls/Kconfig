@@ -29,6 +29,19 @@ config TLS_ALIGNED
 		no implications to physical memory.  In other builds, the
 		unaligned stack implementation is usually superior.
 
+config TLS_USERSPACE_POINTER
+	bool "Publish the running thread's TLS block to user space"
+	default n
+	depends on BUILD_PROTECTED && !TLS_ALIGNED && !SMP
+	select SCHED_RESUMESCHEDULER
+	---help---
+		Without CONFIG_TLS_ALIGNED, user code in a protected build finds
+		its TLS block, errno included, with a syscall on every access.
+		With this option the kernel stores the running thread's block in
+		a user-space variable at each switch, and user code reads it.
+		The board's userspace_s must publish that variable in
+		us_tlsinfo.
+
 config TLS_LOG2_MAXSTACK
 	int "Maximum stack size (log2)"
 	default 13

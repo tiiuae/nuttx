@@ -76,6 +76,7 @@
  ****************************************************************************/
 
 struct mm_heap_s; /* Forward reference */
+struct tls_info_s;
 
 /* Every user-space blob starts with a header that provides information about
  * the blob.  The form of that header is provided by struct userspace_s. An
@@ -113,6 +114,10 @@ struct userspace_s
 
 #ifdef CONFIG_LIBC_USRWORK
   CODE int (*work_usrstart)(void);
+#endif
+
+#ifdef CONFIG_TLS_USERSPACE_POINTER
+  FAR struct tls_info_s **us_tlsinfo;
 #endif
 };
 

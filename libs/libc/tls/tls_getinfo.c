@@ -32,7 +32,11 @@
 #include <nuttx/tls.h>
 #include <nuttx/sched.h>
 
-#if !defined(up_tls_info) && (defined(__KERNEL__) || !defined(CONFIG_TLS_ALIGNED))
+#if defined(CONFIG_TLS_USERSPACE_POINTER) && !defined(__KERNEL__)
+
+FAR struct tls_info_s *g_tls_userinfo;
+
+#elif !defined(up_tls_info) && (defined(__KERNEL__) || !defined(CONFIG_TLS_ALIGNED))
 
 /****************************************************************************
  * Public Functions

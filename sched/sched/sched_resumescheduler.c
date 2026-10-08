@@ -31,6 +31,8 @@
 #include <nuttx/sched.h>
 #include <nuttx/clock.h>
 #include <nuttx/sched_note.h>
+#include <nuttx/tls.h>
+#include <nuttx/userspace.h>
 
 #include "irq/irq.h"
 #include "sched/sched.h"
@@ -75,6 +77,15 @@ void nxsched_resume_scheduler(FAR struct tcb_s *tcb)
 #endif
 #ifdef CONFIG_SCHED_INSTRUMENTATION
   sched_note_resume(tcb);
+#endif
+
+#ifdef CONFIG_TLS_USERSPACE_POINTER
+  if (USERSPACE->us_tlsinfo != NULL)
+    {
+      *USERSPACE->us_tlsinfo =
+        (tcb->flags & TCB_FLAG_TTYPE_MASK) == TCB_FLAG_TTYPE_KERNEL ?
+        NULL : (FAR struct tls_info_s *)tcb->stack_alloc_ptr;
+    }
 #endif
 }
 

@@ -326,6 +326,9 @@ uintptr_t task_tls_get_value(int tlsindex);
 #  define tls_get_info() up_tls_info()
 #elif defined(CONFIG_TLS_ALIGNED) && !defined(__KERNEL__)
 #  define tls_get_info() TLS_INFO(up_getsp())
+#elif defined(CONFIG_TLS_USERSPACE_POINTER) && !defined(__KERNEL__)
+extern FAR struct tls_info_s *g_tls_userinfo;
+#  define tls_get_info() g_tls_userinfo
 #else
 FAR struct tls_info_s *tls_get_info(void);
 #endif
