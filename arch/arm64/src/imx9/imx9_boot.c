@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <debug.h>
+#include <string.h>
 
 #include <nuttx/cache.h>
 #ifdef CONFIG_PAGING
@@ -48,13 +49,41 @@
 #include "imx9_gpio.h"
 #include "imx9_lowputc.h"
 #include "imx9_system_ctl.h"
+#ifdef CONFIG_STACK_CANARIES
+#include "imx9_ele.h"
+#endif
 #ifdef CONFIG_IMX9_DDR_TRAINING
 #include "ddr/imx9_ddr_training.h"
 #endif
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#ifdef CONFIG_STACK_CANARIES
+#  if !defined(ARMV8A_DCACHE_LINESIZE) || ARMV8A_DCACHE_LINESIZE == 0
+#    undef ARMV8A_DCACHE_LINESIZE
+#    define ARMV8A_DCACHE_LINESIZE 64
+#  endif
+#  define STACK_GUARD_TRIES 20
+#endif
+
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+#ifdef CONFIG_STACK_CANARIES
+FAR const void *__stack_chk_guard = &__stack_chk_guard;
+#endif
+
+/****************************************************************************
  * Private Data
  ****************************************************************************/
+
+#ifdef CONFIG_STACK_CANARIES
+static uint8_t g_guard_seed[ARMV8A_DCACHE_LINESIZE]
+  aligned_data(ARMV8A_DCACHE_LINESIZE);
+#endif
 
 static const struct arm_mmu_region g_mmu_regions[] =
 {
@@ -95,6 +124,36 @@ const struct arm_mmu_config g_mmu_config =
   .num_regions = nitems(g_mmu_regions),
   .mmu_regions = g_mmu_regions,
 };
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+#ifdef CONFIG_STACK_CANARIES
+static nostackprotect_function void imx9_stack_guard_init(void)
+{
+  uintptr_t guard;
+  int i;
+
+  if (imx9_ele_get_trng_state() != 0)
+    {
+      imx9_ele_start_rng();
+    }
+
+  for (i = 0; i < STACK_GUARD_TRIES; i++)
+    {
+      if (imx9_ele_get_random(g_guard_seed, sizeof(g_guard_seed)) == 0)
+        {
+          memcpy(&guard, g_guard_seed, sizeof(guard));
+          memset(g_guard_seed, 0, sizeof(g_guard_seed));
+          __stack_chk_guard = (FAR const void *)(guard & ~(uintptr_t)0xff);
+          return;
+        }
+    }
+
+  _err("ERROR: no ELE entropy, the stack guard stays fixed\n");
+}
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -174,7 +233,7 @@ void arm64_el_init(void)
  *
  ****************************************************************************/
 
-void arm64_chip_boot(void)
+nostackprotect_function void arm64_chip_boot(void)
 {
 #ifndef CONFIG_ARCH_CHIP_IMX95
 #if defined(CONFIG_IMX9_BOOTLOADER) && CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
@@ -229,4 +288,8 @@ void arm64_chip_boot(void)
    */
 
   imx9_board_initialize();
+
+#ifdef CONFIG_STACK_CANARIES
+  imx9_stack_guard_init();
+#endif
 }

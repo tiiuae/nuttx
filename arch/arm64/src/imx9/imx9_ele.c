@@ -25,6 +25,7 @@
  ****************************************************************************/
 
 #include <nuttx/arch.h>
+#include <nuttx/init.h>
 #include <nuttx/mutex.h>
 #include <debug.h>
 #include <errno.h>
@@ -927,7 +928,15 @@ static int imx9_ele_get_random_locked(void *buf, size_t len)
           return -EBUSY;
         }
 
-      usleep(ELE_RNG_SLEEP_US);
+      if (OSINIT_TASK_READY())
+        {
+          usleep(ELE_RNG_SLEEP_US);
+        }
+      else
+        {
+          up_udelay(ELE_RNG_SLEEP_US);
+        }
+
       counter++;
     }
 
@@ -962,6 +971,11 @@ static int imx9_ele_get_random_locked(void *buf, size_t len)
 int imx9_ele_get_random(void *buf, size_t len)
 {
   int ret;
+
+  if (!OSINIT_TASK_READY())
+    {
+      return imx9_ele_get_random_locked(buf, len);
+    }
 
   imx9_ele_lock();
   ret = imx9_ele_get_random_locked(buf, len);
