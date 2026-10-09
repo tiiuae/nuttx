@@ -90,7 +90,7 @@
 static void imxrt_mpu_user_sram(uintptr_t base, size_t size)
 {
   mpu_configure_region(base, size, MPU_RASR_AP_RWRW | MPU_RASR_TEX_SO |
-                       RASR_C_VALUE | RASR_B_VALUE);
+                       RASR_C_VALUE | RASR_B_VALUE | MPU_RASR_XN);
 }
 #endif
 
@@ -200,6 +200,7 @@ void imxrt_mpu_initialize(void)
 
   mpu_configure_region(IMXRT_DTCM_BASE, 256 * 1024,
                        IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
+                       MPU_RASR_XN       |
                        MPU_RASR_TEX_NOR    /* Normal
                                             * Not Cacheable
                                             * Not Bufferable
@@ -209,6 +210,7 @@ void imxrt_mpu_initialize(void)
 
   mpu_configure_region(IMXRT_OCRAM_M4_BASE, 1 * 1024 * 1024,
                        IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
+                       MPU_RASR_XN       |
                        MPU_RASR_TEX_SO   | /* Strongly Ordered           */
                        RASR_C_VALUE      | /* Cacheable DCACHE ? 0 : 1   */
                        RASR_B_VALUE        /* Bufferable WB    ? 0 : 1
@@ -218,6 +220,7 @@ void imxrt_mpu_initialize(void)
 
   mpu_configure_region(IMXRT_OCRAM_M4_BASE + (1 * 1024 * 1024), 512 * 1024,
                        IMXRT_MPU_AP_RW   | /* P:RW   U:RW if flat        */
+                       MPU_RASR_XN       |
                        MPU_RASR_TEX_SO   | /* Strongly Ordered           */
                        RASR_C_VALUE      | /* Cacheable DCACHE ? 0 : 1   */
                        RASR_B_VALUE        /* Bufferable WB    ? 0 : 1
