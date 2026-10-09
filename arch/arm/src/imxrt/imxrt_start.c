@@ -162,7 +162,7 @@ static nostackprotect_function void imxrt_stack_guard_init(void)
 {
   uint32_t seed[2];
 
-  if (imxrt_caam_get_random((uint8_t *)seed, sizeof(seed)) < 0)
+  if (imxrt_caam_get_random((uint8_t *)seed, sizeof(seed), true) < 0)
     {
       _err("ERROR: no CAAM entropy, the stack guard stays fixed\n");
       return;

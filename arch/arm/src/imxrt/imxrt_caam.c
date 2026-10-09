@@ -34,7 +34,9 @@
 #include <strings.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/clock.h>
 #include <nuttx/init.h>
+#include <nuttx/signal.h>
 #include <nuttx/mutex.h>
 
 #include "arm_internal.h"
@@ -62,14 +64,15 @@
  * lines and shares them with nothing.
  */
 
-#define CAAM_RNG_BLOCKLEN     ARMV7M_DCACHE_LINESIZE
+#define CAAM_RNG_BLOCKLEN     512
 
 #define CAAM_DESC_WORDS       8
 
 /* Descriptor words, from the SEC reference descriptor encoding. */
 
 #define CAAM_DESC_HDR(len)    (0xb0800000 | (len))
-#define CAAM_OP_RNG_GENERATE  0x82500002
+#define CAAM_OP_RNG_GENERATE  0x82500000
+#define CAAM_OP_RNG_RESEED    0x00000002
 #define CAAM_OP_RNG_INIT_SH0  0x82500006
 #define CAAM_OP_RNG_GEN_SK    0x82501000
 #define CAAM_JUMP_WAIT_CLASS1 0xa2000001
@@ -95,6 +98,8 @@
 #define CAAM_ENT_DELAY_STEP   400
 
 #define CAAM_TIMEOUT          100000
+#define CAAM_SPIN             2000
+#define CAAM_SLEEP_TICKS      1000
 
 /*****************************************************************************
  * Private Data
@@ -164,10 +169,47 @@ static void imxrt_caam_invalidate(void *addr, size_t len)
 
 static int imxrt_caam_ring_init(void);
 
+static bool imxrt_caam_wait(void)
+{
+  int i;
+
+  for (i = 0; i < CAAM_SPIN; i++)
+    {
+      if (getreg32(IMXRT_CAAM_ORSF) != 0)
+        {
+          return true;
+        }
+    }
+
+  if (!OSINIT_TASK_READY() || up_interrupt_context())
+    {
+      for (i = 0; i < CAAM_TIMEOUT; i++)
+        {
+          if (getreg32(IMXRT_CAAM_ORSF) != 0)
+            {
+              return true;
+            }
+        }
+
+      return false;
+    }
+
+  for (i = 0; i < CAAM_SLEEP_TICKS; i++)
+    {
+      nxsig_usleep(USEC_PER_TICK);
+
+      if (getreg32(IMXRT_CAAM_ORSF) != 0)
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
 static int imxrt_caam_run(void)
 {
   uint32_t status;
-  int timeout;
 
   imxrt_caam_clean(g_desc, sizeof(g_desc));
 
@@ -176,15 +218,7 @@ static int imxrt_caam_run(void)
 
   putreg32(1, IMXRT_CAAM_IRJA);
 
-  for (timeout = CAAM_TIMEOUT; timeout > 0; timeout--)
-    {
-      if (getreg32(IMXRT_CAAM_ORSF) != 0)
-        {
-          break;
-        }
-    }
-
-  if (timeout == 0)
+  if (!imxrt_caam_wait())
     {
       _err("ERROR: job ring did not answer\n");
       return -ETIMEDOUT;
@@ -444,7 +478,7 @@ out:
  * Name: imxrt_caam_random
  *****************************************************************************/
 
-static int imxrt_caam_random(uint8_t *buffer, size_t buflen)
+static int imxrt_caam_random(uint8_t *buffer, size_t buflen, bool reseed)
 {
   size_t done = 0;
   int ret;
@@ -468,7 +502,7 @@ static int imxrt_caam_random(uint8_t *buffer, size_t buflen)
       imxrt_caam_clean(g_rngbuf, sizeof(g_rngbuf));
 
       g_desc[0] = CAAM_DESC_HDR(4);
-      g_desc[1] = CAAM_OP_RNG_GENERATE;
+      g_desc[1] = CAAM_OP_RNG_GENERATE | (reseed ? CAAM_OP_RNG_RESEED : 0);
       g_desc[2] = CAAM_FIFO_STORE_RNG | sizeof(g_rngbuf);
       g_desc[3] = (uint32_t)(uintptr_t)g_rngbuf;
 
@@ -535,7 +569,7 @@ int imxrt_caam_initialize(void)
  * Name: imxrt_caam_get_random
  *****************************************************************************/
 
-int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
+int imxrt_caam_get_random(uint8_t *buffer, size_t buflen, bool reseed)
 {
   int ret;
 
@@ -546,7 +580,7 @@ int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
 
   if (!OSINIT_TASK_READY())
     {
-      return imxrt_caam_random(buffer, buflen);
+      return imxrt_caam_random(buffer, buflen, reseed);
     }
 
   ret = nxmutex_lock(&g_lock);
@@ -555,7 +589,7 @@ int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
       return ret;
     }
 
-  ret = imxrt_caam_random(buffer, buflen);
+  ret = imxrt_caam_random(buffer, buflen, reseed);
   nxmutex_unlock(&g_lock);
   return ret;
 }

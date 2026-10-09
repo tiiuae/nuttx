@@ -29,6 +29,7 @@
 
 #include <nuttx/config.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -71,11 +72,12 @@ int imxrt_caam_initialize(void);
  * Name: imxrt_caam_get_random
  *
  * Description:
- *   Fill a buffer from the CAAM true random number generator.
+ *   Fill a buffer from the CAAM random number generator.
  *
  * Input Parameters:
  *   buffer - Where to put the bytes
  *   buflen - How many to fetch
+ *   reseed - Reseed from the TRNG before each block (prediction resistance)
  *
  * Returned Value:
  *   Zero on success, a negated errno on failure.  On failure the buffer
@@ -83,7 +85,7 @@ int imxrt_caam_initialize(void);
  *
  *****************************************************************************/
 
-int imxrt_caam_get_random(uint8_t *buffer, size_t buflen);
+int imxrt_caam_get_random(uint8_t *buffer, size_t buflen, bool reseed);
 
 /*****************************************************************************
  * Name: imxrt_caam_blob_encap

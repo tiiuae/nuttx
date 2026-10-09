@@ -58,7 +58,7 @@
  * of cache lines and nothing else shares them.
  */
 
-#define RNG_BLOCKLEN ARMV7M_DCACHE_LINESIZE
+#define RNG_BLOCKLEN 512
 
 /* Prefilled before every request. Zero could not be told apart from an
  * a block of genuine zeros, so an untouched buffer reports separately.
@@ -72,6 +72,8 @@
 
 static ssize_t imxrt_rng_read(struct file *filep, char *buffer, size_t
                              buflen);
+static ssize_t imxrt_urng_read(struct file *filep, char *buffer, size_t
+                              buflen);
 
 /****************************************************************************
  * Private Types
@@ -102,6 +104,13 @@ static const struct file_operations g_rngops =
   NULL,           /* open */
   NULL,           /* close */
   imxrt_rng_read, /* read */
+};
+
+static const struct file_operations g_urngops =
+{
+  NULL,            /* open */
+  NULL,            /* close */
+  imxrt_urng_read, /* read */
 };
 
 /****************************************************************************
@@ -145,13 +154,13 @@ static bool imxrt_rng_all(const uint8_t *buf, size_t len, uint8_t val)
  *
  ****************************************************************************/
 
-static int imxrt_rng_block(void)
+static int imxrt_rng_block(bool reseed)
 {
   int ret;
 
   memset(g_rngbuf, RNG_FILL, sizeof(g_rngbuf));
 
-  ret = imxrt_caam_get_random(g_rngbuf, sizeof(g_rngbuf));
+  ret = imxrt_caam_get_random(g_rngbuf, sizeof(g_rngbuf), reseed);
   if (ret < 0)
     {
       _err("ERROR: CAAM random request failed: %d\n", ret);
@@ -187,11 +196,10 @@ static int imxrt_rng_block(void)
 }
 
 /****************************************************************************
- * Name: imxrt_rng_read
+ * Name: imxrt_rng_fill
  ****************************************************************************/
 
-static ssize_t imxrt_rng_read(struct file *filep, char *buffer,
-                              size_t buflen)
+static ssize_t imxrt_rng_fill(char *buffer, size_t buflen, bool reseed)
 {
   size_t done = 0;
   int ret;
@@ -206,7 +214,7 @@ static ssize_t imxrt_rng_read(struct file *filep, char *buffer,
     {
       size_t chunk = buflen - done;
 
-      ret = imxrt_rng_block();
+      ret = imxrt_rng_block(reseed);
       if (ret < 0)
         {
           /* A short read is a lie about how much entropy the caller got, so
@@ -232,6 +240,18 @@ static ssize_t imxrt_rng_read(struct file *filep, char *buffer,
 
   nxmutex_unlock(&g_rngdev.rd_devlock);
   return (ssize_t)done;
+}
+
+static ssize_t imxrt_rng_read(struct file *filep, char *buffer,
+                              size_t buflen)
+{
+  return imxrt_rng_fill(buffer, buflen, true);
+}
+
+static ssize_t imxrt_urng_read(struct file *filep, char *buffer,
+                               size_t buflen)
+{
+  return imxrt_rng_fill(buffer, buflen, false);
 }
 
 /****************************************************************************
@@ -264,8 +284,8 @@ void devrandom_register(void)
  * Name: devurandom_register
  *
  * Description:
- *   Register /dev/urandom.  CAAM is the source for both nodes: it is a
- *   hardware generator, so there is nothing weaker to offer here.
+ *   Register /dev/urandom: the same CAAM DRBG as /dev/random, without a
+ *   TRNG reseed before each block.
  *
  * Input Parameters:
  *   None
@@ -278,7 +298,7 @@ void devrandom_register(void)
 #ifdef CONFIG_DEV_URANDOM_ARCH
 void devurandom_register(void)
 {
-  register_driver("/dev/urandom", &g_rngops, 0444, NULL);
+  register_driver("/dev/urandom", &g_urngops, 0444, NULL);
 }
 #endif
 
