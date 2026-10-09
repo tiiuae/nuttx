@@ -3294,6 +3294,12 @@ config STM32_TIM17
 	depends on STM32_HAVE_TIM17
 	select STM32_TIM
 
+config STM32_TIM18
+	bool "TIM18"
+	default n
+	depends on STM32_HAVE_TIM18
+	select STM32_TIM
+
 config STM32_TSC
 	bool "TSC"
 	default n
@@ -9704,7 +9710,7 @@ config USART1_RXDMA
 config USART1_TXDMA
 	bool "USART1 Tx DMA"
 	default n
-	depends on (((STM32_STM32F10XX || STM32_STM32L15XX) && STM32_DMA1) || (!STM32_STM32F10XX && STM32_DMA2))
+	depends on (((STM32_STM32F10XX || STM32_STM32L15XX) && STM32_DMA1) || (!STM32_STM32F10XX && STM32_DMA2) || (ARCH_CHIP_STM32N6 && STM32_GPDMA1))
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -9797,7 +9803,7 @@ config USART2_RXDMA
 config USART2_TXDMA
 	bool "USART2 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -9890,7 +9896,7 @@ config USART3_RXDMA
 config USART3_TXDMA
 	bool "USART3 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -9978,7 +9984,7 @@ config UART4_RXDMA
 config UART4_TXDMA
 	bool "UART4 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -10030,7 +10036,7 @@ config UART5_RXDMA
 config UART5_TXDMA
 	bool "UART5 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -10087,7 +10093,7 @@ config USART6_RXDMA
 config USART6_TXDMA
 	bool "USART6 Tx DMA"
 	default n
-	depends on STM32_DMA2
+	depends on (STM32_DMA2 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -10180,7 +10186,7 @@ config UART7_RXDMA
 config UART7_TXDMA
 	bool "UART7 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -10273,7 +10279,7 @@ config UART8_RXDMA
 config UART8_TXDMA
 	bool "UART8 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 
@@ -10357,7 +10363,7 @@ config LPUART1_RXDMA
 config LPUART1_TXDMA
 	bool "LPUART1 Tx DMA"
 	default n
-	depends on STM32_DMA1
+	depends on (STM32_DMA1 || STM32_GPDMA1)
 	---help---
 		In high data rate usage, Tx DMA may reduce CPU load
 

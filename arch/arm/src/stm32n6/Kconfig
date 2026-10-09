@@ -1,0 +1,240 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+if ARCH_CHIP_STM32N6
+
+comment "STM32N6 Configuration Options"
+
+config STM32_N6_PERIPHERALS
+	bool
+	default y
+	select STM32_HAVE_IP_TIMERS_M3M4_V2
+	select STM32_HAVE_TIM1
+	select STM32_HAVE_TIM2
+	select STM32_HAVE_TIM3
+	select STM32_HAVE_TIM4
+	select STM32_HAVE_TIM5
+	select STM32_HAVE_TIM6
+	select STM32_HAVE_TIM7
+	select STM32_HAVE_TIM8
+	select STM32_HAVE_TIM9
+	select STM32_HAVE_TIM10
+	select STM32_HAVE_TIM11
+	select STM32_HAVE_TIM12
+	select STM32_HAVE_TIM13
+	select STM32_HAVE_TIM14
+	select STM32_HAVE_TIM15
+	select STM32_HAVE_TIM16
+	select STM32_HAVE_TIM17
+	select STM32_HAVE_TIM18
+	select STM32_HAVE_SPI1
+	select STM32_HAVE_SPI2
+	select STM32_HAVE_SPI3
+	select STM32_HAVE_SPI4
+	select STM32_HAVE_SPI5
+	select STM32_HAVE_SPI6
+	select STM32_HAVE_I2C1
+	select STM32_HAVE_I2C2
+	select STM32_HAVE_I2C3
+	select STM32_HAVE_I2C4
+	select STM32_HAVE_USART1
+	select STM32_HAVE_USART2
+	select STM32_HAVE_USART3
+	select STM32_HAVE_UART4
+	select STM32_HAVE_UART5
+	select STM32_HAVE_USART6
+	select STM32_HAVE_UART7
+	select STM32_HAVE_UART8
+	select STM32_HAVE_UART9
+	select STM32_HAVE_USART10
+	select STM32_HAVE_USART_UNCONFIG_ON_CLOSE
+
+config STM32_N6_SPI
+	bool
+	default y if STM32_SPI1 || STM32_SPI2 || STM32_SPI3 || STM32_SPI4 || STM32_SPI5 || STM32_SPI6
+	select SPI
+
+config STM32_XSPI
+	bool "STM32N6 XSPI2 controller"
+	default n
+	depends on ARCH_CHIP_STM32N6
+	select SPI
+	---help---
+		Enable the experimental N6 XSPI2 QSPI interface scaffold for the
+		NUCLEO-N657X0-Q external flash. Transfers are not implemented yet.
+
+config STM32_N6_I2C
+	bool
+	default y if STM32_I2C1 || STM32_I2C2 || STM32_I2C3 || STM32_I2C4
+	select I2C
+
+config STM32_STM32N6XXXX
+	bool
+	default y
+	select ARMV8M_HAVE_DCACHE
+
+menu "STM32N6 DMA Configuration"
+
+config STM32_GPDMA1
+	bool "Enable GPDMA1"
+	depends on ARCH_CHIP_STM32N6
+	select STM32_DMA
+	select ARCH_DMA
+	default n
+	---help---
+		Enable the 16-channel GPDMA1 controller.
+
+config STM32_GPDMA1_NCHANNELS
+	int "GPDMA1 channel pool size"
+	depends on STM32_GPDMA1
+	range 1 16
+	default 16
+	---help---
+		Number of low-numbered GPDMA1 channels made available to the DMA
+		driver.
+
+config STM32_GPDMA1_RESERVED_CHANNELS
+	int "GPDMA1 channels reserved from allocation"
+	depends on STM32_GPDMA1
+	range 0 16
+	default 0
+	---help---
+		Number of low-numbered GPDMA1 channels withheld from general
+		allocation for board or peripheral reservations.
+
+config STM32_HPDMA1
+	bool "Enable HPDMA1"
+	depends on ARCH_CHIP_STM32N6
+	select STM32_DMA
+	select ARCH_DMA
+	default n
+	---help---
+		Enable the 16-channel HPDMA1 controller.
+
+config STM32_HPDMA1_NCHANNELS
+	int "HPDMA1 channel pool size"
+	depends on STM32_HPDMA1
+	range 1 16
+	default 16
+	---help---
+		Number of low-numbered HPDMA1 channels made available to the DMA
+		driver.
+
+config STM32_HPDMA1_RESERVED_CHANNELS
+	int "HPDMA1 channels reserved from allocation"
+	depends on STM32_HPDMA1
+	range 0 16
+	default 0
+	---help---
+		Number of low-numbered HPDMA1 channels withheld from general
+		allocation for board or peripheral reservations.
+
+config STM32_DMA_DIAGNOSTICS
+	bool "DMA diagnostics"
+	depends on STM32_DMA
+	default n
+	---help---
+		Enable additional diagnostics in the STM32N6 DMA driver.
+
+config STM32_DMA_LINKEDLIST
+	bool "DMA linked-list support"
+	depends on STM32_DMA
+	default n
+	---help---
+		Enable linked-list DMA operations.
+
+config STM32_DMA_CIRCULAR
+	bool "DMA circular operation support"
+	depends on STM32_DMA_LINKEDLIST
+	default n
+	---help---
+		Enable circular and ping-pong linked-list DMA operations.
+
+endmenu
+
+menu "STM32N6 SPI DMA Configuration"
+
+choice
+	prompt "SPI DMA controller"
+	depends on STM32_SPI1_DMA || STM32_SPI2_DMA || STM32_SPI3_DMA || STM32_SPI4_DMA || STM32_SPI5_DMA || STM32_SPI6_DMA
+	default STM32_SPI_DMA_GPDMA1
+
+config STM32_SPI_DMA_GPDMA1
+	bool "GPDMA1"
+	select STM32_GPDMA1
+
+config STM32_SPI_DMA_HPDMA1
+	bool "HPDMA1"
+	select STM32_HPDMA1
+
+endchoice
+
+endmenu
+
+menuconfig STM32_N6_OTGDEV
+	bool "STM32N6 USB OTG device"
+	depends on EXPERIMENTAL
+	default n
+	select USBDEV
+	---help---
+		Initialize the selected STM32N6 USB controller and integrated
+		PHY with bounded waits. The board must supply a qualified HSE
+		clock/settling contract. The current Nucleo settling allowance
+		is experimental and requires physical qualification.
+
+		Supports control, bulk, and interrupt transfers through the
+		integrated FIFO RAM. Connection requires a bound class and an
+		explicit, board-qualified VBUS notification. No board GPIO,
+		Type-C protection, or VBUS source gates are configured here.
+
+		Only one integrated HS controller can be selected. Host, DMA,
+		isochronous, composite, and superspeed configurations are rejected
+		at build time. Keep this disabled on operational boards.
+
+if STM32_N6_OTGDEV
+
+choice
+	prompt "USB device controller"
+	default STM32_N6_OTG1
+
+config STM32_N6_OTG1
+	bool "USB1 OTG HS"
+
+config STM32_N6_OTG2
+	bool "USB2 OTG HS"
+
+endchoice
+
+config STM32_N6_OTGDEV_FS
+	bool "Force full-speed device operation"
+	default y
+	---help---
+		Use full-speed device mode with the integrated HS PHY for initial
+		bring-up. Do not enable USBDEV_DUALSPEED with this option.
+
+config USBDEV_SETUP_MAXDATASIZE
+	int "Maximum control OUT payload"
+	default 4096
+	range 128 65535
+	---help---
+		Storage for multi-packet control OUT requests, independent of
+		EP0's 64-byte packet size. Larger requests are stalled explicitly.
+		This buffer is statically allocated; do not increase it unless
+		the bound class requires a larger control payload.
+
+endif # STM32_N6_OTGDEV
+
+choice
+	prompt "STM32 N6 Chip Selection"
+	default ARCH_CHIP_STM32N657X0
+	depends on ARCH_CHIP_STM32N6
+
+config ARCH_CHIP_STM32N657X0
+	bool "STM32N657X0"
+	select STM32_STM32N6XXXX
+
+endchoice
+
+endif # ARCH_CHIP_STM32N6
