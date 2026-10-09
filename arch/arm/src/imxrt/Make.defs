@@ -146,6 +146,10 @@ ifeq ($(CONFIG_IMXRT_FLEXSPI),y)
 CHIP_CSRCS += imxrt_flexspi.c
 endif
 
+ifeq ($(CONFIG_IMXRT_HYPERRAM),y)
+CHIP_CSRCS += imxrt_hyperram.c
+endif
+
 ifeq ($(CONFIG_IMXRT_ENC),y)
 CHIP_CSRCS += imxrt_enc.c
 endif

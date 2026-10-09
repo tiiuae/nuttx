@@ -365,6 +365,59 @@ config IMXRT_FLEXSPI
 	bool
 	default n
 
+config IMXRT_HYPERRAM
+	bool "FlexSPI HyperRAM initialization"
+	depends on ARM_MPU
+	select IMXRT_FLEXSPI
+	default n
+	---help---
+		Provide board-configured HyperRAM initialization for a dedicated
+		FlexSPI controller and an optional destructive memory test.
+		The board supplies pin and clock configuration. Initialization
+		maps the RAM as noncacheable normal memory with configurable
+		write and execute permissions.
+
+choice
+	prompt "HyperRAM FlexSPI instance"
+	depends on IMXRT_HYPERRAM
+	default IMXRT_HYPERRAM_FLEXSPI2 if ARCH_FAMILY_IMXRT118x
+	default IMXRT_HYPERRAM_FLEXSPI1
+
+config IMXRT_HYPERRAM_FLEXSPI1
+	bool "FlexSPI1"
+	depends on !IMXRT_FLEXSPI1_XIP
+
+config IMXRT_HYPERRAM_FLEXSPI2
+	bool "FlexSPI2"
+	depends on IMXRT_HAVE_FLEXSPI2
+	depends on !IMXRT_FLEXSPI2_XIP
+
+endchoice
+
+config IMXRT_HYPERRAM_WRITABLE
+	bool "Writable HyperRAM"
+	depends on IMXRT_HYPERRAM
+	default y
+	---help---
+		Allow privileged and unprivileged writes to the HyperRAM area.
+		When disabled, the area is read-only.
+
+config IMXRT_HYPERRAM_EXECUTABLE
+	bool "Executable HyperRAM"
+	depends on IMXRT_HYPERRAM
+	default n
+	---help---
+		Allow instruction fetches from the HyperRAM area.
+		When disabled, the area is execute-never.
+
+config IMXRT_HYPERRAM_TEST
+	bool "HyperRAM memory test support"
+	depends on IMXRT_HYPERRAM && IMXRT_HYPERRAM_WRITABLE
+	default n
+	---help---
+		Run a destructive test of four 128-byte memory blocks at the end
+		of HyperRAM initialization, after installing the memory mapping.
+
 config IMXRT_HAVE_FLEXIO3
 	bool
 	default n

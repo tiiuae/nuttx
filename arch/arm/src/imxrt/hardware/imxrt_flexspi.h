@@ -298,6 +298,7 @@ struct flexspi_type_s
 
 #define FLEXSPI_INTR_SEQTIMEOUT(x)               (((uint32_t)(((uint32_t)(x)) << FLEXSPI_INTR_SEQTIMEOUT_SHIFT)) & FLEXSPI_INTR_SEQTIMEOUT_MASK)
 
+#define FLEXSPI_LUT_KEY_VAL                      (0x5af05af0u)
 #define FLEXSPI_LUTKEY_KEY_MASK                  (0xffffffffu)
 #define FLEXSPI_LUTKEY_KEY_SHIFT                 (0u)
 
