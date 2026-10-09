@@ -34,6 +34,7 @@
 #include <strings.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/init.h>
 #include <nuttx/mutex.h>
 
 #include "arm_internal.h"
@@ -440,6 +441,56 @@ out:
 }
 
 /*****************************************************************************
+ * Name: imxrt_caam_random
+ *****************************************************************************/
+
+static int imxrt_caam_random(uint8_t *buffer, size_t buflen)
+{
+  size_t done = 0;
+  int ret;
+
+  ret = imxrt_caam_initialize();
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  while (done < buflen)
+    {
+      size_t chunk = buflen - done;
+
+      if (chunk > sizeof(g_rngbuf))
+        {
+          chunk = sizeof(g_rngbuf);
+        }
+
+      memset(g_rngbuf, 0, sizeof(g_rngbuf));
+      imxrt_caam_clean(g_rngbuf, sizeof(g_rngbuf));
+
+      g_desc[0] = CAAM_DESC_HDR(4);
+      g_desc[1] = CAAM_OP_RNG_GENERATE;
+      g_desc[2] = CAAM_FIFO_STORE_RNG | sizeof(g_rngbuf);
+      g_desc[3] = (uint32_t)(uintptr_t)g_rngbuf;
+
+      ret = imxrt_caam_run();
+      if (ret < 0)
+        {
+          memset(buffer, 0, buflen);
+          return ret;
+        }
+
+      imxrt_caam_invalidate(g_rngbuf, sizeof(g_rngbuf));
+      memcpy(buffer + done, g_rngbuf, chunk);
+      done += chunk;
+    }
+
+  /* Leave nothing behind for the next caller to find. */
+
+  memset(g_rngbuf, 0, sizeof(g_rngbuf));
+  return OK;
+}
+
+/*****************************************************************************
  * Public Functions
  *****************************************************************************/
 
@@ -486,12 +537,16 @@ int imxrt_caam_initialize(void)
 
 int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
 {
-  size_t done = 0;
   int ret;
 
   if (buffer == NULL || buflen == 0)
     {
       return -EINVAL;
+    }
+
+  if (!OSINIT_TASK_READY())
+    {
+      return imxrt_caam_random(buffer, buflen);
     }
 
   ret = nxmutex_lock(&g_lock);
@@ -500,48 +555,9 @@ int imxrt_caam_get_random(uint8_t *buffer, size_t buflen)
       return ret;
     }
 
-  ret = imxrt_caam_initialize();
-  if (ret < 0)
-    {
-      nxmutex_unlock(&g_lock);
-      return ret;
-    }
-
-  while (done < buflen)
-    {
-      size_t chunk = buflen - done;
-
-      if (chunk > sizeof(g_rngbuf))
-        {
-          chunk = sizeof(g_rngbuf);
-        }
-
-      memset(g_rngbuf, 0, sizeof(g_rngbuf));
-      imxrt_caam_clean(g_rngbuf, sizeof(g_rngbuf));
-
-      g_desc[0] = CAAM_DESC_HDR(4);
-      g_desc[1] = CAAM_OP_RNG_GENERATE;
-      g_desc[2] = CAAM_FIFO_STORE_RNG | sizeof(g_rngbuf);
-      g_desc[3] = (uint32_t)(uintptr_t)g_rngbuf;
-
-      ret = imxrt_caam_run();
-      if (ret < 0)
-        {
-          memset(buffer, 0, buflen);
-          nxmutex_unlock(&g_lock);
-          return ret;
-        }
-
-      imxrt_caam_invalidate(g_rngbuf, sizeof(g_rngbuf));
-      memcpy(buffer + done, g_rngbuf, chunk);
-      done += chunk;
-    }
-
-  /* Leave nothing behind for the next caller to find. */
-
-  memset(g_rngbuf, 0, sizeof(g_rngbuf));
+  ret = imxrt_caam_random(buffer, buflen);
   nxmutex_unlock(&g_lock);
-  return OK;
+  return ret;
 }
 
 /*****************************************************************************

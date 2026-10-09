@@ -119,6 +119,10 @@ struct userspace_s
 #ifdef CONFIG_TLS_USERSPACE_POINTER
   FAR struct tls_info_s **us_tlsinfo;
 #endif
+
+#ifdef CONFIG_STACK_CANARIES
+  FAR const void **us_stackguard;
+#endif
 };
 
 /****************************************************************************

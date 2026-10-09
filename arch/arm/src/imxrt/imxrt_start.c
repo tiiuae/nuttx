@@ -55,6 +55,12 @@
 #  include "imxrt118x_trdc.h"
 #endif
 
+#if defined(CONFIG_STACK_CANARIES) && defined(CONFIG_IMXRT_CAAM)
+#  include <string.h>
+#  include <nuttx/userspace.h>
+#  include "imxrt_caam.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -96,6 +102,14 @@ void __start(void) noinstrument_function;
 #endif
 
 extern const void * const _vectors[];
+
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+#if defined(CONFIG_STACK_CANARIES) && defined(CONFIG_IMXRT_CAAM)
+FAR const void *__stack_chk_guard = &__stack_chk_guard;
+#endif
 
 /****************************************************************************
  * Name: imxrt_tcmenable
@@ -143,6 +157,25 @@ static inline void imxrt_tcmenable(void)
 #endif /* CONFIG_ARCH_CORTEXM7 */
 }
 
+#if defined(CONFIG_STACK_CANARIES) && defined(CONFIG_IMXRT_CAAM)
+static nostackprotect_function void imxrt_stack_guard_init(void)
+{
+  uint32_t seed[2];
+
+  if (imxrt_caam_get_random((uint8_t *)seed, sizeof(seed)) < 0)
+    {
+      _err("ERROR: no CAAM entropy, the stack guard stays fixed\n");
+      return;
+    }
+
+  __stack_chk_guard = (FAR const void *)(seed[0] & ~(uint32_t)0xff);
+#ifdef CONFIG_BUILD_PROTECTED
+  *USERSPACE->us_stackguard = (FAR const void *)(seed[1] & ~(uint32_t)0xff);
+#endif
+  memset(seed, 0, sizeof(seed));
+}
+#endif
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -156,7 +189,7 @@ static inline void imxrt_tcmenable(void)
  ****************************************************************************/
 
 osentry_function
-void __start(void)
+nostackprotect_function void __start(void)
 {
   const register uint32_t *src;
   register uint32_t *dest;
@@ -291,6 +324,10 @@ void __start(void)
 
 #ifdef USE_EARLYSERIALINIT
   imxrt_earlyserialinit();
+#endif
+
+#if defined(CONFIG_STACK_CANARIES) && defined(CONFIG_IMXRT_CAAM)
+  imxrt_stack_guard_init();
 #endif
 
   /* Then start NuttX */
