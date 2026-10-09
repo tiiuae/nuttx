@@ -1,0 +1,867 @@
+# NUCLEO-N657X0-Q
+
+Build and flash instructions for getting the board to boot NuttX standalone
+from the external Octo-SPI NOR flash, using the `bl` (SRAM2 bootloader) and
+`nsh-xspi` (XIP application) configurations.
+
+## Why two images
+
+The STM32N657X0 has no internal flash, so the boot ROM has to fetch the first
+image from the MX25UM51245G Octo-SPI NOR on XSPI2. The ROM reaches that flash
+through the XSPI1 controller in indirect mode and leaves XSPI2 clock-gated, so
+it cannot start an XIP image directly. Booting therefore takes two stages:
+
+| Stage | Config    | Linker script | Flash address | Runs from                 |
+|-------|-----------|---------------|---------------|---------------------------|
+| 1     | `bl`      | `bl_flash.ld` | `0x70000000`  | AXI SRAM2 `0x34180400`    |
+| 2     | `nsh-xspi`| `flash.ld`    | `0x70100000`  | XIP from `0x70100400`     |
+
+The boot ROM copies the stage 1 payload into SRAM2 and enters it (LRUN). The
+bootloader configures XSPI2 for memory-mapped reads at `0x70000000`, then
+branches to the vector table of the stage 2 image at `0x70100400`. Stage 2
+executes code and read-only data in place from flash; only writable data is
+copied to AXI SRAM.
+
+Both images are wrapped in an STM32 v2.3 boot header (`tools/mkimage.sh`)
+because the ROM only accepts headered images, and the bootloader locates
+stage 2 at a fixed offset just past its own 0x400-byte header.
+
+There is also a `nsh` / `ostest` / `leds` set of configurations that build for
+DEV boot mode (`sram.ld`, loaded by the debugger with `tools/sramload.sh`).
+Those are for quick edit/debug cycles. Native USB SRAM bring-up is described
+below; existing configurations remain USB-disabled.
+
+## Application USB hardware contract (opt-in, qualification-gated)
+
+CN10/ST-LINK provides the USART1 console on PE5/PE6; its host
+`/dev/ttyACM*` device does not demonstrate native STM32N6 USB support.
+The application USB connector is **CN8**, connected to **USB1 OTG HS**
+through dedicated OTG1_HSDM/HSDP pads (UM3417 section 7.11, Table 8).
+
+The architecture now has default-off, experimental
+`CONFIG_STM32_N6_OTGDEV` FIFO-mode device support, with an exclusive
+USB1/USB2 choice.
+USB1 is the controller connected to CN8. Forced full speed
+(`CONFIG_STM32_N6_OTGDEV_FS`) defaults on; combining it with
+`CONFIG_USBDEV_DUALSPEED` is rejected. Host, DMA, isochronous, composite,
+and superspeed configurations are also rejected.
+
+When enabled, initialization performs bounded supply, HSE, PHY, and core
+setup with register readback and stage-aware failure cleanup. It requires
+secure privileged thread execution and the normal startup PWR clock;
+it does not change RIFSC policy. Calls rejected for execution context
+leave hardware untouched. Successful initialization leaves IRQs
+disabled, all endpoint interrupts masked, software session-valid
+inactive, and the device soft-disconnected. The architecture driver does
+not touch GPIO or TCPP03 registers; the opt-in board layer owns those.
+
+The driver implements NuttX endpoint/request operations, EP0 control
+transactions, deferred SET_ADDRESS, bulk/interrupt transfers, queues,
+targeted cancellation, and halt/clear-halt. Class registration binds
+without repeating hardware initialization, enables the IRQ, and reports
+retained initialization errors if hardware setup failed. Controller,
+attachment, EP0, endpoint, request, and maintenance phases use explicit
+state enums; resource ownership is tracked separately with named bits.
+
+Connection requires both a class `DEV_CONNECT()` request and
+`stm32_usbdev_vbus(true)` from qualified board policy. Without qualified
+VBUS, `DEV_CONNECT()` records the request and returns `-ENOTCONN`;
+the device remains disconnected. The board notification must represent
+actual VBUS plus a safe Type-C sink/protection arrangement, not merely
+board power or the TCPP03 interrupt pin. VBUS loss cancels transfers and
+notifies the class; later qualified presence permits reconnection.
+The driver never configures the provider gate or infers VBUS from the PHY.
+
+EP0 uses 64-byte packets and a separate static control OUT buffer
+(`CONFIG_USBDEV_SETUP_MAXDATASIZE`, default 4096 bytes). Larger control
+OUT requests stall explicitly. FIFO slots configured with zero TX size
+are unavailable for IN endpoint allocation despite their reserved
+minimum physical depth. Descriptor packet sizes must fit the negotiated
+speed and assigned FIFO capacity. The default layout reserves 3776 of
+4096 bytes: RX 2048, EP0 TX 256, EP1 TX 64, EP2 TX 1024, and EP3-8 TX
+64 each. Defaults match CDC interrupt IN on EP1 and bulk IN on EP2.
+
+Active cancellation/disable/halt follows the NAK, endpoint-disabled,
+and FIFO-flush phases without delay loops in the IRQ handler. Watchdog
+polling bounds each hardware wait to 20 ms plus timer-tick rounding;
+timeout disconnects and holds the selected subsystem in reset.
+Halt retains queued requests, and clear-halt resets DATA0 before resuming.
+Unregistration waits for quiescence in thread context; request callbacks
+must follow the usual NuttX USB interrupt-context restrictions.
+Suspend retains clocks and notifies the class; remote wakeup and deep
+USB power management are not implemented.
+
+Existing defconfigs remain USB-disabled. The new `usb` SRAM configuration
+registers CDC-ACM without a USB console; CN8 connection remains gated on
+explicit board qualification. Physical enumeration and CDC traffic still
+need qualification; host register/FIFO tests do not establish wire-level
+operation.
+
+Initialization takes over the selected controller and its PHY resets;
+teardown holds them in reset rather than restoring a bootloader USB
+session. Cleanup preserves inherited clock gates, unrelated clock
+selectors, and supply enables needed by the other USB port. A newly
+started HSE is rolled back if startup fails, but once stable it is
+retained as a shared board clock across teardown and later failures.
+
+The current bring-up target is MB1940-N657X0Q-C02, with user-confirmed
+CN10 board power and CN9 [1-2], and factory-standard population with no
+modifications or add-ons (confirmed 2026-10-08). Retain that arrangement.
+C02 sheet 8
+shows a separate provider path from the board 5 V rail through SB1/Q2
+to CN8: CN9 [1-2] does not disconnect it. Keep the TCPP03 provider gate
+off to prevent driving the host's VBUS.
+
+C02 sheet 3 confirms X3 is a 48 MHz crystal, not a digital bypass clock.
+The selected PHY reference is HSE/2, 24 MHz: crystal mode, HSEDIV2SEL=1,
+OTGPHY1CKREFSEL=1, and PHY FSEL=2. Initialization enables or verifies this
+clock contract; it rejects a conflicting live HSE configuration.
+HSERDY alone does not establish nominal frequency (RM0486 section 14.3).
+DS14791 Rev 1, Table 37 gives 2 ms typical crystal startup with no maximum.
+`BOARD_USB_HSE_STABILIZATION_US` currently provides an **experimental
+10 ms** settling allowance after HSERDY, not a qualified maximum.
+Oscillator frequency/startup, rails, and boot
+without a CN8 cable still require board qualification.
+
+C02 sheets 4/9 supply VDD33USB from VDD3V3 through R149 and VDDA18USB
+from VDDA1V8. VDD3V3 and the MCU's VDDIO use separate regulators.
+USB supply initialization therefore needs the independent-supply
+monitor/ready/valid sequence, not an assumption that VDD33USB equals VDD.
+Initialization performs that sequence; VDDA18USB has no software-ready
+monitor and still needs a physical rail check.
+
+CN8 also needs static-sink Type-C/protection handling: TCPP03 is controlled
+over I2C2 PB10/PB11, with PA7 enable and PD2 interrupt; PA11 is analog
+VSENSE, not USB D-. Its 140-kohm/10-kohm divider produces VBUS/15 and
+cannot be used as a digital GPIO-high VBUS detector. I2C2 has onboard
+1.5-kohm pull-ups to VDDIO. RM0486 section 72.4.2 rules out using the
+OTG PHY as the board VBUS detector. Physical rail checks, CC behavior,
+I2C timing, and attach/detach handling remain qualification gates.
+
+### Opt-in SRAM CDC-ACM configuration
+
+In a separate, clean NuttX worktree with a sibling `apps` directory:
+
+```sh
+./tools/configure.sh nucleo-n657x0-q:usb
+make -j$(nproc)
+```
+
+This keeps USART1 on CN10 as the NSH console, enables D-cache, USB trace
+and the USB monitor, and binds `cdcacm_initialize(0, NULL)` once during
+board bring-up. The NuttX device is `/dev/ttyACM0`. **Do not run `sercon`,
+the USB serial example, or another CDC binding owner.** Conflicting
+registration configurations are rejected.
+
+The development descriptors use the user-selected shared CDC pair
+**VID:PID `16c0:05e1`**, manufacturer **`NuttX`**, and product
+**`Nucleo N657 CDC ACM`**. This is not ST's shipping-device identity.
+The built-in CDC serial string is `0`, not a unique board identifier.
+Observe the shared-ID allocation's usage conditions before distribution.
+The device is self-powered relative to CN8, with a provisional conservative
+100 mA CN8 bus-current budget, not a measured consumption claim. Measure
+the CN8 circuitry's consumption and adjust `CONFIG_USBDEV_MAXPOWER` before
+qualifying attachment. Remote wakeup is not advertised.
+
+Forced FS is the default. Endpoints are interrupt IN `0x81` (16 bytes,
+10 ms interval), bulk IN `0x82`, and bulk OUT `0x03` (64 bytes at FS).
+The controller continues using the integrated HS PHY at FS.
+
+The default image deliberately **does not enumerate on CN8**:
+I2C2 rise/fall times and oscillator tolerance remain unqualified zero
+placeholders, and `CONFIG_NUCLEO_N657X0_Q_USBDEV_QUALIFIED` is off.
+After successful controller/class initialization, the console reports
+`CN8 CDC /dev/ttyACM0 registered; attachment qualification missing`
+and the board USB initializer returns `-EAGAIN`. The local device node
+does not imply a host connection. TCPP03 EN stays low; no UCPD or TCPP03
+programming is performed.
+
+### Static sink attachment policy and qualification
+
+The board implementation uses RM0486 sections 14.3/75 and the
+[TCPP03-M20 datasheet, DS13618 Rev 3](https://www.st.com/resource/en/datasheet/tcpp03-m20.pdf),
+sections 6.2/6.3/7.1/7.3:
+
+* UCPD1 uses the fixed HSI/4 kernel clock divided by two (8 MHz), enables
+  Rd and Type-C detection on both CC pins, and leaves PD Tx/Rx, DMA,
+  interrupts, role swapping and VCONN disabled.
+* TCPP03 EN is held low until policy initialization. The sole I2C command
+  is `0x28`: low-power mode, consumer path open, provider path open,
+  VCONN off, and both discharge paths off. Register 1 must acknowledge
+  `0x18`; acknowledge mode bits have a different encoding from commands.
+* Low-power mode passes CC signaling with clamping protection and keeps
+  VBUS observation available. This is a data-only static sink, not a
+  USB-PD negotiation or full normal-mode power-management implementation.
+* LPWORK polls acknowledge/status registers and the steady PD2 FLGn input
+  every 20 ms. No I2C transaction occurs in a GPIO/USB IRQ. Register 2's
+  VBUS_OK and active-low FLGn must agree, and exactly one CC line must show
+  Rp. Attachment requires 150 ms of stable orientation/presence.
+  VBUS loss, lost CC, or orientation change disconnects on the next sample;
+  reattachment is debounced again.
+
+VBUS_OK detects presence near **2.4 V**, not USB's nominal 5 V or the
+precise valid-supply threshold. Qualify assertion/deassertion and FLGn
+behavior against actual CN8 voltage, including slow ramps and removal
+while CN10 stays powered. If that detector is inadequate for the required
+voltage/timing envelope, keep the gate off and add qualified ADC sensing;
+PA11 is not a digital fallback. Polling latency includes timer rounding,
+LPWORK scheduling and bounded I2C transaction time; it is not a guaranteed
+20 ms physical detach limit. The I2C driver currently allows up to 500 ms
+per transaction before timeout; include stalled-bus behavior in qualification.
+
+Before enabling `CONFIG_NUCLEO_N657X0_Q_USBDEV_QUALIFIED`, qualify the
+48 MHz crystal/10 ms settling allowance, VDD33USB/VDDA18USB rails, I2C2
+timing with its fitted 1.5-kohm pull-ups, both CC orientations, VBUS
+observation, absence of source-path back-feed and the descriptor current
+budget. Supply these board Kconfig inputs through `make menuconfig`:
+
+```text
+CONFIG_NUCLEO_N657X0_Q_I2C2_RISE_TIME_NS=<qualified rise time>
+CONFIG_NUCLEO_N657X0_Q_I2C2_FALL_TIME_NS=<qualified fall time>
+CONFIG_NUCLEO_N657X0_Q_I2C2_CLOCK_TOLERANCE_PPM=<worst-case HSI tolerance>
+CONFIG_NUCLEO_N657X0_Q_USBDEV_QUALIFIED=y
+```
+
+The gate is unavailable while any timing input is zero. Do not replace
+measurements with example/mock values. The USB board layer reuses the
+idempotent board I2C2 initialization; it does not register a second bus or
+change another client's configuration. Do not write TCPP03 registers
+through an I2C tool while this policy owns the port.
+
+The UART console remains usable if policy setup fails. An I2C, acknowledge,
+protection, register-readback or work-queue error disconnects, stops polling,
+resets TCPP03 via EN low, releases only newly acquired UCPD clocks, and
+latches an error requiring reboot/reload. TCPP03 reset keeps its provider
+gate off; its default consumer path is not selected by CN9 [1-2].
+No failure path enables VBUS sourcing. Ordinary USB suspend/resume keeps
+USB and attachment-monitor clocks available.
+
+### Loading, host diagnostics and recovery
+
+Keep CN10 power, CN9 [1-2], and the USART1 terminal. Put the board into
+DEV boot mode and, from the USB build directory, explicitly load the
+SRAM image:
+
+```sh
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh \
+    -e nuttx -i nuttx.bin
+```
+
+The image must be reloaded after reset/power loss. No XIP USB configuration,
+PX4 startup change, or new USB firmware-update path is supplied.
+Start physical qualification with a known data-capable A-to-C cable on
+CN8, test both orientations, and then test C-to-C attachment.
+Only a qualified image should report `CN8 USB attached on CC1/CC2`.
+Identify the host device by descriptors and CN8 topology, not an assumed
+`/dev/ttyACM0`: ST-LINK also uses CDC and host minor numbers can change.
+
+```sh
+lsusb -d 16c0:05e1 -v
+dmesg --follow
+```
+
+On NuttX, use the UART shell's `ls /dev` and USB monitor output; use
+usbmon captures for host-side EP0/traffic diagnostics. On a policy fault,
+unplug CN8, retain CN10 diagnostics, correct the reported fault and
+reboot/reload. Do not bypass the qualification gate to suppress an error.
+
+Only after forced-FS enumeration and CDC traffic pass, build the HS/FS
+variant by disabling `CONFIG_STM32_N6_OTGDEV_FS`, enabling
+`CONFIG_USBDEV_DUALSPEED`, setting `CONFIG_CDCACM_EPINTIN_HSSIZE=16`, and
+retaining the default 512-byte HS bulk sizes. Notification `bInterval`
+remains 10 (10 ms at FS, 64 ms at HS). The class generates matching
+device/qualifier and other-speed descriptors. Test HS with an HS-capable
+connection and FS fallback through an FS-only connection; neither has been
+physically established by software builds or host tests.
+
+## Prerequisites
+
+* `arm-none-eabi-` toolchain (Arm GNU Toolchain, AArch32 bare-metal).
+* NuttX host tools (`kconfig-frontends`, `make`, `genromfs`).
+* STM32CubeProgrammer 2.17 or newer, which provides both
+  `STM32_Programmer_CLI` and `STM32_SigningTool_CLI`, plus the
+  `MX25UM51245G_STM32N6570-NUCLEO.stldr` external loader.
+
+Point `STM32_PRG_PATH` at the STM32CubeProgrammer `bin` directory. The build
+uses it to sign images, and the flashing scripts use it to find the programmer
+and the external loader:
+
+```sh
+export STM32_PRG_PATH=$HOME/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
+```
+
+If `STM32_PRG_PATH` is unset the build still succeeds, but the POSTBUILD step
+is skipped with a warning and only the unbootable raw `nuttx.bin` is produced.
+
+All commands below are run from the `nuttx/` directory, with `apps/` as a
+sibling directory.
+
+## Boot switches
+
+The board selects its boot mode with the two boot switches (BOOT0/BOOT1, see
+the board user manual for the silkscreen markings):
+
+* **DEV boot mode** — required for *all* programming. The ROM parks the CPU
+  with the debug port open, so the ST-LINK can drive the external loader.
+* **Boot-from-flash mode** — required to *run* what you programmed.
+
+Programming with the switches in boot-from-flash mode fails or hangs, because
+the running image owns the XSPI pins.
+
+## 1. Build and flash the bootloader
+
+```sh
+make distclean
+./tools/configure.sh nucleo-n657x0-q:bl
+make -j$(nproc)
+```
+
+The POSTBUILD step signs `nuttx.bin` with a load address of `0x34180000`
+(LRUN) and produces **`bl-flash.bin`**.
+
+Put the board in **DEV boot mode**, then:
+
+```sh
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/xspiflash.sh \
+    -i bl-flash.bin -a 0x70000000
+```
+
+The script checks the `STM2` header magic, programs through the
+`MX25UM51245G_STM32N6570-NUCLEO.stldr` external loader, and verifies the
+read-back.
+
+## 2. Build and flash the application
+
+Keep a copy of `bl-flash.bin` first if you want it — `make distclean` removes
+it.
+
+```sh
+cp bl-flash.bin /tmp/            # optional
+make distclean
+./tools/configure.sh nucleo-n657x0-q:nsh-xspi
+make -j$(nproc)
+```
+
+The POSTBUILD step signs `nuttx.bin` with `--flash-base 0x70100000` (XIP, load
+address `0xffffffff`) and produces **`nuttx-flash.bin`**. `mkimage.sh` also
+cross-checks the ELF against `flash.ld`: it fails if `.text` does not land at
+`0x70100400` or if the entry point is outside the flash window.
+
+Still in **DEV boot mode**:
+
+```sh
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/xspiflash.sh \
+    -i nuttx-flash.bin -a 0x70100000
+```
+
+## 3. Run it
+
+1. Set the boot switches to **boot-from-flash**.
+2. Open the console: USART1 on the ST-LINK VCP (`/dev/ttyACM0`), 115200 8N1.
+3. Press **NRST** or power-cycle the board.
+
+Expected output: the NuttX banner and the `nsh>` prompt. The bootloader is
+silent: its `_alert()` traces compile out unless the `bl` configuration is
+built with `CONFIG_DEBUG_ALERT` (`make menuconfig` -> Build Setup -> Debug
+Options).
+
+```
+nsh> uname -a
+nsh> free
+nsh> ?
+```
+
+Only stage 2 needs to be re-flashed for application changes; the bootloader
+stays in place until its own behaviour changes.
+
+## Quick reference
+
+```sh
+# bootloader
+./tools/configure.sh nucleo-n657x0-q:bl        && make -j$(nproc)
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/xspiflash.sh -i bl-flash.bin    -a 0x70000000
+
+# application
+./tools/configure.sh nucleo-n657x0-q:nsh-xspi  && make -j$(nproc)
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/xspiflash.sh -i nuttx-flash.bin -a 0x70100000
+```
+
+Useful script options (both scripts accept `-h`):
+
+* `--mode UR` — connect under reset if `HOTPLUG` cannot take the target.
+* `--no-verify` — skip read-back verification.
+* `-d` — dump the STM32 header before programming.
+* `--el <file>` — use a different external loader.
+
+## Memory map
+
+```
+0x70000000  XSPI2 flash, stage 1 image (STM32 header + SRAM2 payload)
+0x70100000  XSPI2 flash, stage 2 image (STM32 header)
+0x70100400    stage 2 .text / .rodata, executed in place
+0x34000400  AXI SRAM, base for DEV-boot (sram.ld) images
+0x34180000  AXI SRAM2 bank base, ROM context area (1 KiB)
+0x34180400  bootloader image; also stage 2 .data/.bss (511 KiB region)
+```
+
+## Serial board and boot contract
+
+This contract is for **MB1940-N657X0Q-C02**, STM32N657X0H3Q (VFBGA264),
+with factory wiring and no attached shields or custom connections. It selects
+the second-port route for later driver work; it does **not** enable USART3,
+assign it a `/dev/ttyS*` minor, or claim hardware qualification.
+
+### Console and second-port wiring
+
+| Port / signal | MCU pin / AF | Connector |
+|---------------|--------------|-----------|
+| USART1 TX (console) | PE5 / AF7 | Onboard STLINK-V3EC VCP, USB CN10 |
+| USART1 RX (console) | PE6 / AF7 | Onboard STLINK-V3EC VCP, USB CN10 |
+| USART3 TX (test port) | PD8 / AF7 | Arduino CN13 pin 2 (D1), also Morpho CN15 pin 35 |
+| USART3 RX (test port) | PD9 / AF7 | Arduino CN13 pin 1 (D0), also Morpho CN15 pin 37 |
+| Test-port common ground | GND | CN15 pin 20, or Arduino power CN5 pin 6/7 |
+| USART3 RTS / CTS | Not assigned | No hardware flow control in the initial wiring contract |
+
+Preserve the USART1 PE5/PE6 configuration and its factory ST-Link connection.
+SB43 (PE5) and SB34 (PE6) expose the console nets to Morpho CN15 pins 4 and 2;
+they are not second-port routing switches. Do not connect another transmitter
+to the console RX net or change its bridges for a USART3 test.
+
+The C02 schematic routes PD8/PD9 directly to CN13 and CN15 without a
+solder-bridge selection, level shifter, inverter, or serial transceiver.
+No bridge changes are required for the selected USART3 route. Both connector
+appearances of each signal are the same net, not independent ports.
+
+PD8/PD9 and PE5/PE6 use the main VDD I/O domain, supplied by the board's
+3.3 V VDDIO rail, not the 1.8 V VDDIO3 domain used by the XSPI2 port-N pins.
+Keep `PWR_SVMCR3.VDDIOVRSEL` clear and the VDD high-speed/low-voltage option
+consistent with the 3.3 V supply. Use a 3.3 V logic-level peer and a common
+ground. Do not connect RS-232 voltage levels directly. An inverted receiver
+protocol or RS-232/RS-485 connection needs separately qualified inversion or
+external interface circuitry; none is present on these test-port nets.
+
+For later loopback, connect CN13 pin 2 to pin 1 (or CN15 pin 35 to pin 37).
+Enable USART3 explicitly and stop conflicting D0/D1 users before adding this
+jumper. For a peer, cross board TX to peer RX and board RX to peer TX.
+
+PD8/PD9 do not overlap the existing XSPI2 boot pins, SPI5 PE15/PG1/PG2
+(or its PA3 chip select), I2C2 PB10/PB11, LEDs PG10/PG0/PG8, or the PC13
+button EXTI test. The current TIM1/TIM5 counter test does not configure these
+pads. Arduino shields using D0/D1, or future DCMIPP/DCMI/PSSI, FMC, LCD,
+SPDIF or tamper use of PD8/PD9, conflict with this route and must not run
+concurrently.
+
+### Kernel clock and boot handoff
+
+USART1 uses `RCC_CCIPR13.USART1SEL=6` (**hsi_div_ck**, not undivided HSI).
+Console setup changes only its selector field and preserves the other fields.
+Each additional port selects the same source through its own selector when
+first opened; enabling USART3 does not change the console's selector.
+
+Early console setup and the full serial driver both call
+`stm32_usart_clock()` to read `RCC_HSICFGR.HSIDIV[8:7]` and derive the nominal
+post-divider clock from the board's 64 MHz HSI definition:
+
+| HSIDIV encoding | Divider | Nominal USART kernel clock with PRESC=/1 |
+|-----------------|---------|------------------------------------------|
+| 0 | /1 | 64 MHz |
+| 1 | /2 | 32 MHz |
+| 2 | /4 | 16 MHz |
+| 3 | /8 | 8 MHz |
+
+The RCC reset encoding is 0. The local clock initialization does not program
+HSIDIV; an FSBL may leave a different value. Both serial initialization paths
+explicitly select PRESC while UE is clear, rather than depending on FSBL
+leftovers. Normal console rates use /1; very low rates may require a documented
+prescaler up to /256. `CONFIG_SUPPRESS_UART_CONFIG` retains its usual
+meaning: the handoff must already provide the correct clock and USART format.
+
+Neither serial path changes the global oscillator divider. HSIDIV and the
+USART kernel selector must remain stable while serial is active; changing
+them requires a separate, coordinated reconfiguration. The derived frequency
+is nominal, not an oscillator-tolerance or measured-baud qualification.
+An FSBL must leave HSI enabled and ready, and quiesce serial/DMA transfers
+before jumping to NuttX.
+
+### CPU, peripheral and DMA access requirements
+
+| Surface | DEV/SRAM boot | FSBL/XSPI boot |
+|---------|---------------|----------------|
+| CPU / register access | Secure privileged NuttX execution; secure RCC/GPIO/USART aliases | Same execution contract; FSBL must not hand off to nonsecure execution |
+| USART / GPIO / RCC | CPU must be permitted to access USART1, GPIOE and RCC; later USART3 also requires GPIOD and USART3 | Inherited RIFSC/GPIO permissions and locks must allow the same accesses |
+| DMA controllers | Configured GPDMA1/HPDMA1 channel pools are set secure and privileged by `stm32_dma_access_initialize()` | Same local initialization must be permitted by inherited isolation settings |
+| DMA transfers | Native DMA driver sets secure source/destination attributes; HPDMA channels use CID 1 with filtering | Same attributes; FSBL RISAF/RIFSC policy must admit the selected DMA master/channel |
+| Writable serial buffers | Static buffers in AXI SRAM, within the `sram.ld` region starting at `0x34000400` | Static buffers in AXI SRAM, within the `flash.ld` writable region `0x34180400..0x341fffff`, not XSPI code/rodata |
+| Memory isolation / cache | RISAF must permit CPU and the selected DMA master to access buffers and descriptors; use the native DMA cache/ownership API | Inherited RISAF policy must provide the same access; XIP does not make SRAM buffers noncacheable |
+
+The local policy does not weaken USART RIFSC permissions: RM0486 describes
+non-RIF-aware peripheral reset access as nonsecure/unprivileged, which admits
+the secure privileged CPU/DMA accesses used here. That reset policy is not
+proof of an arbitrary FSBL's configuration. Do not silently relax isolation
+or substitute nonsecure aliases when access is denied.
+
+Ordinary WFI uses Sleep, not Stop: startup retains AXI SRAM clocks, and serial
+setup retains each opened port's clock through its APB1L/APB2 LPEN set alias.
+This contract does not qualify Stop-mode reception.
+
+**Target qualification still required:** on each boot path record
+`RCC_HSICFGR`, `RCC_CCIPR13`, USART1 `PRESC/BRR/CR1`, and relevant LPEN
+registers; confirm the resulting clock and console operation. Record the
+USART/GPIO RIFSC permissions, DMA `SECCFGR/PRIVCFGR`, applicable CID settings
+and RISAF buffer-region permissions before DMA qualification. Verify 3.3 V,
+ground and pin continuity on the target before attaching a peer. USART3
+loopback and flow-control qualification belong to the later enabled-driver
+steps. These observations have not been collected by this implementation.
+
+Sources: local RM0486 Rev 4 (chapters 3, 6, 7, 13, 14, 18/19 and 65);
+[DS14791 Rev 1](https://my.avnet.com/wcm/connect/07670e5b-bab1-4163-bb60-e04c35e8bdcf/STM32N657x0-Datasheet_ebv25044.pdf?MOD=AJPERES)
+(Tables 16/17, VFBGA264 and AF7);
+[UM3417 Rev 3](https://www.st.com/resource/en/user_manual/um3417-stm32n6-nucleo144-board-mb1940-stmicroelectronics.pdf)
+(section 7.9, Tables 12/13);
+[MB1940-N657X0Q-C02 schematic](https://www.st.com/resource/en/schematic_pack/mb1940-n657x0q-c02-schematic.pdf)
+(MCU, power, Morpho, Arduino and ST-Link sheets).
+The ST manual and schematic were read from
+[mirrored ST PDFs](https://github.com/gotree94/mcu_ml/tree/main/Day3-6N)
+because direct ST downloads were unavailable.
+
+### USART1 line configuration and power policy
+
+Early and full setup share validated baud/format calculation and register
+programming. Arithmetic uses 64-bit intermediates; oversampling by 16 is
+preferred, with oversampling by 8 only when needed and representable.
+FIFO mode, word length, parity, PRESC and BRR are established with UE clear.
+Transmitter/receiver acknowledgement waits are bounded to 100 microseconds
+per attempt. Failed reconfiguration restores the prior registers; failure
+to acknowledge the restoration returns `-EIO`, not success.
+
+With `CONFIG_SERIAL_TERMIOS`, USART1 accepts CS7/CS8 payloads, no/even/odd
+parity, and one/two stop bits. RX and interrupt TX mask CS7 payloads to seven
+bits; the hardware word length performs the same masking for DMA TX.
+TCGETS reports the configured format and nominal requested input/output
+speed, not a measured or quantization-adjusted rate. Unsupported payload
+widths, zero baud (B0/hangup is not implemented), and unavailable flow pins
+return `-EINVAL`; unrepresentable rates return `-ERANGE`. Configuration
+suppression leaves the bootloader's format intact and rejects TCSETS with
+`-ENOTSUP`.
+
+Runtime changes exclude IRQ/debug output and reject queued TX, active DMA,
+DMA requests, incomplete wire TX, pending hardware RX or an active receiver
+with `-EBUSY`, without aborting transfers. The peer must be idle during the
+change. NuttX's upper half implements drain/flush; the lower half preserves
+the software RX ring. Frames arriving at the UE-disable boundary cannot be
+guaranteed. Each FIFO character obtains fresh error status, with PE/FE/NE/ORE
+cleared before RDR advances the FIFO. Errors without payload are also cleared.
+The existing 256-pass ISR bound, TC-based wire completion and debug
+CR-before-LF behavior are retained.
+
+Close disables interrupts, stops/releases TX DMA, disables the USART, and
+only then gates its APB clock and releases configured pins. A nonblocking
+close or upper-half drain timeout can discard wire TX and logs a warning.
+A failed DMA stop or USART disable leaves the clock enabled, logs the error
+and makes subsequent setup return that error until successful shutdown or
+reboot; it must not silently reopen an uncertain channel/peripheral.
+
+PM prepare leaves service untouched and permits NORMAL/IDLE. Initialized
+ports veto STANDBY/SLEEP with `-EBUSY` for queued/activity cases and
+`-ENOTSUP` otherwise. There is no unbounded CTS/TC wait or unsafe void-notify
+suspend. This gate does not alter the board's ordinary WFI/Sleep behavior
+or claim Stop-mode clock retention, DMA retention or RX wakeup support.
+
+Host checks are available with
+`make -C arch/arm/src/stm32n6/tests/host check-serial`. They exercise baud
+boundaries and real driver routines against mocked registers, including
+termios, FIFO errors, acknowledgement failures, PM and close/reopen.
+**Hardware qualification remains pending:** measure baud and receive
+clock-deviation tolerance on both boot paths, inject parity/framing/noise/
+overrun errors, exercise FIFO bursts and close/reopen, and verify busy/
+CTS-blocked PM rejection using separately qualified flow-control wiring.
+No second port or RTS/CTS board route is enabled by these changes.
+
+### Multiple USART/UART instances
+
+The driver supports conditional instances for USART1/2/3/6/10 and
+UART4/5/7/8/9. Each port has independent buffers, interrupt state, GPIO
+bindings and RCC enable/reset/kernel-selector/Sleep-clock metadata. All
+use the inherited HSIDIV-derived HSI clock. Non-console setup resets only
+that port; early setup does not reset the running console or access unopened
+ports. Suppressed configuration enables bus/Sleep clocks but leaves inherited
+format and selector settings intact.
+
+USART1 remains the ST-Link console. To opt into the checked Arduino/Morpho
+route, enable `CONFIG_STM32_USART3` in menuconfig and
+retain its default standard serial driver. Keep USART1 as the console.
+The resulting `CONFIG_STM32_USART3_SERIALDRIVER` and
+`CONFIG_USART3_SERIALDRIVER` select the same N6 lower half; USART3 uses
+`GPIO_USART3_TX/RX` bound to PD8/PD9 AF7. USART2 and the other ports require
+separately checked board TX/RX bindings before enabling them; no pin routes
+are guessed for those instances. Dedicated 1-Wire and HCI-UART drivers are
+not selectable for N6.
+
+By default the console is `/dev/ttyS0`; with USART1 console plus USART3,
+USART3 is `/dev/ttyS1`. `CONFIG_STM32_SERIAL_DISABLE_REORDERING` assigns
+minors in increasing enabled hardware-instance order instead, without moving
+the console to the front. Sparse hardware numbers do not leave minor-number
+gaps. `/dev/console` still aliases the selected console. Registration failures
+are logged and device names use bounded full-number formatting.
+
+Ports default to interrupt I/O; each ordinary instance can independently opt
+into GPDMA1 TX DMA as described below. Separate operations keep DMA callbacks
+off interrupt-only ports. Step 2's deep-PM veto remains unchanged.
+
+In addition to `check-serial`, run
+`make -C arch/arm/src/stm32n6/tests/host check-serial-build` with an existing
+N6 configuration, `kconfig-conf` and `arm-none-eabi-gcc`. This generates
+isolated configurations and compiles every port/console plus combinations
+without replacing the active build configuration. Ports without board
+bindings use compile-only GPIO fixtures, not qualified physical routes.
+Host instance tests check sparse registration, console ordering, independent
+reset/Sleep clocks and preserving the console when another port closes.
+**Target qualification remains pending:** USART1 console and USART3 peer/
+loopback must run simultaneously on both DEV/SRAM and FSBL/XSPI boots.
+
+### Per-port TX DMA
+
+Enable `CONFIG_STM32_GPDMA1` and `CONFIG_<port>_TXDMA` for each selected
+USART1/2/3/6/10 or UART4/5/7/8/9. Generated Kconfig selects
+`CONFIG_SERIAL_TXDMA`; GPDMA1 is not aliased to another family's DMA1.
+The common serial menus remain architecture-neutral. N6-local build checks
+reject TXDMA without GPDMA1 (including HPDMA-only selections) and reject
+unimplemented RXDMA pending the step 6 ownership work. Unsupported selections
+are not silently compiled as interrupt I/O. Existing board TXDMA requests now
+take effect; keep an interrupt-only configuration for diagnosis. No new board
+pin routes or ports are enabled.
+The DMA-core bring-up test skips USART1 request/register tests when the
+serial driver owns that port; an idle DMAT bit is not permission to borrow it.
+
+Allocation occurs on attach, after DMA initialization, not during early
+console setup. Unavailable channels and setup/start/transfer errors are
+reported and use interrupt TX once ownership/progress is safe. Contiguous and
+wrapped TX batches are split into blocks of at most 65535 bytes. The DMA core
+owns source cache maintenance; DMA completion releases software-buffer space,
+but `txempty()` still waits for USART TC, not DMA TCF.
+
+The DMA core tracks initialization, allocation and transfers in one state:
+`OFFLINE` channels have not completed initialization, `FREE` channels are
+allocatable, and `UNCONFIGURED` channels are allocated but not programmed.
+Successful stop retains allocation; free returns the channel to the pool.
+Completion requires fresh setup/list programming before another start.
+Fatal errors require a successful stop/reset before
+setup or release; concurrent operations cannot interrupt an ongoing stop.
+Recovery substates distinguish a pending snapshot, a saved exact count and
+unknown progress, preserving that distinction across stop/abort retries.
+
+On an error, the DMA core suspends the channel, snapshots BNDT and FIFOL
+before resetting it, and counts only bytes already accepted by TDR.
+Prefetched DMA FIFO bytes and the remaining suffix are retried; completed
+blocks and wrapped segments are not. A reset-timeout snapshot is retained
+for a later abort attempt. Unknown progress or an abort timeout retains
+buffer/channel ownership, blocks further TX and vetoes reconfiguration/PM;
+it does not manufacture a successful retry. In particular, DTEF cannot prove
+the failed bus write's side effects, so it does not trigger automatic retry.
+Explicit flush/close may discard unknown progress after a confirmed stop.
+TX flush performs abort and
+software-ring discard in one IRQ-excluded transaction. Close does not release
+channels or gate the USART clock after failed quiescence.
+
+Debug writes during DMA are deferred until the complete current batch has
+reached TDR, then sent by the USART TX interrupt before the next DMA batch.
+CR-before-LF is preserved and CTS can stall this service without a busy wait.
+The shared console debug queue holds 127 bytes; overflow drops the newest
+character (both bytes for a newline) and emits an explicit overflow diagnostic
+when service resumes. After interrupt fallback, deferred diagnostics follow
+the queued payload. A DMA console keeps its TX IRQ attached across close so
+deferred debug remains usable. Early boot and idle-console debug output
+remain polled.
+
+The host checks include byte-for-byte wraps, 65535-byte boundaries, first/
+second-segment setup/start/transfer failures, FIFO-aware abort accounting,
+abort/reset timeouts, flush, close/reopen, debug ordering/overflow and TC-based
+drain. The generated-config ARM matrix covers every port, mixed DMA/IRQ,
+cache on/off, termios, flow control, PM, no console and unsupported DMA choices.
+**Hardware qualification remains pending:** compare DMA and interrupt binary
+traffic under cache/concurrent console load, inject faults and channel
+exhaustion, exercise CTS-blocked close/flush/PM, and run repeated lifecycle
+tests on both DEV/SRAM and FSBL/XSPI boots. These software checks do not
+establish wire-level losslessness or the step 5 physical exit criteria.
+
+### Flow control and PX4 RC modes
+
+`CONFIG_SERIAL_TERMIOS` permits runtime baud/format/RTS/CTS changes.
+RTS/CTS require separately verified board `GPIO_<port>_RTS/CTS` bindings;
+the factory board bindings supplied here still define neither. Setup and
+TCSETS reject requested flow control without the relevant pin with `-EINVAL`.
+When global flow-control support is enabled, any supplied per-port bindings
+are reserved/configured at setup even if that port's initial flow flag is off,
+so termios can enable them later. No new RTS/CTS route is guessed or enabled.
+Early and full console setup share the initial flow configuration, so full
+setup does not restart the initial idle frame to add CTS/RTS. Software RTS
+initially blocks the peer until full setup releases it according to ring state.
+
+Hardware RTS asserts only when the RX FIFO is full (RM0486 section 65.5.21).
+The upper-half flow callback pauses FIFO servicing at software-ring full/
+upper-watermark and resumes at empty/lower-watermark. A peer must obey RTS.
+For earlier ring-based backpressure, explicitly enable
+`CONFIG_SERIAL_IFLOWCONTROL_WATERMARKS` and `CONFIG_STM32_FLOWCONTROL_BROKEN`.
+Despite the inherited option name, N6 does not assume a hardware erratum:
+this policy drives RTS as a GPIO, leaves RX servicing enabled while the peer
+reacts, and requires enough spare ring capacity for the peer's response time.
+RTS is released when input flow is disabled. CTS/FIFO/DMA acceptance does
+not imply wire completion; `txempty()` still requires USART TC.
+
+Enable `CONFIG_STM32_USART_INVERT` for `TIOCSINVERT` with
+`SER_INVERT_ENABLED_RX/TX`. It changes RXINV/TXINV, not DATAINV.
+Enable `CONFIG_STM32_USART_SINGLEWIRE` for `TIOCSSINGLEWIRE`. Enabling HDSEL
+uses the TX pin for both directions; the RX pin is ignored. The ABI supports
+open-drain (default), push-pull, and no-pull/pull-up/pull-down choices.
+Disabling restores the exact board TX configuration and normal two-pin mode.
+RM0486's ordinary single-wire wiring requires open-drain and an external
+pull-up. Push-pull/inverted operation is only appropriate with a compatible
+peer/circuit, not an arbitrary shared wire. The application arbitrates the
+line and accounts for possible self-reception; no software direction machine
+or echo filtering is added. HDSEL releases the idle line as described by RM0486.
+
+Both mode ioctls require an initialized, idle port: queued/active DMA TX,
+TC=0, receiver BUSY or pending hardware RX returns `-EBUSY` without waiting
+for a blocked peer. Drain/stop the peer before changing modes. Changes share
+bounded UE/acknowledgement sequencing and register/GPIO rollback with termios;
+interrupt state and unrelated format/mode bits are preserved. Suppressed UART
+configuration returns `-ENOTSUP`. Unknown inversion flags or invalid enabled
+single-wire pull combinations return `-EINVAL`; RTS/CTS and single-wire mode
+are mutually exclusive. The legacy complement-of-enable disable argument is
+accepted. Unimplemented break, swap and RS-485 choices are hidden for N6.
+
+Host checks cover S.BUS 100000 8E2, DSM 115200 8N1, inversion flags, the
+single-wire electrical options used by PX4, missing flow pins, watermarks,
+wire-busy rejection and acknowledgement/GPIO rollback. The ARM configuration
+matrix also covers RC modes without termios, suppression, independent
+RTS/CTS selections and rejection of unsupported configuration choices.
+**Electrical/protocol qualification is still pending:** on both boot paths,
+measure CTS-blocked FIFO and DMA drain, pause readers and verify RTS prevents
+loss with the actual peer, decode S.BUS/DSM with the chosen inversion circuit,
+and exercise the selected half-duplex RC peer. TX DMA accounting is implemented;
+host mocks do not establish wire timing, receiver interoperability or losslessness.
+
+## Boot-time tests
+
+The low-level timer driver keeps TIM1–18 hardware properties in read-only
+per-instance configurations: register base, RCC enable register and mask,
+board input clock, update IRQ, counter width, channel count, capability flags,
+and optional output GPIOs. A timer-indexed table contains only enabled timers
+not reserved for PWM, ADC, DAC, quadrature encoding, or capture. Missing GPIO
+definitions do not prevent register-only channel configuration.
+
+Run `make -C arch/arm/src/stm32n6/tests/host check-tim` from the NuttX directory
+to exercise the complete driver with host register and IRQ mocks. The matrix
+covers each timer individually, all timers with and without GPIOs, sparse
+GPIO definitions (including a zero-valued pin configuration), ownership
+exclusions, and no enabled timers. It checks clock prescalers, register access
+widths, capability and channel limits, IRQ selection, RCC bit preservation,
+and allocation/deallocation. These checks do not establish hardware timing.
+
+`stm32_bringup()` calls `stm32_bringup_test()` in `src/stm32_bringup_test.c`
+after registering the user-LED driver. The runner executes enabled GPIO EXTI,
+timer clock, DMA policy, SPI5 loopback, and SPI5 BMP280 tests in that order.
+Each test retains its own `CONFIG_NUCLEO_N657X0_Q_*` switch. Failures are
+logged without preventing later tests or normal board bring-up; with no
+tests enabled, the runner does nothing.
+
+## I2C2 NSH configuration
+
+The dedicated `i2c` configuration enables STM32N6 I2C2, the board's opt-in
+PB10/PB11 bring-up, `/dev/i2c2` registration through `CONFIG_I2C_DRIVER`, and
+NuttX's `i2c` NSH tool:
+
+```sh
+./tools/configure.sh nucleo-n657x0-q:i2c
+make -j$(nproc)
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh
+```
+
+**This configuration is not yet runtime-qualified.** The board Kconfig inputs
+`NUCLEO_N657X0_Q_I2C2_RISE_TIME_NS`,
+`NUCLEO_N657X0_Q_I2C2_FALL_TIME_NS`, and
+`NUCLEO_N657X0_Q_I2C2_CLOCK_TOLERANCE_PPM` remain unqualified and zero.
+`include/board.h` passes them to the driver, which deliberately rejects
+timing setup.
+Bring-up logs the initialization failure and does not register `/dev/i2c2`
+until qualified board timing values are supplied. Do not substitute guessed
+values.
+
+PB10/PB11 are the configured MCU pin route only; connector mapping, I/O
+voltage, external pull-ups, and bus capacitance have not been qualified here.
+Verify those electrical details against the board documentation and hardware
+before connecting or probing a target.
+
+After timing is qualified and a compatible device is connected, use `i2c bus`
+to check the registered bus. For a device whose datasheet documents a
+register-read transaction, use `i2c get -b 2 -f 100000 -n -a ADDRESS -r REGISTER`, replacing
+`ADDRESS` and `REGISTER` with that device's documented 7-bit address and
+register. The combined register/read operation uses a repeated START.
+Do not use `-s`: the current tool submits the register write alone with
+NOSTOP, which the N6 driver rejects as a final NOSTOP. Clients needing
+separate STOP/START transactions must submit ordinary messages without
+NOSTOP. Use the device's documented transaction requirements.
+
+Avoid broad `i2c dev` scans: the tool's default address probe performs a
+one-byte read, which can have device-specific side effects. Do not issue
+`i2c set` unless the target and register are known and the write is safe.
+Physical SCL/SDA waveforms, one real sensor's identification and repeated
+reads, and 400 kHz operation remain to be verified on hardware.
+
+## GPIO external interrupts
+
+EXTI lines 0-15 are shared by GPIO port: for example, PA3 and PB3 both use
+EXTI3, so only one port can own a given line. The first GPIO port configured
+for an EXTI line retains that line until reboot; a request for the same line
+from another port fails with `-EBUSY`.
+
+### Blue user button EXTI hardware test
+
+Build the `nsh-test` configuration and load it in DEV boot mode:
+
+```sh
+./tools/configure.sh nucleo-n657x0-q:nsh-test
+make -j$(nproc)
+./boards/arm/stm32n6/nucleo-n657x0-q/tools/sramload.sh
+```
+
+With `CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST`, the test configures the blue
+user button on PC13 (EXTI13) as an active-high input with an internal
+pull-down. During board bring-up, press the button within three seconds of
+the console prompt. A detected press is logged; otherwise the test returns
+`-ETIMEDOUT` and bring-up logs a warning and continues. Brief presses are
+latched until the polling task observes them. The blue user LED (LD7) turns
+on while the button is pressed and off when it is released, including after
+the wait completes. This configuration uses the user-LED lower half instead
+of `CONFIG_ARCH_LEDS`; no external jumper is needed.
+
+## Troubleshooting
+
+**`STM32_PRG_PATH is not set`** — export it as shown above; without it the
+build never produces `bl-flash.bin` / `nuttx-flash.bin`.
+
+**`'nuttx-signed.bin' not found`** — `xspiflash.sh` defaults to that name;
+pass `-i bl-flash.bin` or `-i nuttx-flash.bin` explicitly.
+
+**`does not start with the STM32 header magic ("STM2")`** — you are pointing at
+the raw `nuttx.bin`. Use the signed output from POSTBUILD, or run
+`tools/mkimage.sh` manually.
+
+**`Error: No STM32 target found`, or programming hangs** — the board is not in
+DEV boot mode, or the debug session is stale. Re-check the switches, then try
+`--mode UR`.
+
+**Nothing on the console after reset** — verify the boot switches are back in
+boot-from-flash mode, and that both images were programmed at the right
+addresses; the bootloader jumps unconditionally to `0x70100400`.
+
+**Hard fault in the idle task / lockup after the banner** — a symptom of the
+XSPI2 clocks being gated in CSLEEP. The bootloader sets the XSPI2/XSPIM
+sleep-mode clock enables via `RCC_AHB5LPENSR`; check that the bootloader
+actually ran and was not bypassed.
+
+**Images larger than 16 MiB** — the bootloader replays the boot ROM's 24-bit
+address read transaction, which only reaches the first 16 MiB of the 64 MiB
+device. Larger images need 4-byte addressing and a matching read opcode in
+`src/stm32_bootloader.c`.
+```

@@ -1,0 +1,133 @@
+/****************************************************************************
+ * boards/arm/stm32n6/nucleo-n657x0-q/src/nucleo-n657x0-q.h
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+#ifndef __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H
+#define __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H
+
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include <nuttx/config.h>
+#include <nuttx/compiler.h>
+#include <stdint.h>
+
+#include "stm32_gpio.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+/* procfs File System */
+
+#ifdef CONFIG_FS_PROCFS
+#  ifdef CONFIG_NSH_PROC_MOUNTPOINT
+#    define STM32_PROCFS_MOUNTPOINT CONFIG_NSH_PROC_MOUNTPOINT
+#  else
+#    define STM32_PROCFS_MOUNTPOINT "/proc"
+#  endif
+#endif
+
+/* LED definitions **********************************************************/
+
+/* The Nucleo-N657X0-Q has three user LEDs (UM3417 silkscreen):
+ *
+ *   LD5  PG10  Red
+ *   LD6  PG0   Green
+ *   LD7  PG8   Blue
+ *
+ * - When the I/O is LOW,  the LED is on.
+ * - When the I/O is HIGH, the LED is off.
+ */
+
+#define GPIO_LD5       (GPIO_OUTPUT | GPIO_PUSHPULL | GPIO_SPEED_2MHZ | \
+                        GPIO_OUTPUT_SET | GPIO_PORTG | GPIO_PIN10)
+#define GPIO_LD6       (GPIO_OUTPUT | GPIO_PUSHPULL | GPIO_SPEED_2MHZ | \
+                        GPIO_OUTPUT_SET | GPIO_PORTG | GPIO_PIN0)
+#define GPIO_LD7       (GPIO_OUTPUT | GPIO_PUSHPULL | GPIO_SPEED_2MHZ | \
+                        GPIO_OUTPUT_SET | GPIO_PORTG | GPIO_PIN8)
+
+/****************************************************************************
+ * Public Types
+ ****************************************************************************/
+
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+#ifndef __ASSEMBLY__
+
+/****************************************************************************
+ * Public Function Prototypes
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: stm32_bringup
+ *
+ * Description:
+ *   Perform architecture-specific initialization
+ *
+ *   CONFIG_BOARD_LATE_INITIALIZE=y :
+ *     Called from board_late_initialize().
+ *
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
+ *     Called from the NSH library
+ *
+ ****************************************************************************/
+
+int stm32_bringup(void);
+
+void stm32_bringup_test(void);
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_I2C2
+struct i2c_master_s;
+int nucleo_i2c_initialize(void);
+struct i2c_master_s *nucleo_i2c2_bus(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_USBDEV
+int nucleo_usbdev_initialize(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_TIMER_CLOCKTEST
+void stm32_timer_clocktest(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_DMA_POLICYTEST
+int stm32_dma_policy_test(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_GPIO_EXTI_TEST
+int stm32_gpio_exti_test_initialize(void);
+int stm32_gpio_exti_test(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_SPI5_BMP280_TEST
+int stm32_spi5_bmp280_test(void);
+#endif
+
+#ifdef CONFIG_NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST
+int stm32_spi5_loopback_test(void);
+#endif
+
+#endif /* __ASSEMBLY__ */
+#endif /* __BOARDS_ARM_STM32N6_NUCLEO_N657X0_Q_SRC_NUCLEO_N657X0_Q_H */

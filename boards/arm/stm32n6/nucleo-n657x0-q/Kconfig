@@ -1,0 +1,176 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+if ARCH_BOARD_NUCLEO_N657X0_Q
+
+choice
+	prompt "Boot configuration"
+	default NUCLEO_N657X0_Q_BOOT_SRAM
+	---help---
+		The STM32N657X0 has no internal flash, so where the image lives has
+		to be decided at build time.  This selects the linker script and the
+		startup path used for the build.
+
+
+config NUCLEO_N657X0_Q_BOOT_SRAM
+	bool "DEV boot mode (image downloaded into SRAM)"
+	---help---
+		Link everything to run from AXISRAM at 0x34000400 and load it there
+		directly, which is what the ST-Link does in DEV boot mode.  This is
+		the quickest edit/debug cycle: the image can be downloaded with a
+		plain "load" from GDB and no external flash is involved.
+
+		Nothing is retained across a power cycle: the board has to be
+		re-loaded by the debugger on every boot.  tools/sramload.sh does
+		that with STM32_Programmer_CLI.
+
+		Uses scripts/sram.ld.
+
+config NUCLEO_N657X0_Q_BOOT_XSPI
+	bool "Boot from external XSPI2 NOR flash"
+	---help---
+		Build the second-stage application for the external Octo-SPI NOR
+		(MX25UM51245G) on XSPI2.  The signed image is programmed at
+		0x70100000, reserving 1 MiB at 0x70000000 for the SRAM2 bootloader.
+
+		The application is fully XIP: code and read-only data execute from
+		the XSPI2 memory window, while only writable data is copied to AXI
+		SRAM at startup.  The bootloader must configure XSPI2 for 200 MHz
+		memory-mapped reads before entering this image.
+
+		The build produces nuttx-signed.bin, i.e. nuttx.bin wrapped in an
+		STM32 v2.3 boot header by tools/mkimage.sh.  That requires
+		STM32_SigningTool_CLI, which is looked up via the STM32_PRG_PATH
+		environment variable.  Build and program the `bl` configuration at
+		0x70000000, then program this result at 0x70100000.
+
+		Uses scripts/flash.ld.
+
+endchoice # Boot configuration
+
+config NUCLEO_N657X0_Q_BOOTLOADER
+	bool "Build SRAM2 bootloader image"
+	depends on !NUCLEO_N657X0_Q_BOOT_XSPI
+	---help---
+		Build a small NuttX bootloader that the STM32N6 boot ROM loads from
+		external XSPI2 flash into AXI SRAM2 at 0x34180000.  The linked image
+		starts at 0x34180400, after the boot ROM's 1 KiB context area, and
+		runs bootloader_main().
+
+		This is separate from the boot-mode choice: it uses scripts/bl_flash.ld
+		and is packaged with a ROM load address of 0x34180000.  It must not be
+		combined with CONFIG_NUCLEO_N657X0_Q_BOOT_XSPI, which is the XIP-stub
+		configuration.
+
+config NUCLEO_N657X0_Q_TIMER_CLOCKTEST
+	bool "Test timer functionality"
+	---help---
+		Run a short TIM1 and TIM5 clock test during board bringup.
+
+config NUCLEO_N657X0_Q_DMA_POLICYTEST
+	bool "Test DMA core and access policy"
+	depends on STM32_DMA
+	---help---
+		Check controller security masks, direct memory copies, callback and
+		status reporting, request/direction validation, USART transfer setup,
+		and bounded abort behavior.
+
+config NUCLEO_N657X0_Q_GPIO_EXTI_TEST
+	bool "Test GPIO EXTI with the blue user button"
+	depends on USERLED_LOWER && !ARCH_LEDS
+	---help---
+		Configure the blue user button on PC13 as an active-high EXTI
+		input with a pull-down. Wait up to three seconds for a button
+		press during board bringup. The blue user LED turns on while
+		the button is pressed and off when it is released.
+
+config NUCLEO_N657X0_Q_SPI5_BMP280_TEST
+	bool "Read BMP280 data over SPI5 during bringup"
+	depends on STM32_SPI5
+	---help---
+		Read the BMP280 chip ID and raw pressure and temperature ADC values
+		over SPI5 using Arduino D10 (PA3) as chip select.
+
+config NUCLEO_N657X0_Q_SPI5_LOOPBACK_TEST
+	bool "Test SPI5 MOSI-to-MISO loopback during bringup"
+	depends on STM32_SPI5 && SPI_EXCHANGE && !NUCLEO_N657X0_Q_SPI5_BMP280_TEST
+	---help---
+		Send a test pattern over SPI5 and verify the received bytes match.
+		Disconnect the BMP280 SDO from MISO, then jumper Arduino D11 (MOSI,
+		PG2) to D12 (MISO, PG1). The BMP280 chip select on D10 (PA3) stays
+		inactive during the test.
+
+config NUCLEO_N657X0_Q_I2C2
+	bool "Initialize I2C2 for board clients and the NSH I2C tool"
+	depends on I2C && STM32_I2C2
+	default n
+	---help---
+		Initialize the board-routed I2C2 bus on PB10/PB11 during bring-up.
+		Register /dev/i2c2 when CONFIG_I2C_DRIVER is enabled. The Nucleo
+		board timing inputs remain intentionally unqualified; I2C2 setup
+		fails closed until the timing settings below contain qualified values.
+
+if NUCLEO_N657X0_Q_I2C2
+
+config NUCLEO_N657X0_Q_I2C2_RISE_TIME_NS
+	int "Qualified I2C2 rise time (ns)"
+	default 0
+	range 0 1000
+
+config NUCLEO_N657X0_Q_I2C2_FALL_TIME_NS
+	int "Qualified I2C2 fall time (ns)"
+	default 0
+	range 0 300
+
+config NUCLEO_N657X0_Q_I2C2_CLOCK_TOLERANCE_PPM
+	int "Worst-case I2C2 kernel clock tolerance (ppm)"
+	default 0
+	range 0 999999
+	---help---
+		Include the HSI oscillator tolerance for the intended voltage and
+		temperature range. Zero is an unqualified board placeholder.
+
+endif
+
+menuconfig NUCLEO_N657X0_Q_USBDEV
+	bool "Experimental CN8 static-sink CDC-ACM bring-up"
+	depends on EXPERIMENTAL && STM32_N6_OTGDEV && STM32_N6_OTG1
+	depends on CDCACM && !CDCACM_CONSOLE && !CDCACM_COMPOSITE
+	depends on NUCLEO_N657X0_Q_BOOT_SRAM && !NUCLEO_N657X0_Q_BOOTLOADER
+	depends on !ARCH_TRUSTZONE_NONSECURE
+	depends on USART1_SERIAL_CONSOLE
+	select STM32_I2C2
+	select NUCLEO_N657X0_Q_I2C2
+	select SCHED_LPWORK
+	default n
+	---help---
+		Bind CDC-ACM once at bring-up, preserving the ST-LINK UART console.
+		Use UCPD Rd on both CC lines and TCPP03 low-power VBUS observation
+		for factory-standard MB1940-N657X0Q-C02, powered by CN10 with
+		CN9 [1-2]. Never enable the provider path, VCONN, or USB PD.
+		Do not also enable the sercon application or another class owner.
+
+if NUCLEO_N657X0_Q_USBDEV
+
+config NUCLEO_N657X0_Q_USBDEV_QUALIFIED
+	bool "Board attachment/power policy has been physically qualified"
+	default n
+	depends on NUCLEO_N657X0_Q_I2C2_RISE_TIME_NS > 0
+	depends on NUCLEO_N657X0_Q_I2C2_FALL_TIME_NS > 0
+	depends on NUCLEO_N657X0_Q_I2C2_CLOCK_TOLERANCE_PPM > 0
+	---help---
+		Only enable after qualifying I2C2 timings, HSE frequency/settling,
+		USB rails, Rd in both orientations, TCPP03 status/FLGn attach and
+		detach, absence of VBUS back-feed, and descriptor bus-current
+		budget. TCPP03 VBUS_OK is a presence detector at approximately
+		2.4 V, not a precision 5 V measurement.
+
+		Without this acknowledgement CDC-ACM is registered locally, but
+		CN8 remains disconnected and bring-up reports EAGAIN.
+		Refer to the board README for the qualification procedure.
+
+endif
+
+endif
