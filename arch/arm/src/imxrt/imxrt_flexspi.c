@@ -151,7 +151,6 @@ static struct imxrt_flexspidev_s g_flexspi1dev =
 
 #define FREQ_1MHz             (1000000ul)
 #define FLEXSPI_DLLCR_DEFAULT (0x100ul)
-#define FLEXSPI_LUT_KEY_VAL   (0x5af05af0ul)
 
 enum
 {
