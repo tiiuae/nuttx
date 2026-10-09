@@ -1205,12 +1205,24 @@ config ARCH_CHIP_STM32G474V
 	select STM32_STM32G4XXV
 	select STM32_STM32G474V
 
+config ARCH_CHIP_STM32N657X0
+	bool "STM32N657X0"
+	select ARCH_CHIP_STM32N6
+	select STM32_STM32N6XXXX
+
 endchoice
+
+config ARCH_CHIP_STM32N6
+	bool
+	default n
+	select ARCH_CORTEXM55
+	select ARCH_HAVE_TRUSTZONE
+	select ARM_HAVE_DSP
 
 choice
 	prompt "Override Flash Size Designator"
 	default STM32_FLASH_CONFIG_DEFAULT
-	depends on ARCH_CHIP_STM32
+	depends on ARCH_CHIP_STM32 && !ARCH_CHIP_STM32N6
 	---help---
 		STM32F/STM32G/STM32L series parts numbering (sans the package type)
 		ends with a number or letter that designates the FLASH size.

@@ -21,5 +21,5 @@
 # ##############################################################################
 
 if(CONFIG_ARCH_BOARD_COMMON)
-  add_subdirectory(${NUTTX_DIR}/boards/arm/common/stm32 stm32_common)
+  add_subdirectory(${NUTTX_DIR}/boards/arm/stm32/common stm32_common)
 endif()

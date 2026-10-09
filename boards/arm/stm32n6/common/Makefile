@@ -22,18 +22,18 @@
 
 include $(TOPDIR)/Make.defs
 
-STM32_BOARD_COMMON_DIR := $(TOPDIR)$(DELIM)boards$(DELIM)arm$(DELIM)common$(DELIM)stm32
-STM32_COMMON_SRCDIR := $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)common$(DELIM)stm32
+STM32_BOARD_COMMON_DIR := $(TOPDIR)$(DELIM)boards$(DELIM)arm$(DELIM)stm32$(DELIM)common
 
 include board/Make.defs
 include $(STM32_BOARD_COMMON_DIR)$(DELIM)src$(DELIM)Make.defs
 
 DEPPATH += --dep-path board
 
+ifeq ($(CONFIG_ARCH_BOARD_COMMON),y)
+DEPPATH += --dep-path $(STM32_BOARD_COMMON_DIR)$(DELIM)src
+VPATH += :$(STM32_BOARD_COMMON_DIR)$(DELIM)src
+endif
+
 include $(TOPDIR)/boards/Board.mk
 
-ARCHSRCDIR = $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src
-BOARDDIR = $(ARCHSRCDIR)$(DELIM)board
-CFLAGS += ${INCDIR_PREFIX}$(BOARDDIR)$(DELIM)include
-
-CFLAGS += ${INCDIR_PREFIX}$(STM32_COMMON_SRCDIR)
+CFLAGS += ${INCDIR_PREFIX}$(STM32_BOARD_COMMON_DIR)$(DELIM)include

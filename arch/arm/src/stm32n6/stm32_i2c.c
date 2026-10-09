@@ -28,7 +28,7 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/clock.h>
-#include <nuttx/debug.h>
+#include <debug.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/irq.h>
 #include <nuttx/mutex.h>

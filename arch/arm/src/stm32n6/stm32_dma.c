@@ -14,7 +14,7 @@
 #include <arch/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/cache.h>
-#include <nuttx/debug.h>
+#include <debug.h>
 #include <nuttx/irq.h>
 
 #include <errno.h>

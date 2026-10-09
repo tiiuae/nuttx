@@ -485,20 +485,21 @@ config ARCH_CHIP_SIMPLELINK
 		TI SimpleLink CCxxx architectures (ARM Cortex-M3 or M4)
 
 config ARCH_CHIP_STM32
-	bool "STMicro STM32 F1/F2/F3/F4/G4/L1"
+	bool "STMicro STM32 F1/F2/F3/F4/G4/L1/N6"
 	select ARCH_HAVE_MPU
 	select ARCH_HAVE_FETCHADD
 	select ARCH_HAVE_I2CRESET
 	select ARCH_HAVE_HEAPCHECK
-	select ARCH_HAVE_PROGMEM
+	select ARCH_HAVE_PROGMEM if !ARCH_CHIP_STM32N6
 	select ARCH_HAVE_SPI_BITORDER
 	select ARCH_HAVE_TICKLESS
 	select ARCH_HAVE_TIMEKEEPING
 	select ARM_HAVE_MPU_UNIFIED
-	select ARMV7M_HAVE_STACKCHECK
+	select ARMV7M_HAVE_STACKCHECK if !ARCH_CHIP_STM32N6
+	select ARMV8M_HAVE_STACKCHECK if ARCH_CHIP_STM32N6
 	select ARCH_HAVE_ADJTIME
 	---help---
-		STMicro STM32 architectures (ARM Cortex-M3/4).
+		STMicro STM32 architectures (ARM Cortex-M3/4/55).
 
 config ARCH_CHIP_STM32F0
 	bool "STMicro STM32 F0"
@@ -1185,6 +1186,7 @@ config ARCH_CHIP
 	default "samd5e5"	if ARCH_CHIP_SAMD5X || ARCH_CHIP_SAME5X
 	default "sam34"		if ARCH_CHIP_SAM34
 	default "samv7"		if ARCH_CHIP_SAMV7
+	default "stm32n6"	if ARCH_CHIP_STM32N6
 	default "stm32"		if ARCH_CHIP_STM32
 	default "stm32f0l0g0"	if ARCH_CHIP_STM32F0 || ARCH_CHIP_STM32L0 || ARCH_CHIP_STM32G0 || ARCH_CHIP_STM32C0
 	default "stm32f7"	if ARCH_CHIP_STM32F7
@@ -1664,6 +1666,9 @@ source "arch/arm/src/samv7/Kconfig"
 endif
 if ARCH_CHIP_STM32
 source "arch/arm/src/stm32/Kconfig"
+endif
+if ARCH_CHIP_STM32N6
+source "arch/arm/src/stm32n6/Kconfig"
 endif
 if ARCH_CHIP_STM32F0 || ARCH_CHIP_STM32L0 || ARCH_CHIP_STM32G0 || ARCH_CHIP_STM32C0
 source "arch/arm/src/stm32f0l0g0/Kconfig"

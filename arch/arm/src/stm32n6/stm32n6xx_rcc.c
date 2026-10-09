@@ -25,7 +25,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <nuttx/debug.h>
+#include <debug.h>
 
 #include <arch/stm32n6/chip.h>
 #include <arch/board/board.h>

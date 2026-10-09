@@ -31,6 +31,21 @@ DEV boot mode (`sram.ld`, loaded by the debugger with `tools/sramload.sh`).
 Those are for quick edit/debug cycles. Native USB SRAM bring-up is described
 below; existing configurations remain USB-disabled.
 
+## Build configuration prerequisites
+
+The STM32N6 board build uses shared board sources from
+`boards/arm/stm32/common`, not `boards/arm/common/stm32`. Architecture
+headers come from `arch/arm/src/stm32n6` through the normal chip include path.
+
+The top-level `arch/arm/Kconfig` and `boards/Kconfig` must also expose the
+STM32N6 architecture and NUCLEO-N657X0-Q board and source their Kconfig files.
+After configuring, check that `.config` retains
+`CONFIG_ARCH_CHIP="stm32n6"`, `CONFIG_ARCH_CORTEXM55=y`, and
+`CONFIG_ARCH_BOARD="nucleo-n657x0-q"`. A successful configuration refresh
+alone does not establish this: without those Kconfig entries, it can discard
+the STM32N6 selections and choose another STM32 chip. Do not build that
+configuration with STM32N6 chip/board symlinks.
+
 ## Application USB hardware contract (opt-in, qualification-gated)
 
 CN10/ST-LINK provides the USART1 console on PE5/PE6; its host
