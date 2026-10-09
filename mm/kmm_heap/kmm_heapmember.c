@@ -57,4 +57,17 @@ bool kmm_heapmember(FAR void *mem)
   return mm_heapmember(g_kmmheap, mem);
 }
 
+/****************************************************************************
+ * Name: kmm_heaprange
+ *
+ * Description:
+ *   Check if a range lies inside one region of the kernel heap.
+ *
+ ****************************************************************************/
+
+bool kmm_heaprange(FAR const void *mem, size_t size)
+{
+  return mm_heaprange(g_kmmheap, mem, size);
+}
+
 #endif /* CONFIG_MM_KERNEL_HEAP */

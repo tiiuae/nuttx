@@ -362,15 +362,19 @@ FAR void *kmm_memalign(size_t alignment, size_t size) malloc_like1(2);
 /* Functions contained in mm_heapmember.c ***********************************/
 
 bool mm_heapmember(FAR struct mm_heap_s *heap, FAR void *mem);
+bool mm_heaprange(FAR struct mm_heap_s *heap, FAR const void *mem,
+                  size_t size);
 
 /* Functions contained in mm_uheapmember.c **********************************/
 
 bool umm_heapmember(FAR void *mem);
+bool umm_heaprange(FAR const void *mem, size_t size);
 
 /* Functions contained in kmm_heapmember.c **********************************/
 
 #ifdef CONFIG_MM_KERNEL_HEAP
 bool kmm_heapmember(FAR void *mem);
+bool kmm_heaprange(FAR const void *mem, size_t size);
 #endif
 
 /* Functions contained in mm_brkaddr.c **************************************/

@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <spawn.h>
+#include <nuttx/spawn.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
 #include <sys/ioctl.h>
@@ -49,6 +50,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/mm/mm.h>
 #include <nuttx/pthread.h>
 #include <nuttx/sched.h>
 #include <nuttx/syslog/syslog.h>
@@ -73,7 +75,7 @@
 #  include <nuttx/spi/spi_transfer.h>
 #endif
 
-#ifdef CONFIG_BUILD_KERNEL
+#if defined(CONFIG_BUILD_KERNEL) || defined(CONFIG_BUILD_PROTECTED)
 
 /****************************************************************************
  * Private Functions
@@ -81,8 +83,30 @@
 
 static bool uaccess_arg(uintptr_t arg)
 {
+#ifdef CONFIG_BUILD_KERNEL
   return up_addrenv_user_vaddr(arg) ||
          up_addrenv_va_to_pa((FAR void *)arg) == 0;
+#else
+  /* An untyped argument carries either a pointer or a value, so only an
+   * address the kernel would read is refused. A typed pointer reaches its
+   * stub instead, which checks the whole range it names.
+   */
+
+  if (uaccess_ok((FAR const void *)arg, 1))
+    {
+      return true;
+    }
+
+#ifdef CONFIG_MM_KERNEL_HEAP
+  if (kmm_heaprange((FAR const void *)arg, 1))
+    {
+      return false;
+    }
+#endif
+
+  return arg < CONFIG_RAM_START ||
+         arg >= CONFIG_RAM_START + CONFIG_RAM_SIZE;
+#endif
 }
 
 static FAR struct iovec *uaccess_iov(FAR const struct iovec *iov,
@@ -484,6 +508,52 @@ int uaccess_boardctl(unsigned int cmd, uintptr_t arg)
 }
 #endif
 
+#ifndef CONFIG_BUILD_KERNEL
+
+/* As many entries as the task setup will accept, so a vector without a
+ * NULL is refused rather than walked until it faults.
+ */
+
+#define UACCESS_MAX_STRV 256
+
+/* A kernel build copies these vectors through binfmt_copyargv(), which
+ * checks each entry. A protected build hands them straight to the task
+ * setup, so the strings are checked here instead.
+ */
+
+static bool uaccess_strv(FAR char * const *v)
+{
+  size_t i;
+
+  if (v == NULL)
+    {
+      return true;
+    }
+
+  for (i = 0; i <= UACCESS_MAX_STRV; i++)
+    {
+      if (!uaccess_ok(&v[i], sizeof(FAR char *)))
+        {
+          return false;
+        }
+
+      if (v[i] == NULL)
+        {
+          return true;
+        }
+
+      if (!uaccess_ok(v[i], 1))
+        {
+          return false;
+        }
+    }
+
+  return false;
+}
+#else
+#  define uaccess_strv(v) true
+#endif
+
 #if !defined(CONFIG_BINFMT_DISABLE) && defined(CONFIG_LIBC_EXECFUNCS)
 int uaccess_execve(FAR const char *path, FAR char * const argv[],
                    FAR char * const envp[])
@@ -491,6 +561,12 @@ int uaccess_execve(FAR const char *path, FAR char * const argv[],
   if (!nxsched_capable(PR_CAP_SPAWN))
     {
       set_errno(EPERM);
+      return ERROR;
+    }
+
+  if (!uaccess_strv(argv) || !uaccess_strv(envp))
+    {
+      set_errno(EFAULT);
       return ERROR;
     }
 
@@ -507,7 +583,32 @@ int uaccess_posix_spawn(FAR pid_t *pid, FAR const char *path,
       return EPERM;
     }
 
+  if (!uaccess_strv(argv) || !uaccess_strv(envp))
+    {
+      return EFAULT;
+    }
+
   return posix_spawn(pid, path, file_actions, attr, argv, envp);
+}
+#endif
+
+#ifndef CONFIG_BUILD_KERNEL
+int uaccess_task_spawn(FAR const char *name, main_t entry,
+                       FAR const posix_spawn_file_actions_t *file_actions,
+                       FAR const posix_spawnattr_t *attr,
+                       FAR char * const argv[], FAR char * const envp[])
+{
+  if (!nxsched_capable(PR_CAP_SPAWN))
+    {
+      return -EPERM;
+    }
+
+  if (!uaccess_strv(argv) || !uaccess_strv(envp))
+    {
+      return -EFAULT;
+    }
+
+  return task_spawn(name, entry, file_actions, attr, argv, envp);
 }
 #endif
 
@@ -823,4 +924,4 @@ ssize_t uaccess_sendmsg(int sockfd, FAR struct msghdr *msg, int flags)
 }
 #endif
 
-#endif /* CONFIG_BUILD_KERNEL */
+#endif /* CONFIG_BUILD_KERNEL || CONFIG_BUILD_PROTECTED */

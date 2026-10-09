@@ -54,3 +54,16 @@ bool umm_heapmember(FAR void *mem)
 {
   return mm_heapmember(USR_HEAP, mem);
 }
+
+/****************************************************************************
+ * Name: umm_heaprange
+ *
+ * Description:
+ *   Check if a range lies inside one region of the user heap.
+ *
+ ****************************************************************************/
+
+bool umm_heaprange(FAR const void *mem, size_t size)
+{
+  return mm_heaprange(USR_HEAP, mem, size);
+}

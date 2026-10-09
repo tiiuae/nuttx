@@ -22,6 +22,10 @@
 
 set(SRCS assert.c panic_notifier.c reboot_notifier.c)
 
+if(CONFIG_BUILD_KERNEL OR CONFIG_BUILD_PROTECTED)
+  list(APPEND SRCS uaccess.c)
+endif()
+
 if(CONFIG_ARCH_DEADLOCKDUMP)
   list(APPEND SRCS deadlock.c)
 endif()

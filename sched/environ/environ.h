@@ -42,7 +42,7 @@
 
 #  define SCHED_ENVIRON_RESERVED (4)
 
-#  ifdef CONFIG_BUILD_KERNEL
+#  ifndef CONFIG_BUILD_FLAT
 #    define env_user(g)      (((g)->tg_flags & GROUP_FLAG_PRIVILEGED) == 0)
 #    define env_uaccess(g,p) (!env_user(g) || uaccess_ok((p), 1))
 #  else

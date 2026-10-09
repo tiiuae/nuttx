@@ -226,7 +226,7 @@ int posix_spawn(FAR pid_t *pid, FAR const char *path,
   if (file_actions != NULL)
     {
       actions = *file_actions;
-#ifdef CONFIG_BUILD_KERNEL
+#ifndef CONFIG_BUILD_FLAT
       if (actions != NULL && !uaccess_nested(file_actions, actions))
         {
           return EFAULT;

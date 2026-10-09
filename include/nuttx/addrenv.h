@@ -45,6 +45,36 @@
 
 #endif /* __ASSEMBLY__ */
 
+#if !defined(__ASSEMBLY__) && !defined(CONFIG_BUILD_FLAT)
+
+/****************************************************************************
+ * Public Function Prototypes
+ ****************************************************************************/
+
+#undef EXTERN
+#if defined(__cplusplus)
+#define EXTERN extern "C"
+extern "C"
+{
+#else
+#define EXTERN extern
+#endif
+
+struct tcb_s;                  /* Forward reference to TCB */
+
+bool uaccess_ok(FAR const void *ptr, size_t len);
+bool uaccess_nested(FAR const void *parent, FAR const void *ptr);
+void uaccess_check(FAR const void *ptr, size_t len);
+void uaccess_fault(FAR const void *ptr) noreturn_function;
+bool uaccess_privileged(FAR struct tcb_s *tcb);
+
+#undef EXTERN
+#if defined(__cplusplus)
+}
+#endif
+
+#endif /* !__ASSEMBLY__ && !CONFIG_BUILD_FLAT */
+
 #ifdef CONFIG_ARCH_ADDRENV
 
 /****************************************************************************
@@ -505,13 +535,6 @@ int addrenv_give(FAR struct addrenv_s *addrenv);
  ****************************************************************************/
 
 void addrenv_drop(FAR struct addrenv_s *addrenv, bool deferred);
-
-#ifdef CONFIG_BUILD_KERNEL
-bool uaccess_ok(FAR const void *ptr, size_t len);
-bool uaccess_nested(FAR const void *parent, FAR const void *ptr);
-void uaccess_check(FAR const void *ptr, size_t len);
-void uaccess_fault(FAR const void *ptr) noreturn_function;
-#endif
 
 #ifdef __cplusplus
 }

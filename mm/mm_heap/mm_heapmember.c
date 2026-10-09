@@ -95,3 +95,40 @@ bool mm_heapmember(FAR struct mm_heap_s *heap, FAR void *mem)
 
 #endif
 }
+
+/****************************************************************************
+ * Name: mm_heaprange
+ *
+ * Description:
+ *   Check if a range lies inside one region of the heap.
+ *
+ ****************************************************************************/
+
+bool mm_heaprange(FAR struct mm_heap_s *heap, FAR const void *mem,
+                  size_t size)
+{
+  uintptr_t start = (uintptr_t)kasan_clear_tag((FAR void *)mem);
+  uintptr_t end = start + size;
+#if CONFIG_MM_REGIONS > 1
+  int nregions = heap->mm_nregions;
+#else
+  int nregions = 1;
+#endif
+  int i;
+
+  if (end < start)
+    {
+      return false;
+    }
+
+  for (i = 0; i < nregions; i++)
+    {
+      if (start > (uintptr_t)heap->mm_heapstart[i] &&
+          end <= (uintptr_t)heap->mm_heapend[i])
+        {
+          return true;
+        }
+    }
+
+  return false;
+}

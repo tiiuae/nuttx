@@ -62,7 +62,7 @@ pthread_mutex_next(FAR struct pthread_mutex_s *mutex)
 {
   FAR struct pthread_mutex_s *next = mutex->flink;
 
-#ifdef CONFIG_BUILD_KERNEL
+#ifndef CONFIG_BUILD_FLAT
   if (next != NULL && !uaccess_nested(mutex, next))
     {
       return NULL;

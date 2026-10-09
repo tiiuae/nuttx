@@ -41,6 +41,17 @@ struct uvalue_s
   int parm;
 };
 
+/* A buffer and the parameter holding its length, so the stub checks the
+ * whole range a call may read or write and not just its first byte.
+ */
+
+struct ubuffer_s
+{
+  const char *name;
+  int buf;
+  int len;
+};
+
 static bool g_inline;
 static FILE *g_stubstream;
 
@@ -50,8 +61,19 @@ static const char * const g_uwrapped[] =
   "nx_pthread_create", "nx_vsyslog", "posix_spawn", "prctl",
   "pthread_cancel", "pthread_setaffinity_np", "pthread_setschedparam",
   "pthread_setschedprio", "readv", "recvmsg", "sched_setaffinity",
+  "task_spawn",
   "sched_setparam", "sched_setscheduler", "sendmsg", "sigqueue", "tgkill",
   "umount2", "writev", NULL
+};
+
+static const struct ubuffer_s g_ubuffers[] =
+{
+  { "gethostname", 1, 2 }, { "mq_receive", 2, 3 }, { "mq_send", 2, 3 },
+  { "mq_timedreceive", 2, 3 }, { "mq_timedsend", 2, 3 }, { "pread", 2, 3 },
+  { "pwrite", 2, 3 }, { "read", 2, 3 }, { "readlink", 2, 3 },
+  { "recv", 2, 3 }, { "recvfrom", 2, 3 }, { "sched_getaffinity", 3, 2 },
+  { "send", 2, 3 }, { "sendto", 2, 3 }, { "sethostname", 1, 2 },
+  { "setsockopt", 4, 5 }, { "write", 2, 3 }, { NULL, 0, 0 }
 };
 
 static const struct uvalue_s g_uvalues[] =
@@ -404,6 +426,21 @@ static bool is_uwrapped(const char *name)
   return false;
 }
 
+static int ubuffer_len(const char *name, int parm)
+{
+  int i;
+
+  for (i = 0; g_ubuffers[i].name != NULL; i++)
+    {
+      if (g_ubuffers[i].buf == parm && strcmp(g_ubuffers[i].name, name) == 0)
+        {
+          return g_ubuffers[i].len;
+        }
+    }
+
+  return 0;
+}
+
 static bool is_uvalue(const char *name, int parm)
 {
   int i;
@@ -485,7 +522,8 @@ static void generate_stub(int nfixed, int nparms)
 
   if (is_uwrapped(g_parm[NAME_INDEX]))
     {
-      fprintf(stream, "\n#ifdef CONFIG_BUILD_KERNEL\n");
+      fprintf(stream, "\n#if defined(CONFIG_BUILD_KERNEL) || \\\n"
+                      "    defined(CONFIG_BUILD_PROTECTED)\n");
       fprintf(stream, "#  define %s uaccess_%s\n",
               g_parm[NAME_INDEX], g_parm[NAME_INDEX]);
       fprintf(stream, "#endif\n\n");
@@ -533,11 +571,23 @@ static void generate_stub(int nfixed, int nparms)
       if (!is_union(formal) && strchr(actual, '*') != NULL &&
           !is_uvalue(g_parm[NAME_INDEX], i + 1))
         {
-          fprintf(stream, "#ifdef CONFIG_BUILD_KERNEL\n");
+          fprintf(stream, "#if defined(CONFIG_BUILD_KERNEL) || \\\n"
+                          "    defined(CONFIG_BUILD_PROTECTED)\n");
+          int len = ubuffer_len(g_parm[NAME_INDEX], i + 1);
+
           fprintf(stream, "  if (parm%d != 0)\n", i + 1);
           fprintf(stream, "    {\n");
           fprintf(stream, "      uaccess_check((FAR const void *)");
-          fprintf(stream, "parm%d, 1);\n", i + 1);
+
+          if (len > 0)
+            {
+              fprintf(stream, "parm%d, (size_t)parm%d);\n", i + 1, len);
+            }
+          else
+            {
+              fprintf(stream, "parm%d, 1);\n", i + 1);
+            }
+
           fprintf(stream, "    }\n");
           fprintf(stream, "#endif\n\n");
         }

@@ -42,8 +42,8 @@
 
 static bool argvstr_ok(FAR struct tcb_s *tcb, FAR const void *ptr)
 {
-#ifdef CONFIG_BUILD_KERNEL
-  return tcb->addrenv_own == NULL || uaccess_ok(ptr, sizeof(FAR char *));
+#ifndef CONFIG_BUILD_FLAT
+  return uaccess_privileged(tcb) || uaccess_ok(ptr, sizeof(FAR char *));
 #else
   return true;
 #endif
