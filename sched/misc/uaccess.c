@@ -74,9 +74,40 @@ bool uaccess_ok(FAR const void *ptr, size_t len)
 #ifdef CONFIG_BUILD_KERNEL
   uintptr_t start = (uintptr_t)ptr;
   uintptr_t end = start + len - 1;
+  uintptr_t page;
 
-  return up_addrenv_user_vaddr(start) &&
-         (len == 0 || (end >= start && up_addrenv_user_vaddr(end)));
+  if (!up_addrenv_user_vaddr(start))
+    {
+      return false;
+    }
+
+  if (len == 0)
+    {
+      return true;
+    }
+
+  if (end < start || !up_addrenv_user_vaddr(end))
+    {
+      return false;
+    }
+
+  /* A user address says nothing about a page being there, and the kernel
+   * copies the whole range. A length that leaves what the caller owns would
+   * otherwise fault inside the kernel rather than return an error, so every
+   * page of the range has to be mapped for this process.
+   */
+
+  for (page = start & ~((uintptr_t)CONFIG_MM_PGSIZE - 1);
+       page <= end;
+       page += CONFIG_MM_PGSIZE)
+    {
+      if (up_addrenv_va_to_pa((FAR void *)page) == 0)
+        {
+          return false;
+        }
+    }
+
+  return true;
 #else
   uintptr_t start = (uintptr_t)ptr;
   uintptr_t end = start + (len > 0 ? len : 1);
