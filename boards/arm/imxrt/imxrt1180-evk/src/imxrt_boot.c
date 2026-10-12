@@ -27,7 +27,15 @@
 #include <nuttx/config.h>
 #include <nuttx/board.h>
 
+#include <sys/param.h>
+#include <debug.h>
+
 #include <arch/board/board.h>
+
+#if defined(CONFIG_IMXRT_FLEXSPI1) && defined(CONFIG_ARCH_RAMFUNCS)
+#  include "imxrt_flexspi.h"
+#  include "hardware/imxrt_flexspi.h"
+#endif
 
 #include "arm_internal.h"
 #include "imxrt_iomuxc.h"
@@ -35,6 +43,31 @@
 #include "imxrt_clockconfig.h"
 
 #include "imxrt1180-evk.h"
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+#if defined(CONFIG_IMXRT_FLEXSPI1) && defined(CONFIG_ARCH_RAMFUNCS)
+extern const uint8_t _srodata[];
+extern const uint8_t _erodata[];
+
+static const struct flexspi_prefetch_config_s
+  g_imxrt_flexspi1_prefetch_cfg[] =
+{
+#ifdef CONFIG_ARCH_CORTEXM33
+  { .slot = 2, .size = 128, .region_start = (uintptr_t)_srodata,
+    .region_end = (uintptr_t)_erodata, .master_id = 8 },
+  { .slot = 3, .size = 384, .region_start = (uintptr_t)_stext,
+    .region_end = (uintptr_t)_etext, .master_id = 8 }
+#else
+  { .slot = 0, .size = 128, .region_start = (uintptr_t)_srodata,
+    .region_end = (uintptr_t)_erodata, .master_id = 9 },
+  { .slot = 1, .size = 384, .region_start = (uintptr_t)_stext,
+    .region_end = (uintptr_t)_etext, .master_id = 9 }
+#endif
+};
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -53,6 +86,16 @@
 
 void imxrt_boardinitialize(void)
 {
+#if defined(CONFIG_IMXRT_FLEXSPI1) && defined(CONFIG_ARCH_RAMFUNCS)
+  int ret = imxrt_flexspi_prefetch_initialize(
+    (struct flexspi_type_s *)IMXRT_FLEXSPIC_BASE,
+    g_imxrt_flexspi1_prefetch_cfg, nitems(g_imxrt_flexspi1_prefetch_cfg));
+  if (ret < 0)
+    {
+      _err("FlexSPI1 prefetch buffer configuration failed: %d\n", ret);
+    }
+#endif
+
   /* Configure the two user LEDs */
 
   imxrt_clockall_gpio4();
