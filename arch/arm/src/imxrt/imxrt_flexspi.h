@@ -34,6 +34,7 @@
 
 #include "chip.h"
 #include "imxrt_config.h"
+#include "arm_internal.h"
 
 #ifdef CONFIG_IMXRT_FLEXSPI
 
@@ -200,6 +201,17 @@
 /****************************************************************************
  * Public Types
  ****************************************************************************/
+
+#ifdef CONFIG_ARCH_RAMFUNCS
+struct flexspi_prefetch_config_s
+{
+  uint8_t slot;
+  uint16_t size;
+  uintptr_t region_start;
+  uintptr_t region_end;
+  uint8_t master_id;
+};
+#endif
 
 /* CMD definition of FLEXSPI, use to form LUT instruction, flexspi_command */
 
@@ -583,6 +595,35 @@ extern "C"
 
 struct flexspi_dev_s;
 struct flexspi_dev_s *imxrt_flexspi_initialize(int intf);
+
+#ifdef CONFIG_ARCH_RAMFUNCS
+/****************************************************************************
+ * Name: imxrt_flexspi_prefetch_initialize
+ *
+ * Description:
+ *   Configure the listed AHB receive buffers and enable global prefetch.
+ *   Sizes are in bytes, in multiples of 8. Zero region start/end select
+ *   master-only matching. The board must supply a valid table for its SoC.
+ *
+ *   The controller ID is SoC specific.
+ *
+ * Input Parameters:
+ *   base   - FlexSPI register block
+ *   config - Buffer table; may reside in FlexSPI memory
+ *   nbufs  - Number of entries, excluding the final fallback buffer
+ *
+ * Returned Value:
+ *   OK on success, negated ERRNO on failure.
+ *
+ ****************************************************************************/
+
+struct flexspi_type_s;
+__ramfunc__ int imxrt_flexspi_prefetch_initialize(
+                  struct flexspi_type_s *base,
+                  const struct flexspi_prefetch_config_s *config,
+                  unsigned int nbufs);
+
+#endif
 
 #undef EXTERN
 #if defined(__cplusplus)

@@ -43,7 +43,7 @@ struct flexspi_type_s
   volatile uint32_t INTR;                              /* Interrupt Register, offset: 0x14 */
   volatile uint32_t LUTKEY;                            /* LUT Key Register, offset: 0x18 */
   volatile uint32_t LUTCR;                             /* LUT Control Register, offset: 0x1c */
-#ifdef CONFIG_ARCH_FAMILY_IMXRT117x
+#if defined(CONFIG_ARCH_FAMILY_IMXRT117x) || defined(CONFIG_ARCH_FAMILY_IMXRT118x)
   volatile uint32_t AHBRXBUFCR0[8];                    /* AHB RX Buffer 0 Control Register 0..AHB RX Buffer 7 Control Register 0, array offset: 0x20, array step: 0x4 */
        uint8_t RESERVED_0[32];
 #else
@@ -187,6 +187,10 @@ struct flexspi_type_s
 #define FLEXSPI_AHBCR_APAREN_SHIFT               (0u)
 
 #define FLEXSPI_AHBCR_APAREN(x)                  (((uint32_t)(((uint32_t)(x)) << FLEXSPI_AHBCR_APAREN_SHIFT)) & FLEXSPI_AHBCR_APAREN_MASK)
+#ifdef CONFIG_ARCH_FAMILY_IMXRT117x
+#  define FLEXSPI_AHBCR_CLRAHBRXBUF_MASK         (0x2u)
+#endif
+
 #define FLEXSPI_AHBCR_CACHABLEEN_MASK            (0x8u)
 #define FLEXSPI_AHBCR_CACHABLEEN_SHIFT           (3u)
 
@@ -308,7 +312,7 @@ struct flexspi_type_s
 
 #define FLEXSPI_LUTCR_UNLOCK(x)                  (((uint32_t)(((uint32_t)(x)) << FLEXSPI_LUTCR_UNLOCK_SHIFT)) & FLEXSPI_LUTCR_UNLOCK_MASK)
 
-#ifdef CONFIG_ARCH_FAMILY_IMXRT117x
+#if defined(CONFIG_ARCH_FAMILY_IMXRT117x) || defined(CONFIG_ARCH_FAMILY_IMXRT118x)
 #  define FLEXSPI_AHBRXBUFCR0_BUFSZ_MASK         (0x3ffu)
 #else
 #  define FLEXSPI_AHBRXBUFCR0_BUFSZ_MASK         (0xffu)
@@ -320,7 +324,11 @@ struct flexspi_type_s
 #define FLEXSPI_AHBRXBUFCR0_MSTRID_SHIFT         (16u)
 
 #define FLEXSPI_AHBRXBUFCR0_MSTRID(x)            (((uint32_t)(((uint32_t)(x)) << FLEXSPI_AHBRXBUFCR0_MSTRID_SHIFT)) & FLEXSPI_AHBRXBUFCR0_MSTRID_MASK)
-#define FLEXSPI_AHBRXBUFCR0_PRIORITY_MASK        (0x3000000u)
+#if defined(CONFIG_ARCH_FAMILY_IMXRT117x) || defined(CONFIG_ARCH_FAMILY_IMXRT118x)
+#  define FLEXSPI_AHBRXBUFCR0_PRIORITY_MASK      (0x7000000u)
+#else
+#  define FLEXSPI_AHBRXBUFCR0_PRIORITY_MASK      (0x3000000u)
+#endif
 #define FLEXSPI_AHBRXBUFCR0_PRIORITY_SHIFT       (24u)
 
 #define FLEXSPI_AHBRXBUFCR0_PRIORITY(x)          (((uint32_t)(((uint32_t)(x)) << FLEXSPI_AHBRXBUFCR0_PRIORITY_SHIFT)) & FLEXSPI_AHBRXBUFCR0_PRIORITY_MASK)
@@ -335,7 +343,11 @@ struct flexspi_type_s
 
 #define FLEXSPI_AHBRXBUFCR0_PREFETCHEN(x)        (((uint32_t)(((uint32_t)(x)) << FLEXSPI_AHBRXBUFCR0_PREFETCHEN_SHIFT)) & FLEXSPI_AHBRXBUFCR0_PREFETCHEN_MASK)
 
-#define FLEXSPI_AHBRXBUFCR0_COUNT                (4u)
+#if defined(CONFIG_ARCH_FAMILY_IMXRT117x) || defined(CONFIG_ARCH_FAMILY_IMXRT118x)
+#  define FLEXSPI_AHBRXBUFCR0_COUNT              (8u)
+#else
+#  define FLEXSPI_AHBRXBUFCR0_COUNT              (4u)
+#endif
 
 #define FLEXSPI_FLSHCR0_FLSHSZ_MASK              (0x7fffffu)
 #define FLEXSPI_FLSHCR0_FLSHSZ_SHIFT             (0u)

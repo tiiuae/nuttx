@@ -26,6 +26,7 @@
 
 #include <nuttx/config.h>
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -55,6 +56,10 @@
 
 /*  There is AHBBUSERROREN bit in INTEN register */
 #define FLEXSPI_HAS_INTEN_AHBBUSERROREN (0)
+
+#ifdef CONFIG_ARCH_RAMFUNCS
+#  define FLEXSPI_IDLE_POLLS 1000000u
+#endif
 
 /****************************************************************************
  * Private Types
@@ -1372,5 +1377,115 @@ struct flexspi_dev_s *imxrt_flexspi_initialize(int intf)
 
   return &priv->flexspi;
 }
+
+#ifdef CONFIG_ARCH_RAMFUNCS
+/****************************************************************************
+ * Name: imxrt_flexspi_prefetch_initialize
+ *
+ * Description:
+ *   Configure dedicated AHB RX prefetch buffers from a board table.
+ *
+ *   This function does not access the FlexSPI AHB memory window while
+ *   configuring the buffer.
+ *
+ ****************************************************************************/
+
+__ramfunc__ int imxrt_flexspi_prefetch_initialize(
+                  struct flexspi_type_s *base,
+                  const struct flexspi_prefetch_config_s *config,
+                  unsigned int nbufs)
+{
+  struct flexspi_prefetch_config_s cfg[FLEXSPI_AHBRXBUFCR0_COUNT - 1u];
+  uint32_t polls;
+  irqstate_t flags;
+  unsigned int i;
+  int ret = OK;
+
+  DEBUGASSERT(nbufs <= nitems(cfg));
+  DEBUGASSERT(config != NULL || nbufs == 0);
+
+  for (i = 0; i < nbufs; i++)
+    {
+      cfg[i] = config[i];
+
+      DEBUGASSERT(cfg[i].slot < nitems(cfg));
+      DEBUGASSERT((cfg[i].size & 7u) == 0);
+      DEBUGASSERT((cfg[i].size >> 3) <= FLEXSPI_AHBRXBUFCR0_BUFSZ_MASK);
+      DEBUGASSERT(cfg[i].master_id <=
+                  (FLEXSPI_AHBRXBUFCR0_MSTRID_MASK >>
+                   FLEXSPI_AHBRXBUFCR0_MSTRID_SHIFT));
+    }
+
+  flags = up_irq_save();
+
+  /* Wait for the arbitrator and sequence engine to become idle. */
+
+  for (polls = 0; polls < FLEXSPI_IDLE_POLLS; polls++)
+    {
+      uint32_t sts0 = base->STS0;
+
+      if ((sts0 & FLEXSPI_STS0_ARBIDLE_MASK) != 0 &&
+          (sts0 & FLEXSPI_STS0_SEQIDLE_MASK) != 0)
+        {
+          break;
+        }
+    }
+
+  if (polls == FLEXSPI_IDLE_POLLS)
+    {
+      up_irq_restore(flags);
+      return -ETIMEDOUT;
+    }
+
+  for (i = 0; i < nbufs; i++)
+    {
+      uint32_t regval = 0;
+
+      if (cfg[i].size != 0)
+        {
+          regval = FLEXSPI_AHBRXBUFCR0_PREFETCHEN(1) |
+                   FLEXSPI_AHBRXBUFCR0_MSTRID(cfg[i].master_id) |
+                   FLEXSPI_AHBRXBUFCR0_BUFSZ(cfg[i].size >> 3);
+
+          if (cfg[i].region_start != 0 || cfg[i].region_end != 0)
+            {
+              regval |= FLEXSPI_AHBRXBUFCR0_REGIONEN_MASK;
+              putreg32(cfg[i].region_start, (uintptr_t)base +
+                       IMXRT_FLEXSPI_AHBBUFREGIONSTART0_OFFSET +
+                       cfg[i].slot * 8u);
+              putreg32(cfg[i].region_end, (uintptr_t)base +
+                       IMXRT_FLEXSPI_AHBBUFREGIONEND0_OFFSET +
+                       cfg[i].slot * 8u);
+            }
+        }
+
+      base->AHBRXBUFCR0[cfg[i].slot] = regval;
+    }
+
+  base->AHBCR |= FLEXSPI_AHBCR_PREFETCHEN_MASK;
+
+#ifdef FLEXSPI_AHBCR_CLRAHBRXBUF_MASK
+  /* Drop data buffered under the old partitioning */
+
+  base->AHBCR |= FLEXSPI_AHBCR_CLRAHBRXBUF_MASK;
+  for (polls = 0; polls < FLEXSPI_IDLE_POLLS &&
+       (base->AHBCR & FLEXSPI_AHBCR_CLRAHBRXBUF_MASK) != 0; polls++)
+    {
+    }
+
+  if (polls == FLEXSPI_IDLE_POLLS)
+    {
+      ret = -ETIMEDOUT;
+    }
+#endif
+
+  UP_DSB();
+  UP_ISB();
+
+  up_irq_restore(flags);
+  return ret;
+}
+
+#endif /* CONFIG_ARCH_RAMFUNCS */
 
 #endif /* CONFIG_IMXRT_FLEXSPI */
