@@ -78,14 +78,18 @@ SECTIONS
         *(.text .text.*)
         *(.fixup)
         *(.gnu.warning)
-        *(.rodata .rodata.*)
         *(.gnu.linkonce.t.*)
         *(.glue_7)
         *(.glue_7t)
         *(.got)
         *(.gcc_except_table)
         *(.gnu.linkonce.r.*)
+        . = ALIGN(4096);
         _etext = ABSOLUTE(.);
+        _srodata = ABSOLUTE(.);
+        *(.rodata .rodata.*)
+        . = ALIGN(4096);
+        _erodata = ABSOLUTE(.);
     } > flash
 
     .init_section :
