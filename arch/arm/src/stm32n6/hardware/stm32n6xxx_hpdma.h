@@ -1,0 +1,94 @@
+/****************************************************************************
+ * arch/arm/src/stm32n6/hardware/stm32n6xxx_hpdma.h
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+#ifndef __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_HPDMA_H
+#define __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_HPDMA_H
+
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include "hardware/stm32n6xxx_dma.h"
+#include "hardware/stm32n6xxx_memorymap.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+/* HPDMA1: 16 channels, a 64-bit AXI master and a 32-bit AHB master
+ * (RM0486 section 18). Channels 0-11 have a 16-byte FIFO; channels 12-15
+ * have a 64-byte FIFO and 2D addressing. Eight-byte data width requires AXI.
+ * Channel interrupts are contiguous from STM32_IRQ_HPDMA1_CH0.
+ */
+
+#define STM32_HPDMA1_NCHANNELS         16
+#define STM32_HPDMA1_CHANNEL_MAX       15
+#define STM32_HPDMA1_2D_FIRST_CHANNEL  12
+#define STM32_HPDMA1_MAX_WIDTH_AXI     8
+#define STM32_HPDMA1_MAX_WIDTH_AHB     4
+#define STM32_HPDMA1_FIFO_SIZE_SMALL   16
+#define STM32_HPDMA1_FIFO_SIZE_LARGE   64
+#define STM32_HPDMA1_FIFO_LEVEL_SHIFT  16
+#define STM32_HPDMA1_FIFO_LEVEL_MASK   (0x1ffu << STM32_HPDMA1_FIFO_LEVEL_SHIFT)
+#define STM32_HPDMA1_AXI_BURST_MAX     16
+
+#define STM32_HPDMA1_SECCFGR           (STM32_HPDMA1_BASE + STM32_DMA_SECCFGR_OFFSET)
+#define STM32_HPDMA1_PRIVCFGR          (STM32_HPDMA1_BASE + STM32_DMA_PRIVCFGR_OFFSET)
+#define STM32_HPDMA1_RCFGLOCKR         (STM32_HPDMA1_BASE + STM32_DMA_RCFGLOCKR_OFFSET)
+#define STM32_HPDMA1_MISR              (STM32_HPDMA1_BASE + STM32_DMA_MISR_OFFSET)
+#define STM32_HPDMA1_SMISR             (STM32_HPDMA1_BASE + STM32_DMA_SMISR_OFFSET)
+
+#define STM32_HPDMA1_CXLBAR(ch)        (STM32_HPDMA1_BASE + STM32_DMA_CXLBAR_OFFSET(ch))
+#define STM32_HPDMA1_CXCIDCFGR(ch)     (STM32_HPDMA1_BASE + 0x054 + 0x80 * (ch))
+#define STM32_HPDMA1_CXSEMCR(ch)       (STM32_HPDMA1_BASE + 0x058 + 0x80 * (ch))
+#define STM32_HPDMA1_CXFCR(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXFCR_OFFSET(ch))
+#define STM32_HPDMA1_CXSR(ch)          (STM32_HPDMA1_BASE + STM32_DMA_CXSR_OFFSET(ch))
+#define STM32_HPDMA1_CXCR(ch)          (STM32_HPDMA1_BASE + STM32_DMA_CXCR_OFFSET(ch))
+#define STM32_HPDMA1_CXTR1(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXTR1_OFFSET(ch))
+#define STM32_HPDMA1_CXTR2(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXTR2_OFFSET(ch))
+#define STM32_HPDMA1_CXBR1(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXBR1_OFFSET(ch))
+#define STM32_HPDMA1_CXSAR(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXSAR_OFFSET(ch))
+#define STM32_HPDMA1_CXDAR(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXDAR_OFFSET(ch))
+#define STM32_HPDMA1_CXTR3(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXTR3_OFFSET(ch))
+#define STM32_HPDMA1_CXBR2(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXBR2_OFFSET(ch))
+#define STM32_HPDMA1_CXLLR(ch)         (STM32_HPDMA1_BASE + STM32_DMA_CXLLR_OFFSET(ch))
+
+/* HPDMA channel CID allocation and semaphore fields (RM0486 section 18.8). */
+
+#define STM32_HPDMA_CIDCFGR_CFEN       (1u << 0)
+#define STM32_HPDMA_CIDCFGR_SEM_EN     (1u << 1)
+#define STM32_HPDMA_CIDCFGR_SCID_SHIFT 4
+#define STM32_HPDMA_CIDCFGR_SCID_MASK  (7u << STM32_HPDMA_CIDCFGR_SCID_SHIFT)
+#define STM32_HPDMA_CIDCFGR_SCID(cid) \
+  (((cid) << STM32_HPDMA_CIDCFGR_SCID_SHIFT) & \
+   STM32_HPDMA_CIDCFGR_SCID_MASK)
+#define STM32_HPDMA_CIDCFGR_WLIST_SHIFT 16
+#define STM32_HPDMA_CIDCFGR_WLIST_MASK (0x7fu << STM32_HPDMA_CIDCFGR_WLIST_SHIFT)
+#define STM32_HPDMA_SEMCR_SEM_MUTEX    (1u << 0)
+#define STM32_HPDMA_SEMCR_SEM_CCID_SHIFT 4
+#define STM32_HPDMA_SEMCR_SEM_CCID_MASK (7u << STM32_HPDMA_SEMCR_SEM_CCID_SHIFT)
+
+/* HPDMA additionally supports destination word exchange on AXI. */
+
+#define STM32_HPDMA_TR1_DWX            (1u << 28)
+
+#endif /* __ARCH_ARM_SRC_STM32N6_HARDWARE_STM32N6XXX_HPDMA_H */
