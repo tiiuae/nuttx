@@ -84,14 +84,22 @@ static int imxrt_sdmmc_initialize(void)
  * Name: imxrt_bringup
  *
  * Description:
- *   Bring up board resources.  For the minimal MIMXRT1180-EVK NSH
- *   configuration this only mounts /proc when procfs is enabled.
+ *   Bring up board resources.
  *
  ****************************************************************************/
 
 int imxrt_bringup(void)
 {
   int ret = OK;
+
+#if defined(CONFIG_ARCH_BOARD_IMXRT1180_EVK) && defined(CONFIG_IMXRT_HYPERRAM)
+  ret = imxrt_hyperram_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize HyperRAM: %d\n", ret);
+      return ret;
+    }
+#endif
 
 #if defined(CONFIG_USBDEV_DMAMEMORY) || defined(CONFIG_FAT_DMAMEMORY)
   ret = imxrt_dma_alloc_init();
