@@ -93,7 +93,16 @@ const struct clock_configuration_s g_initial_clkconfig =
     .gpt1_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .gpt2_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .flexspi1_clk_root      = CCM_CLOCK_ROOT_IGNORE,
+#ifdef CONFIG_IMXRT_HYPERRAM_FLEXSPI2
+    .flexspi2_clk_root =
+    {
+      .action = CCM_CLOCK_ROOT_CONFIGURE,
+      .div    = 1,
+      .mux    = OSC_RC_400M,
+    },
+#else
     .flexspi2_clk_root      = CCM_CLOCK_ROOT_DISABLE,
+#endif
     .flexspi_slv_clk_root   = CCM_CLOCK_ROOT_DISABLE,
     .can1_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .can2_clk_root          = CCM_CLOCK_ROOT_DISABLE,
