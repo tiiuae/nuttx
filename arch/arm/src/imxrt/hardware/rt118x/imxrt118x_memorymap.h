@@ -44,10 +44,17 @@
 #define IMXRT_M7_ROM_BASE               (0x00100000ul)  /* M7 ROM               256 KB */
 #define IMXRT_M7_ROM_SIZE               (256 * 1024)
 #define IMXRT_FLEXSPI2_XIP_BASE         (0x04000000ul)  /* FlexSPI2 XIP          64 MB */
+#define IMXRT_FLEXSPI2_XIP_SIZE         (64 * 1024 * 1024)
 #define IMXRT_DTCM_BASE                 (0x20000000ul)  /* M7 DTCM              256 KB */
 #define IMXRT_OCRAM1_BASE               (0x20480000ul)  /* OCRAM1               512 KB */
 #define IMXRT_OCRAM2_BASE               (0x20500000ul)  /* OCRAM2               256 KB */
 #define IMXRT_FLEXSPI1_XIP_BASE         (0x28000000ul)  /* FlexSPI1 XIP         128 MB */
+#define IMXRT_FLEXSPI1_XIP_SIZE         (128 * 1024 * 1024)
+
+/* Cortex-M33 private TCM view */
+
+#define IMXRT_M33_CODE_TCM_BASE         (0x0ffe0000ul)  /* Code TCM             128 KB */
+#define IMXRT_M33_SYSTEM_TCM_BASE       (0x20000000ul)  /* System TCM           128 KB */
 
 /* System-view aliases (accessible from either core via the AXI backbone) */
 

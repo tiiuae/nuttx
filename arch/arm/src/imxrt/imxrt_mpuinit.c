@@ -45,6 +45,23 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+#ifdef CONFIG_ARCH_ARMV8M
+#  if defined(CONFIG_ARMV8M_DCACHE) && \
+      !defined(CONFIG_ARMV8M_DCACHE_WRITETHROUGH)
+#    define RLAR_RAM_ATTR MPU_RLAR_WRITE_BACK
+#  elif defined(CONFIG_ARMV8M_DCACHE)
+#    define RLAR_RAM_ATTR MPU_RLAR_WRITE_THROUGH
+#  else
+#    define RLAR_RAM_ATTR MPU_RLAR_NONCACHEABLE
+#  endif
+
+#  if defined(CONFIG_ARMV8M_ICACHE) && !defined(CONFIG_ARMV8M_DCACHE)
+#    define RLAR_XIP_ATTR MPU_RLAR_WRITE_THROUGH
+#  else
+#    define RLAR_XIP_ATTR RLAR_RAM_ATTR
+#  endif
+#endif /* CONFIG_ARCH_ARMV8M */
+
 #ifndef CONFIG_ARMV7M_DCACHE
   /*  With Dcache off:
    *  Cacheable (MPU_RASR_C) and Bufferable (MPU_RASR_B) needs to be off
@@ -53,6 +70,7 @@
 #  define MPU_RASR_B    0
 #  define RASR_B_VALUE  0
 #  define RASR_C_VALUE  0
+#  define RASR_TEX_VALUE MPU_RASR_TEX_NOR
 #else
 #  ifndef CONFIG_ARMV7M_DCACHE_WRITETHROUGH
   /*  With Dcache on:
@@ -60,14 +78,31 @@
    */
 #  define RASR_B_VALUE  MPU_RASR_B
 #  define RASR_C_VALUE  MPU_RASR_C
+#  define RASR_TEX_VALUE MPU_RASR_TEX_NOR
 
 #  else
   /*  With Dcache in WRITETHROUGH Bufferable (MPU_RASR_B)
    * needs to be off, except for FLASH for alignment leniency
+   * Normal write-through requires TEX=0 C=1 B=0; TEX=1 C=1 B=0 is reserved.
    */
 #  define RASR_B_VALUE  0
 #  define RASR_C_VALUE  MPU_RASR_C
+#  define RASR_TEX_VALUE MPU_RASR_TEX_SO
 #  endif
+#endif
+
+#if defined(CONFIG_ARMV7M_ICACHE) && !defined(CONFIG_ARMV7M_DCACHE)
+#  define RASR_XIP_ATTR (MPU_RASR_TEX_SO | MPU_RASR_C)
+#else
+#  define RASR_XIP_ATTR (RASR_TEX_VALUE | RASR_C_VALUE | RASR_B_VALUE)
+#endif
+
+#if defined(CONFIG_IMXRT_FLEXSPI1_XIP)
+#  define IMXRT_FLEXSPI_XIP_BASE IMXRT_FLEXSPI1_XIP_BASE
+#  define IMXRT_FLEXSPI_XIP_SIZE IMXRT_FLEXSPI1_XIP_SIZE
+#elif defined(CONFIG_IMXRT_FLEXSPI2_XIP)
+#  define IMXRT_FLEXSPI_XIP_BASE IMXRT_FLEXSPI2_XIP_BASE
+#  define IMXRT_FLEXSPI_XIP_SIZE IMXRT_FLEXSPI2_XIP_SIZE
 #endif
 
 /****************************************************************************
@@ -269,12 +304,43 @@ void imxrt_mpu_initialize(void)
                                             * Not Shareable
                                             * No Subregion disable       */
                        );
+#  elif defined(CONFIG_ARCH_FAMILY_IMXRT118x) && \
+        defined(CONFIG_ARCH_ARMV8M)
+  /* ARMv8-M regions must not overlap. Unlike the M7 layout, do not install
+   * a deny-all region or a broad device region underneath RAM and XIP.
+   * Keep the privileged default map for ROM, peripherals and the PPB.
+   */
+
+  mpu_configure_region(IMXRT_M33_CODE_TCM_BASE, 128 * 1024,
+                       MPU_RBAR_AP_RWRW, MPU_RLAR_NONCACHEABLE);
+
+  mpu_configure_region(IMXRT_M33_SYSTEM_TCM_BASE, 128 * 1024,
+                       MPU_RBAR_AP_RWRW, MPU_RLAR_NONCACHEABLE);
+
+  mpu_configure_region(IMXRT_OCRAM1_BASE, 512 * 1024,
+                       MPU_RBAR_AP_RWRW, RLAR_RAM_ATTR);
+
+  mpu_configure_region(IMXRT_OCRAM2_BASE, 256 * 1024,
+                       MPU_RBAR_AP_RWRW, RLAR_RAM_ATTR);
+
+  /* The M7 ITCM and DTCM system aliases form one contiguous 512 KB range. */
+
+  mpu_configure_region(IMXRT_M7_ITCM_ALIAS_BASE, 512 * 1024,
+                       MPU_RBAR_AP_RWRW, RLAR_RAM_ATTR);
+
+#ifdef IMXRT_FLEXSPI_XIP_BASE
+  mpu_configure_region(IMXRT_FLEXSPI_XIP_BASE, IMXRT_FLEXSPI_XIP_SIZE,
+                       MPU_RBAR_AP_RORO, RLAR_XIP_ATTR);
+#endif
+
 #  elif defined(CONFIG_ARCH_FAMILY_IMXRT118x)
   uint32_t regval;
   uint32_t region;
 
   /* Deny access by default to prevent speculative accesses outside the
    * explicitly mapped RT118x address ranges (Arm erratum 1013783-B).
+   * ARM_MPU_RESET is selected for RT118x, so mpu_reset() disables the MPU
+   * and clears every region a previous boot stage may have left behind.
    */
 
   mpu_reset();
@@ -314,34 +380,33 @@ void imxrt_mpu_initialize(void)
                        MPU_RASR_AP_RORO);
 
   mpu_configure_region(IMXRT_ITCM_BASE, 256 * 1024,
-                       MPU_RASR_TEX_NOR |
+                       RASR_TEX_VALUE   |
                        RASR_C_VALUE     |
                        RASR_B_VALUE     |
                        MPU_RASR_AP_RWRW);
 
   mpu_configure_region(IMXRT_DTCM_BASE, 256 * 1024,
-                       MPU_RASR_TEX_NOR |
+                       RASR_TEX_VALUE   |
                        RASR_C_VALUE     |
                        RASR_B_VALUE     |
                        MPU_RASR_AP_RWRW);
 
   mpu_configure_region(IMXRT_OCRAM1_BASE, 512 * 1024,
-                       MPU_RASR_TEX_NOR |
+                       RASR_TEX_VALUE   |
                        RASR_C_VALUE     |
                        RASR_B_VALUE     |
                        MPU_RASR_AP_RWRW);
 
   mpu_configure_region(IMXRT_OCRAM2_BASE, 256 * 1024,
-                       MPU_RASR_TEX_NOR |
+                       RASR_TEX_VALUE   |
                        RASR_C_VALUE     |
                        RASR_B_VALUE     |
                        MPU_RASR_AP_RWRW);
 
-  mpu_configure_region(IMXRT_FLEXSPI1_XIP_BASE, 128 * 1024 * 1024,
-                       MPU_RASR_TEX_NOR |
-                       MPU_RASR_C       |
-                       MPU_RASR_B       |
-                       MPU_RASR_AP_RORO);
+#ifdef IMXRT_FLEXSPI_XIP_BASE
+  mpu_configure_region(IMXRT_FLEXSPI_XIP_BASE, IMXRT_FLEXSPI_XIP_SIZE,
+                       RASR_XIP_ATTR | MPU_RASR_AP_RORO);
+#endif
 
 #  else
 
