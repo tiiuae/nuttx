@@ -1,0 +1,196 @@
+/****************************************************************************
+ * boards/arm/imxrt/imxrt1180-evk/scripts/flash-netc.ld
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+/* The Cortex-M7 image is a raw XIP payload; it carries no FCB and no AHAB
+ * container of its own.  The M33 image (the "bl" bootloader config, or any
+ * other M33 build) owns the first 512 KB of FlexSPI1 NOR and releases the
+ * M7 with INITVTOR pointing at this payload.
+ *
+ * FlexSPI1 NOR layout:
+ *
+ *   0x2800_0000 .. 0x2807_FFFF   M33 image (512 KB reserved)
+ *   0x2808_0000 .. 0x287F_FFFF   M7 image  (this script, 7.5 MB window)
+ *
+ * Optional OCRAM-primary NETC configuration: .data, .bss, idle stack and
+ * primary heap live in OCRAM1.  Static USB and NETC DMA storage precedes
+ * .bss and is excluded from the heap.  DMA placement does not depend on
+ * heap selection.  ITCM still holds .ramfunc.
+ */
+
+MEMORY
+{
+  flash (rx)  : ORIGIN = 0x28080000, LENGTH = 4M      /* Cortex-M7 XIP window (after the 512K M33/bl reserve) */
+  ocram (rwx) : ORIGIN = 0x20484000, LENGTH = 480K    /* OCRAM1 minus ROM patch (0x20480000..0x20483fff) and M33 reserve (0x204fc000..0x204fffff) */
+  dtcm  (rwx) : ORIGIN = 0x20000000, LENGTH = 256K    /* M7 DTCM primary RAM */
+  itcm  (rwx) : ORIGIN = 0x00000000, LENGTH = 256K    /* M7 ITCM (opt-in) */
+}
+
+OUTPUT_ARCH(arm)
+EXTERN(_vectors)
+ENTRY(_stext)
+
+SECTIONS
+{
+    .vectors :
+    {
+        _stext = ABSOLUTE(.);
+        KEEP(*(.vectors))
+    } > flash
+
+    .ramfunc :
+    {
+        . = ALIGN(8);
+        _sramfuncs = ABSOLUTE(.);
+        FILL(0xff)
+        . = 0x40;
+        *(.text.exception_common)
+        *(.text.arm_doirq)
+        *(.text.arm_ack_irq)
+        *(.text.irq_dispatch)
+        *(.text.imxrt_gpio_interrupt)
+        *(.text.memcpy)
+        *(.text.memset)
+        *(.ramfunc .ramfunc.*)
+        . = ALIGN(8);
+        _eramfuncs = ABSOLUTE(.);
+    } > itcm AT > flash
+
+    _framfuncs = LOADADDR(.ramfunc);
+
+    .text : ALIGN(4)
+    {
+        *(.text .text.*)
+        *(.fixup)
+        *(.gnu.warning)
+        *(.rodata .rodata.*)
+        *(.gnu.linkonce.t.*)
+        *(.glue_7)
+        *(.glue_7t)
+        *(.got)
+        *(.gcc_except_table)
+        *(.gnu.linkonce.r.*)
+        _etext = ABSOLUTE(.);
+    } > flash
+
+    .init_section :
+    {
+        _sinit = ABSOLUTE(.);
+        *(.init_array .init_array.*)
+        _einit = ABSOLUTE(.);
+    } > flash
+
+    .ARM.extab :
+    {
+        *(.ARM.extab*)
+    } > flash
+
+    .ARM.exidx :
+    {
+        __exidx_start = ABSOLUTE(.);
+        *(.ARM.exidx*)
+        __exidx_end = ABSOLUTE(.);
+    } > flash
+
+    .tdata :
+    {
+        _stdata = ABSOLUTE(.);
+        *(.tdata .tdata.* .gnu.linkonce.td.*)
+        _etdata = ABSOLUTE(.);
+    } > flash
+
+    .tbss :
+    {
+        _stbss = ABSOLUTE(.);
+        *(.tbss .tbss.* .gnu.linkonce.tb.* .tcommon)
+        _etbss = ABSOLUTE(.);
+    } > flash
+
+    _eronly = ABSOLUTE(.);
+
+    .data :
+    {
+        _sdata = ABSOLUTE(.);
+        *(.data .data.*)
+        *(.gnu.linkonce.d.*)
+        CONSTRUCTORS
+        . = ALIGN(4);
+        _edata = ABSOLUTE(.);
+    } > ocram AT > flash
+
+    .dmamemory (NOLOAD) :
+    {
+        . = ALIGN(2048);
+        _sdmamemory = ABSOLUTE(.);
+        *(.dmamemory .dmamemory.*)
+        . = ALIGN(32);
+        _edmamemory = ABSOLUTE(.);
+    } > ocram
+
+    /* Preserve compiler-provided MPU block alignment independently of USB. */
+
+    .netc_dma (NOLOAD) : ALIGN(128)
+    {
+        _snetcdma = ABSOLUTE(.);
+        *(.netc_dma .netc_dma.*)
+        _enetcdma = ABSOLUTE(.);
+    } > ocram
+
+    .bss :
+    {
+        _sbss = ABSOLUTE(.);
+        *(.bss .bss.*)
+        *(.gnu.linkonce.b.*)
+        *(COMMON)
+        . = ALIGN(8);
+        _ebss = ABSOLUTE(.);
+    } > ocram
+
+    _socramheap = ALIGN(8);
+    _eocramheap = ORIGIN(ocram) + LENGTH(ocram);
+
+    /* Stabs debugging sections. */
+
+    .stab 0 : { *(.stab) }
+    .stabstr 0 : { *(.stabstr) }
+    .stab.excl 0 : { *(.stab.excl) }
+    .stab.exclstr 0 : { *(.stab.exclstr) }
+    .stab.index 0 : { *(.stab.index) }
+    .stab.indexstr 0 : { *(.stab.indexstr) }
+    .comment 0 : { *(.comment) }
+    .debug_abbrev 0 : { *(.debug_abbrev) }
+    .debug_info 0 : { *(.debug_info) }
+    .debug_line 0 : { *(.debug_line) }
+    .debug_pubnames 0 : { *(.debug_pubnames) }
+    .debug_aranges 0 : { *(.debug_aranges) }
+
+    _boot_loadaddr = ORIGIN(flash);
+    _boot_size = LENGTH(flash);
+    _ram_size = LENGTH(ocram);
+
+    ASSERT(_snetcdma >= ORIGIN(ocram) && _enetcdma <= _eocramheap,
+           "NETC DMA storage exceeds OCRAM")
+    ASSERT(_edmamemory <= _snetcdma && _enetcdma <= _sbss &&
+           _enetcdma <= _socramheap,
+           "NETC DMA storage overlaps USB, BSS or OCRAM heap")
+    ASSERT(_socramheap <= _eocramheap && _eocramheap <= 0x204fc000,
+           "OCRAM storage crosses the M33 reserve")
+}
