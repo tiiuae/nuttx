@@ -541,6 +541,24 @@ config IMXRT_ENET
 	select ARCH_HAVE_PHY
 	select ARCH_HAVE_NETDEV_STATISTICS
 
+config IMXRT_NETC
+	bool "NETC switched Ethernet (experimental)"
+	default n
+	depends on ARCH_FAMILY_IMXRT118x && ARCH_CORTEXM7
+	depends on NET && NET_ETHERNET && SCHED_WORKQUEUE
+	depends on !NETDEV_MULTIBUFFER && !NET_PROMISCUOUS && !IMXRT_ENET
+	depends on !ARMV7M_DCACHE || ARM_MPU
+	select ARCH_HAVE_PHY
+	select ARCH_HAVE_NETDEV_STATISTICS
+	---help---
+		Register ENETC1 as one Ethernet interface for the NETC switch.
+		The board supplies PHY configuration and initializes NETC resources.
+		MSGINTR1 slot 0 must be reserved for this driver. With D-cache
+		enabled, two free MPU regions are required. The linker must place
+		the .netc_dma input sections in DMA-accessible OCRAM outside the heap.
+		Initial setup requires exclusive ownership of shared NETC resources.
+		Hardware validation on MIMXRT1180-EVK is required before deployment.
+
 config IMXRT_LCD
 	bool "LCD controller"
 	default n
@@ -2661,6 +2679,37 @@ config IMXRT_PHY_POLLING
 		the PHY for status.
 
 endmenu # IMXRT_ENET
+
+menu "NETC Ethernet Configuration"
+	depends on IMXRT_NETC
+
+config IMXRT_NETC_NRXBUFFERS
+	int "Number of receive descriptors"
+	default 16
+	range 8 65528
+	---help---
+		Use a multiple of eight descriptors. Each descriptor has a dedicated
+		packet buffer; reserved OCRAM DMA storage is rounded to a power of two.
+
+config IMXRT_NETC_NTXBUFFERS
+	int "Number of transmit descriptors"
+	default 16
+	range 8 65528
+	---help---
+		Use a multiple of eight descriptors. One entry is reserved to
+		distinguish a full ring from an empty ring.
+
+config IMXRT_NETC_LINK_POLL_MS
+	int "External PHY polling interval (milliseconds)"
+	default 1000
+	range 1 60000
+
+config IMXRT_NETC_TXTIMEOUT
+	int "Transmit timeout (seconds)"
+	default 60
+	range 1 3600
+
+endmenu # IMXRT_NETC
 
 menu "Memory Configuration"
 
