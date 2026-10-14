@@ -318,6 +318,14 @@ int up_rtc_getdatetime(FAR struct tm *tp)
   while ((buffer[0] & PCF85263_RTC_SECONDS_MASK) >
          (seconds & PCF85263_RTC_SECONDS_MASK));
 
+  /* Validate RTC initialization */
+
+  if (buffer[6] == 0)
+    {
+      rtcerr("ERROR: RTC time is not initialized (year register is zero)\n");
+      return -ENODATA;
+    }
+
   /* Format the return time */
 
   /* Return seconds (0-61) */
