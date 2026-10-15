@@ -170,11 +170,48 @@ const struct clock_configuration_s g_initial_clkconfig =
     .ecat_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .enet_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .tmr_1588_clk_root      = CCM_CLOCK_ROOT_DISABLE,
+#ifdef CONFIG_IMXRT_NETC
+  /* MCUXpresso BOARD_BootClockRUN: NETC = 480 MHz / 2;
+   * MAC0 RMII = 500 MHz / 10; MAC1-3 RGMII = 500 MHz / 4.
+   */
+
+    .netc_clk_root =
+    {
+      .action = CCM_CLOCK_ROOT_CONFIGURE,
+      .div    = 2,
+      .mux    = SYS_PLL3_PFD3,
+    },
+    .mac0_clk_root =
+    {
+      .action = CCM_CLOCK_ROOT_CONFIGURE,
+      .div    = 10,
+      .mux    = SYS_PLL1_DIV2,
+    },
+    .mac1_clk_root =
+    {
+      .action = CCM_CLOCK_ROOT_CONFIGURE,
+      .div    = 4,
+      .mux    = SYS_PLL1_DIV2,
+    },
+    .mac2_clk_root =
+    {
+      .action = CCM_CLOCK_ROOT_CONFIGURE,
+      .div    = 4,
+      .mux    = SYS_PLL1_DIV2,
+    },
+    .mac3_clk_root =
+    {
+      .action = CCM_CLOCK_ROOT_CONFIGURE,
+      .div    = 4,
+      .mux    = SYS_PLL1_DIV2,
+    },
+#else
     .netc_clk_root          = CCM_CLOCK_ROOT_IGNORE,
     .mac0_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .mac1_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .mac2_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .mac3_clk_root          = CCM_CLOCK_ROOT_DISABLE,
+#endif
     .mac4_clk_root          = CCM_CLOCK_ROOT_DISABLE,
     .serdes0_clk_root       = CCM_CLOCK_ROOT_DISABLE,
     .serdes1_clk_root       = CCM_CLOCK_ROOT_DISABLE,

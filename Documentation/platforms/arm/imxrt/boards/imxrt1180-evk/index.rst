@@ -41,9 +41,148 @@ Features
 - Audio codec, microphone, headphone jack, and speaker connections
 - Two software-controlled user LEDs
 
-The current NuttX configurations provide the serial console, USB device
-support, image generation, and multicore boot flow. The other on-board
-interfaces listed above are not enabled by the supplied configurations.
+The NuttX configurations provide the serial console, USB device support,
+image generation, and multicore boot flow.  The ``netc`` configuration adds
+switched Ethernet as described below; the remaining interfaces depend on
+the selected configuration.
+
+NETC switched Ethernet
+======================
+
+The ``netc`` configuration is based on the Cortex-M7 ``nsh`` configuration
+and enables the new NETC driver.  It exposes one network interface through
+ENETC1 and the internal switch CPU port 4, not four independent interfaces.
+External ETH4/J32 belongs to ENETC0 and is not enabled.
+
+.. list-table:: External switch ports
+   :header-rows: 1
+
+   * - Port / connector
+     - PHY / address
+     - Interface / supported speeds
+     - Active-low reset
+   * - ETH0 / J28
+     - RTL8201FI / 2
+     - RMII / 100 Mb/s only
+     - GPIO_AD_25 (RGPIO4.25)
+   * - ETH1 / J29
+     - RTL8211FD / 5
+     - RGMII / 10, 100, 1000 Mb/s
+     - GPIO_B1_13 (RGPIO6.13)
+   * - ETH2 / J30
+     - RTL8211FD / 4
+     - RGMII / 10, 100, 1000 Mb/s
+     - GPIO_AD_28 (RGPIO4.28)
+   * - ETH3 / J31
+     - RTL8211FD / 7
+     - RGMII / 10, 100, 1000 Mb/s
+     - GPIO_B2_01 (RGPIO6.15)
+
+``CONFIG_IMXRT_NETC_PORTMASK`` is a decimal bitmap, range 1..15, with bit n
+selecting ETHn.  The board default is 15; the supplied bring-up configuration
+uses 2 (ETH1 only).  Connect J29 first and validate link, ARP and ping before
+adding other ports.  RTL8201 10 Mb/s operation is unsupported by RT1180 NETC
+(ERR051651); do not force ETH0 to 10 Mb/s.  These are supported driver modes,
+not a claim of hardware validation on every board/silicon revision.
+
+Before selecting ETH2, set J65 and J72 to 2-3; before selecting ETH3, set J63
+and J73 to 2-3 (UM12021 Rev. 3, Table 4).  ETH2/ETH3 share routing with SDRAM
+and EtherCAT.  Do not enable those functions on the shared pins, including
+in M33 firmware or a debugger initialization script.  The board glue rejects
+SEMC with ETH2/3 selected.  RMII on ETH0 assumes the standard resistor
+population, without the manual's MII rework.
+
+The pad routes and reset sequence follow the MCUXpresso
+``mcuxsdk-examples/_boards/evkmimxrt1180/driver_examples/netc/switch``
+``pin_mux.c`` and ``hardware_init.c``.  Management pads are GPIO_AD_30
+(EMDC) and GPIO_AD_31 (EMDIO); the configuration uses the individual port
+external MDIO register groups, not PCS MDIO.  The SDK's ``board.h`` specifies
+PHY addresses 2, 5, 4, 7.  Its RTL8211F helper enables both RX and TX clock
+delays, which the board configuration requests from the driver; do not add
+a second MAC-side delay.  All five onboard PHYs are reset as in the SDK,
+including unused ETH4 (GPIO_AD_13 / RGPIO4.13).  Thus M33 firmware must not
+concurrently use ETH4.  Setup allows 150 ms power settling, 10 ms reset and
+150 ms recovery.
+
+With ``CONFIG_IMXRT_NETC``, M7 startup configures the SDK clock roots:
+NETC = SYS_PLL3_PFD3 / 2 = 240 MHz, MAC0 = SYS_PLL1_DIV2 / 10 = 50 MHz,
+and MAC1-3 = SYS_PLL1_DIV2 / 4 = 125 MHz.  M33 NuttX startup initializes
+SYS_PLL1 from the board's ``sys_pll1`` configuration when ``enable`` is set
+and enables its DIV2 and DIV5 outputs.  An already-locked PLL is preserved.
+Rebuild and flash the M33 bootloader when updating this clock setup;
+updating only the M7 application does not initialize SYS_PLL1.
+SYS_PLL2/3 and their PFDs still retain their earlier boot configuration.
+SYS_PLL3_PFD3 frequency reporting assumes fraction 18, giving 480 MHz
+from SYS_PLL3 at 480 MHz and 240 MHz at the NETC root after division by 2.
+ETH0's RMII reference clock is an MCU output.  The PHYs' separate 25 MHz
+crystals must not be confused
+with this 50 MHz reference.  Clock frequencies are checked before PHY reset.
+The MAC is locally administered unicast, derived from the existing RT118x
+OCOTP UID shadow definitions using the conventional i.MX RT ENET mapping.
+It is not a factory-assigned globally unique MAC.
+
+Boot, memory and initialization requirements
+--------------------------------------------
+
+M33 boot firmware must establish TRDC permissions before releasing M7.
+The supplied board policy already grants domain 10 (NETC) access to OCRAM1
+and OCRAM2 and grants M7 access to the NETC register window.  Keep that policy
+when replacing the boot firmware.  NETCMIX is on after initial power-up
+(IMXRT1180RM 27.3.4.2); the board hook checks that power, reset release and
+isolation status are ready.  If M33 has powered it down, initialization fails
+with ``-EHOSTDOWN`` rather than attempting to seize SRC/TRDC ownership or
+reset another core's resources.  Only one core may own NETC.  IERB, PRB,
+PCI functions and MSI-X are initialized by the driver, not duplicated here.
+IERB links 0-3 correspond to switch ports ETH0-3; link 4 is ENETC0 (ETH4).
+The driver sets each enabled switch link's PHY address before locking IERB.
+A mismatched binding rejects port MDIO transactions with ``ADDR_ERR`` and
+causes initialization to fail with ``-EIO``.
+The switch CPU port 4 has no pseudo-MAC configuration register (``PPMCR``);
+padding is configured only on the ENETC1 side.  Accessing the unimplemented
+switch-side register at ``0x60a15010`` can cause a bus fault.
+ENETC1 SI0 enables both VLAN-promiscuous mode and untagged-frame acceptance
+in ``PSIPVMR``.  VLAN-promiscuous mode alone does not admit untagged traffic
+such as ordinary ARP replies.
+
+The ``netc`` configuration uses ``flash.ld`` with data, BSS, idle stack and
+primary heap in DTCM, like ``nsh``, and a secondary heap in OCRAM1
+(``CONFIG_IMXRT_TCM_PRIMARY=y``, ``CONFIG_IMXRT_OCRAM_HEAP=y``,
+``CONFIG_MM_REGIONS=2``).  NETC DMA storage is static, not allocated with
+``kmm_memalign``.  The linker places ``.netc_dma.packet`` and
+``.netc_dma.command`` in a dedicated ``.netc_dma`` NOLOAD section in OCRAM1,
+after USB's separate ``.dmamemory`` range and before the OCRAM heap.  Input
+section alignment is preserved, and all alignment padding is excluded from
+the heap.  ROM patch memory and the M33 reserve remain excluded; linker
+assertions check OCRAM bounds and separation from USB and the heap.
+
+Packet/ring storage has size and alignment equal to the next power of two
+covering the packet structure.  With 16 RX / 16 TX descriptors, the supplied
+590-byte packet setting reserves 32 KiB; a 1518-byte setting reserves 64 KiB.
+Switch command storage has size and alignment of 512 bytes.  The driver
+explicitly initializes both blocks because NOLOAD storage is not cleared by
+the BSS startup code.  DMA placement has no heap-location or fragmentation
+prerequisite.  ``flash-netc.ld`` remains available when both NETC and
+``CONFIG_IMXRT_OCRAM_PRIMARY=y`` are selected; it keeps the same static DMA
+placement with data, BSS, idle stack and primary heap in OCRAM1.
+
+With data cache enabled, ``CONFIG_ARM_MPU=y`` and **two free MPU regions**
+are required: one for packet/ring memory and one for command memory.
+``netc`` sets ``CONFIG_ARM_MPU_NREGIONS=16``; account for startup mappings,
+USB DMA and any other MPU users when extending it.  Each MPU mapping covers
+exactly its static storage block, not the aggregate linker section or its
+padding.  Both blocks must remain non-cacheable and reachable under the M33
+TRDC policy.
+
+``CONFIG_NETDEV_LATEINIT=y`` is recommended and selected by ``netc``.
+``imxrt_bringup()`` calls ``imxrt_netc_boardinitialize()`` after normal board
+initialization.  If late network initialization is disabled, the board's
+``arm_netinitialize()`` calls the same hook during architecture network
+initialization, after heap setup; do not call the network setup hook from
+``imxrt_boardinitialize()``.  Do not supply a second architecture-level
+``arm_netinitialize()`` for NETC.  A mutex and a single board lifecycle state
+prevent repeated PHY resets or duplicate registration, including after a
+failed first attempt.  Recovering from an initialization failure requires a
+reboot.
 
 Buttons and LEDs
 ================

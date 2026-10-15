@@ -32,7 +32,7 @@
  *
  * NuttX's .data, .bss, idle stack and primary heap live in DTCM.  OCRAM1,
  * which the M33 grants the M7 R/W/X through TRDC2 MRC_W3 before releasing
- * it, holds USB DMA storage and the secondary heap.  ITCM holds the
+ * it, holds USB and NETC DMA storage and the secondary heap.  ITCM holds the
  * .ramfunc section, including selected hot code.
  */
 
@@ -149,8 +149,24 @@ SECTIONS
         _edmamemory = ABSOLUTE(.);
     } > ocram
 
+    /* Preserve compiler-provided MPU block alignment independently of USB. */
+
+    .netc_dma (NOLOAD) : ALIGN(128)
+    {
+        _snetcdma = ABSOLUTE(.);
+        *(.netc_dma .netc_dma.*)
+        _enetcdma = ABSOLUTE(.);
+    } > ocram
+
     _socramheap = ALIGN(8);
     _eocramheap = ORIGIN(ocram) + LENGTH(ocram);
+
+    ASSERT(_snetcdma >= ORIGIN(ocram) && _enetcdma <= _eocramheap,
+           "NETC DMA storage exceeds OCRAM")
+    ASSERT(_edmamemory <= _snetcdma && _enetcdma <= _socramheap,
+           "NETC DMA storage overlaps USB or OCRAM heap")
+    ASSERT(_socramheap <= _eocramheap && _eocramheap <= 0x204fc000,
+           "OCRAM storage crosses the M33 reserve")
 
     .bss :
     {

@@ -5,6 +5,17 @@
 
 if ARCH_BOARD_IMXRT1180_EVK
 
+config IMXRT_NETC_PORTMASK
+	int "NETC enabled external ports (ETH0-ETH3 bitmap)"
+	depends on IMXRT_NETC
+	default 15
+	range 1 15
+	---help---
+		Bit n enables switch port n / ETHn.  Use 2 for initial ETH1/J29
+		testing.  ETH0 is RMII/RTL8201 (100 Mb/s only); ETH1-3 are
+		RGMII/RTL8211.  ETH2/3 require the RGMII routing jumpers and
+		conflict with SDRAM and EtherCAT.  This does not enable ETH4.
+
 config IMXRT_DMA_POOL_SIZE
 	int "RT1180 USB DMA pool size"
 	depends on ARCH_FAMILY_IMXRT118x && IMXRT_USBDEV && USBDEV_DMAMEMORY

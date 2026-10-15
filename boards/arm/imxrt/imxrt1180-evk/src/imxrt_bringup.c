@@ -40,6 +40,9 @@
 
 #include "imxrt_gpio.h"
 #include "imxrt_usdhc.h"
+#ifdef CONFIG_IMXRT_NETC
+#  include "imxrt_netc.h"
+#endif
 #include "imxrt1180-evk.h"
 #include <arch/board/board.h>  /* Must always be included last */
 
@@ -131,6 +134,14 @@ int imxrt_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: imxrt_sdmmc_initialize() failed: %d\n", ret);
+    }
+#endif
+
+#if defined(CONFIG_IMXRT_NETC) && defined(CONFIG_NETDEV_LATEINIT)
+  ret = imxrt_netc_boardinitialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: NETC initialization failed: %d\n", ret);
     }
 #endif
 
