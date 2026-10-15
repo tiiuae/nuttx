@@ -106,8 +106,14 @@ concurrently use ETH4.  Setup allows 150 ms power settling, 10 ms reset and
 
 With ``CONFIG_IMXRT_NETC``, M7 startup configures the SDK clock roots:
 NETC = SYS_PLL3_PFD3 / 2 = 240 MHz, MAC0 = SYS_PLL1_DIV2 / 10 = 50 MHz,
-and MAC1-3 = SYS_PLL1_DIV2 / 4 = 125 MHz.  ETH0's RMII reference clock is
-an MCU output.  The PHYs' separate 25 MHz crystals must not be confused
+and MAC1-3 = SYS_PLL1_DIV2 / 4 = 125 MHz.  M33 NuttX startup initializes
+SYS_PLL1 from the board's ``sys_pll1`` configuration when ``enable`` is set
+and enables its DIV2 and DIV5 outputs.  An already-locked PLL is preserved.
+Rebuild and flash the M33 bootloader when updating this clock setup;
+updating only the M7 application does not initialize SYS_PLL1.
+SYS_PLL2/3 and their PFDs still retain their earlier boot configuration.
+ETH0's RMII reference clock is an MCU output.  The PHYs' separate 25 MHz
+crystals must not be confused
 with this 50 MHz reference.  Clock frequencies are checked before PHY reset.
 The MAC is locally administered unicast, derived from the existing RT118x
 OCOTP UID shadow definitions using the conventional i.MX RT ENET mapping.
