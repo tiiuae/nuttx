@@ -51,32 +51,14 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#if !defined(CONFIG_ARCH_FAMILY_IMXRT118x) || \
-    !defined(CONFIG_ARCH_CORTEXM7)
-#  error "NETC requires RT118x Cortex-M7"
+#ifdef CONFIG_IMXRT_NETC_HPWORK
+#  define NETC_WORK             HPWORK
+#else
+#  define NETC_WORK             LPWORK
 #endif
-#if defined(CONFIG_NETDEV_MULTIBUFFER) || !defined(CONFIG_SCHED_WORKQUEUE)
-#  error "NETC requires single-buffer networking and work queues"
-#endif
-#if defined(CONFIG_ARMV7M_DCACHE) && !defined(CONFIG_ARM_MPU)
-#  error "Cache-enabled NETC needs an MPU region for DMA memory"
-#endif
-#if CONFIG_IMXRT_NETC_NTXBUFFERS < 8 || \
-    CONFIG_IMXRT_NETC_NTXBUFFERS > 65528 || \
-    (CONFIG_IMXRT_NETC_NTXBUFFERS % 8) != 0 || \
-    CONFIG_IMXRT_NETC_NRXBUFFERS < 8 || \
-    CONFIG_IMXRT_NETC_NRXBUFFERS > 65528 || \
-    (CONFIG_IMXRT_NETC_NRXBUFFERS % 8) != 0
-#  error "NETC rings must contain 8..65528 descriptors, in multiples of 8"
-#endif
-#if CONFIG_IMXRT_NETC_LINK_POLL_MS < 1 || CONFIG_IMXRT_NETC_TXTIMEOUT < 1
-#  error "NETC polling and timeout intervals must be positive"
-#endif
-
-#define NETC_WORK             LPWORK
-#define NETC_NTX              CONFIG_IMXRT_NETC_NTXBUFFERS
-#define NETC_NRX              CONFIG_IMXRT_NETC_NRXBUFFERS
-#define NETC_BUFSIZE          ((CONFIG_NET_ETH_PKTSIZE + 127) & ~127)
+#define NETC_NTX              (CONFIG_IMXRT_NETC_NTXBUFFER_OCTETS * 8)
+#define NETC_NRX              (CONFIG_IMXRT_NETC_NRXBUFFER_OCTETS * 8)
+#define NETC_BUFSIZE          ALIGN_UP_MASK(CONFIG_NET_ETH_PKTSIZE, 127)
 #define NETC_TIMEOUT          SEC2TICK(CONFIG_IMXRT_NETC_TXTIMEOUT)
 #define NETC_LINK_INTERVAL    MSEC2TICK(CONFIG_IMXRT_NETC_LINK_POLL_MS)
 #define NETC_DMA_SIZE         (1u << (32 - __builtin_clz( \
@@ -93,9 +75,6 @@
                                NETC_RX_BASE(NETC_RXRING) + (r))
 #define NETC_SIREG(r)         (IMXRT_ENETC1_SI0_BASE + (r))
 #define NETC_EPREG(r)         (IMXRT_ENETC1_BASE + (r))
-
-static_assert(NETC_BUFSIZE >= 128 && NETC_BUFSIZE <= 65408,
-               "NETC packet buffer exceeds RBBSR");
 
 /* Only initialization owns shared resets.  Runtime transitions reset PF4,
  * never PF2, PRB or IERB.  The network lock serializes all endpoint state.
