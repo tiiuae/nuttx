@@ -32,12 +32,6 @@ LDSCRIPT = flash-m33.ld
 else
 include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
 LDSCRIPT = flash.ld
-ifeq ($(CONFIG_IMXRT_NETC),y)
-ifeq ($(CONFIG_IMXRT_OCRAM_PRIMARY),y)
-LDSCRIPT = flash-netc.ld
-endif
-endif
-endif
 
 ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
 
