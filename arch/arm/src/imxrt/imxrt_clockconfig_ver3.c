@@ -75,7 +75,7 @@
 #define IMXRT_SYS_PLL3_PFD0_HZ   (664615384u)  /* frac = 13 */
 #define IMXRT_SYS_PLL3_PFD1_HZ   (508235294u)  /* frac = 17 */
 #define IMXRT_SYS_PLL3_PFD2_HZ   (392727272u)  /* frac = 22 */
-#define IMXRT_SYS_PLL3_PFD3_HZ   (392727272u)  /* frac = 22 */
+#define IMXRT_SYS_PLL3_PFD3_HZ   (480000000u)  /* frac = 18 */
 
 /* Analog settling delays, expressed as NOP spins because no timer exists
  * this early.  The M33 still runs from OSC_RC_400M/2 (200 MHz), so one

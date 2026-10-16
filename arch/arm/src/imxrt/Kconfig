@@ -593,8 +593,21 @@ config IMXRT_USBDEV
 config IMXRT_ENET
 	bool "Ethernet"
 	default n
+	depends on !ARCH_FAMILY_IMXRT118x
 	select ARCH_HAVE_PHY
 	select ARCH_HAVE_NETDEV_STATISTICS
+
+config IMXRT_NETC
+	bool "NETC switched Ethernet"
+	default n
+	depends on ARCH_FAMILY_IMXRT118x
+	depends on NET && NET_ETHERNET && SCHED_WORKQUEUE
+	depends on !(ARMV7M_DCACHE || ARMV8M_DCACHE) || ARM_MPU
+	select ARCH_HAVE_PHY
+	select ARCH_HAVE_NETDEV_STATISTICS
+	---help---
+		Register ENETC1 as one Ethernet interface for the NETC switch.
+		The board supplies PHY configuration and initializes NETC resources.
 
 config IMXRT_LCD
 	bool "LCD controller"
@@ -2716,6 +2729,53 @@ config IMXRT_PHY_POLLING
 		the PHY for status.
 
 endmenu # IMXRT_ENET
+
+menu "NETC Ethernet Configuration"
+	depends on IMXRT_NETC
+
+config IMXRT_NETC_HPWORK
+	bool "Use high priority work queue for NETC"
+	depends on SCHED_HPWORK
+	default n
+	---help---
+		Use high-priority work-queue for ethernet packet handling.
+		Enable if low-latency ethernet packet handling is required.
+
+config IMXRT_NETC_RTL8201_RXDV_ON_CRS_DV
+	bool "RTL8201 RMII RXDV on CRS_DV pin"
+	default n
+	---help---
+		Select RXDV instead of combined CRS/DV signaling on the RTL8201
+		CRS_DV pin by setting page 7, register 16, bit 2 after PHY reset.
+		This applies only to RTL8201 PHYs configured for RMII.
+
+config IMXRT_NETC_NRXBUFFER_OCTETS
+	int "Octets of receive descriptors"
+	default 2
+	range 1 8191
+	---help---
+		Defines nbr of eight descriptor groups to allocate. One entry is
+		reserved to distinguish a full ring from an empty ring.
+
+config IMXRT_NETC_NTXBUFFER_OCTETS
+	int "Octets of transmit descriptors"
+	default 2
+	range 1 8191
+	---help---
+		Defines nbr of eight descriptor groups to allocate. One entry is
+		reserved to distinguish a full ring from an empty ring.
+
+config IMXRT_NETC_LINK_POLL_MS
+	int "External PHY polling interval (milliseconds)"
+	default 1000
+	range 1 60000
+
+config IMXRT_NETC_TXTIMEOUT
+	int "Transmit timeout (seconds)"
+	default 60
+	range 1 3600
+
+endmenu # IMXRT_NETC
 
 menu "Memory Configuration"
 

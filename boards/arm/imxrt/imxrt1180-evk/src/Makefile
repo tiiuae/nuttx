@@ -46,6 +46,10 @@ ifeq ($(CONFIG_IMXRT1180_EVK_BOOTLOADER),y)
 CSRCS += imxrt_bootloader.c
 endif
 
+ifeq ($(CONFIG_IMXRT_NETC),y)
+CSRCS += imxrt_netc.c
+endif
+
 ifeq ($(CONFIG_ARCH_BUTTONS),y)
 CSRCS += imxrt_buttons.c
 endif

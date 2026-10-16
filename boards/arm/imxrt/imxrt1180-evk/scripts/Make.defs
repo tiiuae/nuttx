@@ -32,7 +32,6 @@ LDSCRIPT = flash-m33.ld
 else
 include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
 LDSCRIPT = flash.ld
-endif
 
 ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
 
