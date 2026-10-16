@@ -380,12 +380,10 @@ static int imxrt_netc_infrastructure(struct imxrt_netc_s *priv)
       return ret;
     }
 
-  /* SDK BOARD_NETC_Init: unlock, configure MSI AMQ and PHY bindings, lock,
+  /* SDK BOARD_NETC_Init: unlock, configure PHY bindings, lock,
    * then wait for STATE=0.  Preserve reset resource allotments and bindings.
    */
 
-  modifyreg32(IMXRT_NETC_IERB_BASE + NETC_IERB_RCMSIAMQR,
-              NETC_IERB_MSI_AMQ_MASK, NETC_IERB_MSI_AMQ_INIT);
   putreg32((frequency / 1000000) | ((1000000000 / frequency) << 16),
            IMXRT_NETC_IERB_BASE + NETC_IERB_CLKCR);
   putreg32((uint32_t)(((uint64_t)(1000000000 % frequency) << 32) /

@@ -17,7 +17,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* RT1180RM rev. 10, chapter 53; checked against MIMXRT1189_cm7.h.
+/* RT1180RM rev. 10, chapter 53
  * ECAM command/control registers are 16-bit, NOT 32-bit registers.
  */
 

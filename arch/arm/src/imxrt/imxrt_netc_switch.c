@@ -423,9 +423,10 @@ static int imxrt_switch_phy_init(const struct imxrt_netc_port_s *port)
     }
   else
     {
+#ifdef CONFIG_IMXRT_NETC_RTL8201_RXDV_ON_CRS_DV
       if (port->mode == IMXRT_NETC_RMII)
         {
-          /* NETC requires RXDV rather than the default combined CRS/DV. */
+          /* Select RXDV on CRS_DV for boards requiring this wiring. */
 
           ret = imxrt_switch_phy_write(port, PHY_PAGE, RTL8201_RMII_PAGE);
           if (ret == OK)
@@ -440,6 +441,7 @@ static int imxrt_switch_phy_init(const struct imxrt_netc_port_s *port)
               return ret < 0 ? ret : restore;
             }
         }
+#endif
 
       /* ERR051651: RTL8201FI preamble is incompatible at 10 Mb/s. */
 

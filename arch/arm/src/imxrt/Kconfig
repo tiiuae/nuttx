@@ -2733,6 +2733,14 @@ endmenu # IMXRT_ENET
 menu "NETC Ethernet Configuration"
 	depends on IMXRT_NETC
 
+config IMXRT_NETC_RTL8201_RXDV_ON_CRS_DV
+	bool "RTL8201 RMII RXDV on CRS_DV pin"
+	default n
+	---help---
+		Select RXDV instead of combined CRS/DV signaling on the RTL8201
+		CRS_DV pin by setting page 7, register 16, bit 2 after PHY reset.
+		This applies only to RTL8201 PHYs configured for RMII.
+
 config IMXRT_NETC_NRXBUFFERS
 	int "Number of receive descriptors"
 	default 16
