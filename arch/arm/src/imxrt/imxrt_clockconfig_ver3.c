@@ -49,10 +49,11 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Fixed clock source frequencies established before the M7 is released.
- * M33 NuttX initializes ARM_PLL and SYS_PLL1; SYS_PLL2/3 and their PFDs
- * retain the boot ROM configuration.  Frequency reporting assumes these
- * settings; other configurations require reading the ANADIG registers.
+/* Fixed clock source frequencies programmed by the Cortex-M33 boot ROM
+ * before the M7 is released.  NuttX does not reprogram these PLLs, so
+ * their frequencies are treated as static constants; if a future use
+ * case needs to reconfigure the PLLs, extend imxrt_get_clock() to read
+ * the ANADIG registers instead.
  */
 
 #define IMXRT_OSC_24M_HZ         (24000000u)
@@ -74,7 +75,7 @@
 #define IMXRT_SYS_PLL3_PFD0_HZ   (664615384u)  /* frac = 13 */
 #define IMXRT_SYS_PLL3_PFD1_HZ   (508235294u)  /* frac = 17 */
 #define IMXRT_SYS_PLL3_PFD2_HZ   (392727272u)  /* frac = 22 */
-#define IMXRT_SYS_PLL3_PFD3_HZ   (480000000u)  /* frac = 18 */
+#define IMXRT_SYS_PLL3_PFD3_HZ   (392727272u)  /* frac = 22 */
 
 /* Analog settling delays, expressed as NOP spins because no timer exists
  * this early.  The M33 still runs from OSC_RC_400M/2 (200 MHz), so one
@@ -83,8 +84,6 @@
 
 #define PLL_LDO_SETTLE_SPINS     (1000)     /* SDK uses 1 us */
 #define ARM_PLL_SETTLE_SPINS     (25000)    /* SDK uses 30 us */
-#define SYS_PLL1_REG_SETTLE_SPINS (80000)   /* SDK uses 100 us */
-#define SYS_PLL1_RING_OFF_SPINS  (180000)   /* SDK uses 225 us */
 #define DCDC_SETTLE_SPINS        (100000)   /* ~123 us of 32 kHz clock */
 
 /****************************************************************************
@@ -260,64 +259,6 @@ static void imxrt_init_arm_pll(const struct ccm_arm_pll *config)
            IMXRT_ANADIG_PLL_ARM_CTRL);
 }
 
-/****************************************************************************
- * Name: imxrt_init_sys_pll1
- *
- * Description:
- *   Initialize the Ethernet PLL and its DIV2/DIV5 outputs before releasing
- *   M7.  Follow the RT1189 SDK CLOCK_InitSysPll1() power-up sequence.
- *   Preserve an already-locked shared PLL rather than reprogramming it.
- *
- ****************************************************************************/
-
-static void imxrt_init_sys_pll1(const struct ccm_sys_pll1 *config)
-{
-  if (!config->enable)
-    {
-      return;
-    }
-
-  imxrt_enable_pll_ldo();
-
-  if ((getreg32(IMXRT_ANADIG_PLL_SYS1_CTRL) &
-       ANADIG_PLL_SYS1_STABLE) == 0)
-    {
-      putreg32(ETH_PLL_CTRL0_BYPASS, IMXRT_ETH_PLL_CTRL0_SET);
-      modifyreg32(IMXRT_ANADIG_PLL_SYS1_CTRL,
-                  ANADIG_PLL_SYS1_CONTROL_MODE,
-                  ANADIG_PLL_SYS1_ENABLE_CLK);
-
-      putreg32(config->num, IMXRT_ETH_PLL_NUMERATOR);
-      putreg32(config->denom, IMXRT_ETH_PLL_DENOMINATOR);
-      putreg32(ETH_PLL_CTRL0_DIV_SELECT_MASK, IMXRT_ETH_PLL_CTRL0_CLR);
-      putreg32(ETH_PLL_CTRL0_DIV_SELECT(config->div),
-               IMXRT_ETH_PLL_CTRL0_SET);
-      putreg32(ETH_PLL_CTRL0_PLL_REG_EN, IMXRT_ETH_PLL_CTRL0_SET);
-      imxrt_spin(SYS_PLL1_REG_SETTLE_SPINS);
-
-      /* Unlike AUDIO_PLL, the SDK does not power down the Ethernet PLL
-       * before programming its dividers.
-       */
-
-      putreg32(ETH_PLL_CTRL0_POWERUP | ETH_PLL_CTRL0_HOLD_RING_OFF,
-               IMXRT_ETH_PLL_CTRL0_SET);
-      imxrt_spin(SYS_PLL1_RING_OFF_SPINS);
-      putreg32(ETH_PLL_CTRL0_HOLD_RING_OFF, IMXRT_ETH_PLL_CTRL0_CLR);
-
-      while ((getreg32(IMXRT_ANADIG_PLL_SYS1_CTRL) &
-              ANADIG_PLL_SYS1_STABLE) == 0);
-    }
-
-  putreg32(ETH_PLL_CTRL0_ENABLE, IMXRT_ETH_PLL_CTRL0_SET);
-  modifyreg32(IMXRT_ANADIG_PLL_SYS1_CTRL,
-              ANADIG_PLL_SYS1_GATE | ANADIG_PLL_SYS1_CONTROL_MODE |
-              ANADIG_PLL_SYS1_DIV2_CONTROL_MODE |
-              ANADIG_PLL_SYS1_DIV5_CONTROL_MODE,
-              ANADIG_PLL_SYS1_ENABLE_CLK | ANADIG_PLL_SYS1_DIV2 |
-              ANADIG_PLL_SYS1_DIV5);
-  putreg32(ETH_PLL_CTRL0_BYPASS, IMXRT_ETH_PLL_CTRL0_CLR);
-}
-
 #endif /* CONFIG_ARCH_CHIP_MIMXRT1189CVM8C_CM33 */
 
 static void imxrt_enable_osc_24m(void)
@@ -354,7 +295,7 @@ static void imxrt_enable_clock_source(int source)
 {
   switch (source)
     {
-      /* These sources are initialized by M33 NuttX or earlier boot code. */
+      /* These sources are expected to be always on */
 
       case OSC_RC_24M:
       case OSC_RC_400M:
@@ -646,9 +587,9 @@ int imxrt_get_rootclock(uint32_t clkroot, uint32_t *frequency)
  *
  * Description:
  *   Called to initialize the i.MX RT.  This does whatever setup is needed to
- *   put the SoC in a usable state.  The M33 initializes ARM_PLL and
- *   SYS_PLL1 before releasing M7.  Both cores configure their required
- *   roots, retaining the boot configuration of SYS_PLL2/3 and FlexSPI1.
+ *   put the SoC in a usable state.  The Cortex-M33 boot ROM has already
+ *   started essential PLLs and set the FlexSPI1 clock, so only the roots
+ *   required by NuttX are configured here.
  *
  ****************************************************************************/
 
@@ -668,13 +609,12 @@ void imxrt_clockconfig(void)
 
   imxrt_set_core_voltage(DCDC_1P0_TARGET_1P125V);
 
-  /* Configure the shared PLLs before releasing M7.  The M7 root and
-   * M7-specific power setup are owned by the bootloader.  The M7 must
-   * not reprogram these PLLs or the M33 root.
+  /* Configure ARM_PLL and the M33 root here.  The M7 root and M7-specific
+   * power setup are owned by the bootloader.  The M7 must not touch
+   * ARM_PLL or the M33 root when it later executes this function.
    */
 
   imxrt_init_arm_pll(&g_initial_clkconfig.arm_pll);
-  imxrt_init_sys_pll1(&g_initial_clkconfig.sys_pll1);
 
   /* Keep M33 core in RUN during WFI so core exceptions such as
    * SysTick can wake it without requiring a GPC wakeup source.
