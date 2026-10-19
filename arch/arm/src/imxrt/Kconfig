@@ -237,6 +237,7 @@ config ARCH_FAMILY_IMXRT118x
 	select IMXRT_HAVE_LPUART10
 	select IMXRT_HAVE_LPUART11
 	select IMXRT_HAVE_LPUART12
+	select IMXRT_HAVE_NETC
 	select IMXRT_CLOCKCONFIG_VER3
 	select IMXRT_IOMUX_VER3
 	select IMXRT_RGPIO
@@ -595,6 +596,100 @@ config IMXRT_ENET
 	default n
 	select ARCH_HAVE_PHY
 	select ARCH_HAVE_NETDEV_STATISTICS
+
+config IMXRT_HAVE_NETC
+	bool
+
+menuconfig IMXRT_NETC
+	bool "NETC switched Ethernet (ENETC1)"
+	default n
+	depends on IMXRT_HAVE_NETC && NET && NET_ETHERNET && NETDEVICES
+	depends on NETDEV_LATEINIT && !IMXRT_ENET
+	depends on !NET_PROMISCUOUS && MM_IOB
+	depends on NET_ETH_PKTSIZE <= 1518 && NET_LL_GUARDSIZE <= 32
+	depends on IOB_BUFSIZE >= 128 && IOB_NBUFFERS >= 96
+	depends on IOB_THROTTLE <= 16
+	select SCHED_LPWORK
+	select ARCH_HAVE_PHY
+	select ARCH_HAVE_NETDEV_STATISTICS
+	---help---
+		Lower-half Ethernet interface with integrated switch.
+
+if IMXRT_NETC
+
+choice
+	prompt "NETC transmit descriptors"
+	default IMXRT_NETC_TX16
+	---help---
+		Two 16-byte hardware descriptors form one cache-isolated packet
+		slot. One slot remains unused to distinguish full from empty.
+		Pool constraints reserve room for chained 1518-byte packets,
+		stack work and up to 16 throttled IOBs.
+
+config IMXRT_NETC_TX8
+	bool "8 descriptors (3 packets)"
+	depends on IOB_BUFSIZE >= 128 && IOB_NBUFFERS >= 96
+	depends on IOB_THROTTLE <= 16
+
+config IMXRT_NETC_TX16
+	bool "16 descriptors (7 packets)"
+	depends on IOB_BUFSIZE >= 128 && IOB_NBUFFERS >= 160
+	depends on IOB_THROTTLE <= 16
+
+config IMXRT_NETC_TX32
+	bool "32 descriptors (15 packets)"
+	depends on IOB_BUFSIZE >= 128 && IOB_NBUFFERS >= 320
+	depends on IOB_THROTTLE <= 16
+
+config IMXRT_NETC_TX64
+	bool "64 descriptors (31 packets)"
+	depends on IOB_BUFSIZE >= 128 && IOB_NBUFFERS >= 640
+	depends on IOB_THROTTLE <= 16
+
+endchoice
+
+config IMXRT_NETC_NTXDESC
+	int
+	default 8 if IMXRT_NETC_TX8
+	default 16 if IMXRT_NETC_TX16
+	default 32 if IMXRT_NETC_TX32
+	default 64 if IMXRT_NETC_TX64
+
+choice
+	prompt "NETC receive descriptors"
+	default IMXRT_NETC_RX16
+
+config IMXRT_NETC_RX8
+	bool "8 descriptors"
+
+config IMXRT_NETC_RX16
+	bool "16 descriptors"
+
+config IMXRT_NETC_RX32
+	bool "32 descriptors"
+
+config IMXRT_NETC_RX64
+	bool "64 descriptors"
+
+endchoice
+
+config IMXRT_NETC_NRXDESC
+	int
+	default 8 if IMXRT_NETC_RX8
+	default 16 if IMXRT_NETC_RX16
+	default 32 if IMXRT_NETC_RX32
+	default 64 if IMXRT_NETC_RX64
+
+config IMXRT_NETC_LINK_POLL_MS
+	int "NETC PHY link polling interval (milliseconds)"
+	default 1000
+	range 100 1000
+	---help---
+		Link polling continues while the CPU interface is down. The same
+		worker checks for stalled TX and attempts a CPU-function reset,
+		without resetting the external switch.
+
+endif # IMXRT_NETC
 
 config IMXRT_LCD
 	bool "LCD controller"

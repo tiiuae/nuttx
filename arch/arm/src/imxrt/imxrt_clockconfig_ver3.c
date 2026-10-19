@@ -51,9 +51,9 @@
 
 /* Fixed clock source frequencies programmed by the Cortex-M33 boot ROM
  * before the M7 is released.  NuttX does not reprogram these PLLs, so
- * their frequencies are treated as static constants; if a future use
- * case needs to reconfigure the PLLs, extend imxrt_get_clock() to read
- * the ANADIG registers instead.
+ * their frequencies are treated as static constants. SYS_PLL3 PFD3 is
+ * queried from ANADIG because its bootloader-selected fraction determines
+ * the NETC clock.
  */
 
 #define IMXRT_OSC_24M_HZ         (24000000u)
@@ -75,7 +75,7 @@
 #define IMXRT_SYS_PLL3_PFD0_HZ   (664615384u)  /* frac = 13 */
 #define IMXRT_SYS_PLL3_PFD1_HZ   (508235294u)  /* frac = 17 */
 #define IMXRT_SYS_PLL3_PFD2_HZ   (392727272u)  /* frac = 22 */
-#define IMXRT_SYS_PLL3_PFD3_HZ   (392727272u)  /* frac = 22 */
+#define IMXRT_SYS_PLL3_PFD3_HZ   (480000000u)  /* frac = 18 */
 
 /* Analog settling delays, expressed as NOP spins because no timer exists
  * this early.  The M33 still runs from OSC_RC_400M/2 (200 MHz), so one
