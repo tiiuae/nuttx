@@ -50,13 +50,161 @@ ELE firmware, and the TRDC driver configures access to RT118x memory and
 peripheral resources. The Cortex-M7 release helper is used by Cortex-M33
 firmware to set the Cortex-M7 boot vector and start the M7 core.
 
+NETC architecture driver
+------------------------
+
+``CONFIG_IMXRT_NETC`` provides a NETDEV lower-half Ethernet driver for the
+RT118x NETC. It registers one interface through ENETC1 station interface 0,
+connected to switch CPU port 4. Selected external switch ports 0--3 share
+one VLAN-unaware bridge domain (VID 1, FID 0). Learned external unicast
+traffic remains in hardware; broadcast, unknown unicast and multicast are
+flooded to bridge members. ENETC filters CPU unicast using its primary MAC
+address. Multicast reception includes IPv6 discovery without optional
+multicast group callbacks. Packet sockets see CPU-delivered traffic, not
+all hardware-switched transit traffic.
+
+Standalone ENETC0, half-duplex, forced PHY modes, Clause 45 PHYs,
+promiscuous transit capture, jumbo frames and checksum/timestamp offloads
+are not implemented. Software checksums remain enabled according to the
+normal stack configuration. There is no spanning-tree implementation:
+external connections must form a loop-free topology.
+
+Board integration is explicit and is not supplied by this driver. Enable
+``NETDEV_LATEINIT``, ``NET``, ``NET_ETHERNET``, ``NETDEVICES`` and ``MM_IOB``,
+then call::
+
+  imxrt_netc_initialize(&config);
+
+The public types and entry points are in ``imxrt_netc.h``. The driver
+copies each enabled controller's configuration and all of its port entries,
+including each ``phy_desc_s``; caller-owned storage need not survive
+initialization. Declare the board configuration object ``static const``.
+Supply all requested interfaces together, since shared IERB setup runs once
+before interface initialization. Its fields have the following ownership:
+
+* ``enetc[i]`` describes hardware controller ``i``. Its ``enabled`` flag
+  selects the controller; disabled controller settings are ignored.
+  Controller count and maximum external port count are chip-defined through
+  ``IMXRT_NETC_NENETC`` and ``IMXRT_NETC_SW0_NPORTS``, not board settings.
+  The chip hardware table determines direct-PHY versus switch attachment.
+  Currently only ``enetc[1]`` is supported; ENETC0's direct-PHY data path
+  remains unimplemented.
+* ``msgintr`` reserves one complete MSGINTR instance, numbered 1--6,
+  exclusively for this driver. Its NVIC interrupt and all three message
+  registers must not be used by another owner.
+* ``mac`` is a valid unicast MAC from the board's storage/OTP policy.
+  Changes through the normal network ioctl take effect on the next
+  interface up; the driver updates the static CPU FDB entry then.
+* ``enetc[i].ports[p]`` describes external port ``p`` of controller ``i``.
+  Each port's ``enabled`` flag selects it; disabled port settings are ignored.
+  Unspecified entries in a static initializer are disabled. The CPU port is
+  not included. Hardware membership masks are derived internally using
+  32-bit values; there is no public port index or mask.
+* Each port entry supplies its MII/RMII/GMII/RGMII mode,
+  PHY description and supported full-duplex advertisements. The immutable
+  chip hardware table supplies each port's MDIO endpoint, not board settings.
+  PHY IDs are checked while ignoring the revision nibble. Only the shared
+  EMDIO endpoint permits address-range probing; port MDIO endpoints
+  require one fixed address. A ``status`` value of ``0xffff`` resolves
+  negotiation from standard MII/GMII registers instead of vendor status.
+* An optional per-port ``phyinit`` callback runs after identification and
+  before advertisement. It may use the serialized MDIO read/write API
+  for PHY-specific delay setup, and must restore the default PHY page.
+
+The switch references the driver-owned controller configuration and the same
+immutable hardware definition used by ENETC. Port helpers receive both the
+hardware definition and board configuration, without a second port lookup
+array or retained membership mask. Link state,
+DMA state and the currently installed CPU FDB MAC remain separate runtime
+state; the FDB MAC can differ from the initial configured MAC after an ioctl.
+
+Startup and function-reset completion poll ``OSR`` in the switch/ENETC
+common register block (offset ``0x1010``), not the separate global block.
+
+The driver queries the NETC root frequency through ``imxrt_get_rootclock()``
+at initialization and uses it for IERB timing and MDIO divisors. The board
+must enable and stabilize the PLL/root sources first, and keep the frequency
+unchanged while NETC is in use. A zero or unsupported frequency is rejected;
+the frequency must be in whole MHz.
+
+The board owns pinmux, clock direction, RGMII delay ownership, PHY hardware
+reset/timing, NETCMIX reset release and TRDC permissions. Advertisements
+must be restricted to modes supported by the board and PHY. In particular,
+do not enable 10 Mb/s on the EVK's RTL8201FI PHYs (ERR051651). Do not apply
+RGMII delays at both ends of a link.
+
+The complete configuration is validated before IERB setup. Empty selections,
+reused MSGINTR channels, invalid enabled-port PHY descriptions, enabled ports
+outside a controller's chip-defined capabilities and unsupported controllers
+are rejected without locking IERB. Each enabled controller needs at least
+one enabled external port.
+The driver locks an initially unlocked IERB only when no NETC physical
+function has been enabled. It sets the clock-period values and selected
+port-MDIO PHY addresses, retaining other resource defaults. It never
+unlocks or globally resets shared infrastructure. An already locked IERB
+must match the requested frequency and MDIO bindings. The board must
+reserve the switch function, ENETC1 and selected MDIO endpoints against
+other-core access. Initialization rejects an enabled ENETC1 or switch
+function and enabled ENETC1 virtual functions.
+
+DMA uses aligned normal-heap allocations, not dedicated sections or MPU
+changes. The complete allocation is translated with ``imxrt_dma_address()``
+before enabling DMA. Local M7 DTCM and M33 system TCM use their system-bus
+aliases; OCRAM addresses remain unchanged. Ring, packet-buffer and switch
+command/response addresses are derived from the translated base, while CPU
+access and cache maintenance use the original pointer. Allocations crossing
+the helper's supported TCM window are rejected. Boards must retain the TCM
+partition supported by that helper (256 KB M7 DTCM or 128 KB M33 system TCM).
+System-bus accessibility, TRDC permissions and any external-memory setup
+remain board duties.
+Packet buffers are 128-byte aligned. Extended 32-byte RX descriptors and
+paired 16-byte TX descriptors isolate independently owned entries on
+32-byte cache lines. A shared compile-time assertion checks descriptor sizes
+and allocation alignment against the selected core's cache-line size.
+Explicit clean/invalidate and barriers apply with
+both write-through and write-back caches. Chained IOB packets are copied
+through staging buffers; no global IOB alignment or section is required.
+Packet lengths include the Ethernet header and any on-wire VLAN tag, but
+exclude FCS. Hardware supplies TX padding/FCS and removes RX FCS; no VLAN
+tag insertion or stripping is requested.
+
+TX/RX ring sizes are selected in Kconfig. TX quota is half the hardware
+descriptor count minus one; RX quota is one, since packets are allocated
+only when returned to the upper half. SI0 is assigned two TX rings and one
+RX ring. Normal switched traffic uses TX ring 1 and RX ring 0; TX ring 0
+remains disabled because it is reserved for direct switch enqueue
+(IMXRT1180RM section 53.4.2.3.1.2.1.1). Pool limits conservatively account
+for chained maximum-size packets and stack headroom. ``MM_IOB`` is an
+explicit prerequisite rather than a driver select, avoiding a Kconfig
+dependency cycle with these pool constraints.
+
+The common NETDEV worker owns packet polling and protocol dispatch.
+Interrupts remain enabled even with a nonzero upper-half polling period.
+A separate LPWORK item polls links and detects five-second TX stalls.
+Carrier requires an operational CPU path and at least one external link.
+Interface down and TX recovery reset only ENETC1, retaining external
+switching and link monitoring. DMA references are not released if reset
+fails. A failed recovery or loss of the link worker leaves the interface
+failed rather than reporting successful operation.
+
+PHY ioctls encode the external switch port in ``phy_id[9:8]`` and its
+resolved PHY address in ``phy_id[4:0]``. ``SIOCGMIIPHY`` preserves the
+requested port and returns that port's resolved address. MDIO helpers
+are task-context operations after the endpoint has been initialized;
+runtime multi-register PHY paging must hold the network lock.
+
+No board configuration enables NETC by default. Actual PHY negotiation,
+cache-enabled ring wraparound, traffic forwarding, reset recovery and
+silicon-specific acceptance require later validation on the final board.
+
 Data and Instruction Cache
 ==========================
 
 MCUs i.MX RT1010 and higher have separated caches for instructions and data. Data cache is initially
 set as write-through but can be changed to write-back via Kconfig. While write-back gives better
 performance than write-through, it is not supported for all peripherals in NuttX yet. Write-back data
-cache can not be selected while running Ethernet or serial port over USB.
+cache can not be selected while running legacy ENET or serial port over USB.
+The NETC architecture driver uses explicit DMA cache maintenance.
 
 Tickless OS
 ===========
