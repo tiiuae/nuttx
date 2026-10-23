@@ -248,6 +248,15 @@
 #define MII_YT8512_LED0              0x40c0    /* LED0 control */
 #define MII_YT8512_LED1              0x40c3    /* LED1 control */
 
+/* Realtek RTL8201F PHY Extended Registers */
+
+#define MII_RTL8201F_NAME            "RTL8201F"
+#define MII_RTL8201F_MACR_P0         0x0d      /* MMD Access Control Register */
+#define MII_RTL8201F_MAACR_P0        0x0e      /* MMD Access Address Data Register */
+#define MII_RTL8201F_RMSR_P7         0x10      /* RMII Mode Setting Register */
+#define MII_RTL8201F_IISDR           0x1E      /* Interrupt Indicators and SNR Display */
+#define MII_RTL8201F_PSR             0x1F      /* Page Select Register */
+
 /* MII register bit settings ************************************************/
 
 /* MII Control register bit definitions */
@@ -941,6 +950,19 @@
 /* YT8512 Register 0x14: Speed auto downgrade control */
 
 /* YT8512 Register 0x15: Rx error counter */
+
+/* RTL8201F register bit settings *******************************************/
+
+#define MII_PHYID1_RTL8201F            0x001c      /* ID1 value for Realtek RTL8201F */
+#define MII_PHYID2_RTL8201F            0xc816      /* ID2 value for Realtek RTL8201F */
+#define MII_RTL8201F_MCR_SPEED_MASK    0x2000
+#define MII_RTL8201F_MCR_10MBPS        0x00
+#define MII_RTL8201F_MCR_100MBPS       0x2000
+#define MII_RTL8201F_MCR_DUPLEX        0x100
+#define MII_RTL8201F_RMII_SEL          (1 << 3)
+#define MII_RTL8201F_TXC_REF_CLK_DIR   (1 << 12)
+#define MII_RTL8201F_RMII_TX_DELAY(n)  (((n) & 0x0f) << 8) /* Set TX delay */
+#define MII_RTL8201F_RMII_RX_DELAY(n)  (((n) & 0x0f) << 4) /* Set RX delay */
 
 /****************************************************************************
  * Type Definitions
