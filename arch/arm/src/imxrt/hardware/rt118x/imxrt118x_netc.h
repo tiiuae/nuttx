@@ -25,6 +25,20 @@
 #define IMXRT_NETC_SW_PORT(n)       (IMXRT_SW0_BASE + ((n) + 1) * 0x4000)
 #define IMXRT_NETC_SW_MAC(n)        (IMXRT_NETC_SW_PORT(n) + 0x1000)
 
+/* BLK_CTRL_WAKEUP, IMXRT1180RM Rev. 10, section 16.6.1.
+ * These protocol encodings differ from NETC PMIFR.
+ */
+
+#define IMXRT_NETC_PORT_MISC_CFG    (IMXRT_BLK_CTRL_WAKEUPMIX_BASE + 0x24)
+#define NETC_PORT_MISC_RMII_CLK_OUT(n) (1u << (n))
+#define IMXRT_NETC_LINK_CFG(n)      (IMXRT_BLK_CTRL_WAKEUPMIX_BASE + \
+                                   0x100 + (n) * 4)
+#define NETC_LINK_CFG_MII_PROT_MASK 0x0fu
+#define NETC_LINK_CFG_MII           0u
+#define NETC_LINK_CFG_RMII          1u
+#define NETC_LINK_CFG_RGMII         2u
+#define NETC_LINK_CFG_REVMII        (1u << 31)
+
 #define NETC_PRB_NETCRR             0x0100
 #define NETC_PRB_NETCSR             0x0104
 #define NETC_PRB_SR                 (1 << 0)

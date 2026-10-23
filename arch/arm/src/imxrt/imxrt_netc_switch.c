@@ -191,6 +191,21 @@ int imxrt_netc_switch_initialize(const struct imxrt_netc_hw_s *hw,
       return -EBUSY;
     }
 
+  for (port = 0; port < hw->portcount; port++)
+    {
+      if (!config->ports[port].enabled)
+        {
+          continue;
+        }
+
+      ret = imxrt_netc_port_prepare(&hw->ports[port], &config->ports[port]);
+      if (ret < 0)
+        {
+          nerr("NETC switch port %u preparation failed: %d\n", port, ret);
+          return ret;
+        }
+    }
+
   g_switch.dma_cpu = imxrt_netc_alloc(sizeof(*g_switch.dma_cpu),
                                      &g_switch.dma_bus);
   if (g_switch.dma_cpu == NULL)

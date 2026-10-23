@@ -57,11 +57,23 @@ struct imxrt_netc_port_s
   struct phy_desc_s phy;
   enum imxrt_netc_mii_e mode;
   uint8_t linkmodes;             /* Advertised IMXRT_NETC_*_FULL modes */
+  bool rmii_clk_output;          /* MAC supplies the RMII reference clock */
+  bool phy_rmii_clk_output;      /* PHY supplies RMII clock; false = input */
+  bool phy_tx_delay;             /* Enable PHY-internal RGMII TX delay */
+  bool phy_rx_delay;             /* Enable PHY-internal RGMII RX delay */
+
+  /* Optional board hardware reset after SoC interface/clock-direction setup,
+   * before MDIO probing. Receives the physical switch-port index.
+   * Board code owns reset GPIOs, polarity and timing.
+   */
+
+  int (*phyreset)(unsigned int port);
 
   /* Optional board PHY setup after identification, before advertisement.
    * Receives the hardware MDIO endpoint and identified PHY address.
    * May call imxrt_netc_mdio_read/write(). Restore the PHY's default page
-   * before returning. Board code owns PHY delays and reset sequencing.
+   * before returning. The helpers below may be used directly or by a board
+   * callback that needs additional PHY configuration.
    */
 
   int (*phyinit)(const struct imxrt_netc_port_s *port,
@@ -93,8 +105,10 @@ extern "C"
 /* Configuration is copied. Array indices identify hardware ENETC instances
  * and their external ports; disabled entries are ignored. Supply every
  * requested interface in one call, before shared IERB resources are locked.
- * The board must first establish pinmux, clocks, reset, TRDC permissions
- * and DMA-accessible normal heaps.
+ * The board must first establish pinmux, root clocks, NETCMIX power/reset,
+ * TRDC permissions and DMA-accessible normal heaps. External PHY reset may
+ * be supplied through phyreset, after the driver sets up the SoC interface
+ * and RMII clock direction. RMII clock output requires board pinmux SION.
  * This driver never resets/unlocks shared NETC infrastructure. Unlocked IERB
  * resources are configured only before any PCI function has been enabled.
  * Only ENETC1 is supported; ENETC0's direct PHY is not implemented.
@@ -111,6 +125,23 @@ int imxrt_netc_mdio_read(enum imxrt_netc_mdio_e bus, uint8_t phyaddr,
                          uint8_t reg, uint16_t *value);
 int imxrt_netc_mdio_write(enum imxrt_netc_mdio_e bus, uint8_t phyaddr,
                           uint8_t reg, uint16_t value);
+
+/* PHY initialization helpers for phyinit. Both perform a software reset.
+ * RTL8201F supports MII/RMII, applies phy_rmii_clk_output and preserves
+ * clock-source and timing settings. Board-specific CKXTAL2 external-clock
+ * setup needs a board callback. Both RMII outputs must be false when an
+ * external source supplies the reference clock to the MAC and PHY.
+ * RTL8211F applies phy_tx_delay/phy_rx_delay for RGMII.
+ */
+
+#if defined(CONFIG_ETH0_PHY_RTL8201F) || defined(CONFIG_ETH1_PHY_RTL8201F)
+int imxrt_netc_rtl8201f_phyinit(const struct imxrt_netc_port_s *port,
+                              enum imxrt_netc_mdio_e bus, uint8_t phyaddr);
+#endif
+#if defined(CONFIG_ETH0_PHY_RTL8211F) || defined(CONFIG_ETH1_PHY_RTL8211F)
+int imxrt_netc_rtl8211f_phyinit(const struct imxrt_netc_port_s *port,
+                              enum imxrt_netc_mdio_e bus, uint8_t phyaddr);
+#endif
 
 #ifdef __cplusplus
 }

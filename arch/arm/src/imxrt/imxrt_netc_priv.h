@@ -118,6 +118,8 @@ void *imxrt_netc_alloc(size_t size, uint32_t *dma_bus);
 
 int imxrt_netc_port_validate(const struct imxrt_netc_ports_hw_s *hw,
                             const struct imxrt_netc_port_s *config);
+int imxrt_netc_port_prepare(const struct imxrt_netc_ports_hw_s *hw,
+                           const struct imxrt_netc_port_s *config);
 int imxrt_netc_port_initialize(const struct imxrt_netc_ports_hw_s *hw,
                               const struct imxrt_netc_port_s *config,
                               struct imxrt_netc_link_s *link,

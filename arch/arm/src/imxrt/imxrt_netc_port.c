@@ -20,6 +20,13 @@
 #include "hardware/rt118x/imxrt118x_netc.h"
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define NETC_PHY_RESET_WAIT_MS 500
+#define NETC_PHY_DELAY_PAGE    0x0d08
+
+/****************************************************************************
  * Private Data
  ****************************************************************************/
 
@@ -30,6 +37,37 @@ static mutex_t g_mdiolock = NXMUTEX_INITIALIZER;
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+static int imxrt_netc_phy_reset(enum imxrt_netc_mdio_e bus, uint8_t phyaddr)
+{
+  uint16_t value;
+  unsigned int elapsed;
+  int ret;
+
+  ret = imxrt_netc_mdio_write(bus, phyaddr, MII_MCR, MII_MCR_RESET);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  for (elapsed = 0; elapsed < NETC_PHY_RESET_WAIT_MS; elapsed++)
+    {
+      ret = imxrt_netc_mdio_read(bus, phyaddr, MII_MCR, &value);
+      if (ret < 0)
+        {
+          return ret;
+        }
+
+      if ((value & MII_MCR_RESET) == 0)
+        {
+          return OK;
+        }
+
+      up_mdelay(1);
+    }
+
+  return -ETIMEDOUT;
+}
 
 static uintptr_t imxrt_netc_mdiobase(enum imxrt_netc_mdio_e bus)
 {
@@ -122,6 +160,163 @@ int imxrt_netc_mdio_write(enum imxrt_netc_mdio_e bus, uint8_t phyaddr,
   return imxrt_netc_mdio(bus, phyaddr, reg, &value, false);
 }
 
+#if defined(CONFIG_ETH0_PHY_RTL8201F) || defined(CONFIG_ETH1_PHY_RTL8201F)
+
+int imxrt_netc_rtl8201f_phyinit(const struct imxrt_netc_port_s *port,
+                              enum imxrt_netc_mdio_e bus, uint8_t phyaddr)
+{
+  uint16_t value;
+  int restore;
+  int ret;
+
+  if (port->mode != IMXRT_NETC_MII && port->mode != IMXRT_NETC_RMII)
+    {
+      nerr("RTL8201F requires MII or RMII mode\n");
+      return -EINVAL;
+    }
+
+  ret = imxrt_netc_mdio_write(bus, phyaddr, MII_RTL8201F_PSR, 0);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  ret = imxrt_netc_phy_reset(bus, phyaddr);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  ret = imxrt_netc_mdio_write(bus, phyaddr, MII_RTL8201F_PSR, 7);
+  if (ret == OK)
+    {
+      ret = imxrt_netc_mdio_read(bus, phyaddr, MII_RTL8201F_RMSR_P7,
+                                 &value);
+    }
+
+  if (ret == OK)
+    {
+      /* Preserve oscillator configuration, reserved bits and RMII timing. */
+
+      value &= ~(MII_RTL8201F_RMII_SEL | MII_RTL8201F_TXC_REF_CLK_DIR);
+      if (port->mode == IMXRT_NETC_RMII)
+        {
+          value |= MII_RTL8201F_RMII_SEL;
+          if (!port->phy_rmii_clk_output)
+            {
+              value |= MII_RTL8201F_TXC_REF_CLK_DIR;
+            }
+        }
+
+      ret = imxrt_netc_mdio_write(bus, phyaddr, MII_RTL8201F_RMSR_P7,
+                                  value);
+    }
+
+out:
+  restore = imxrt_netc_mdio_write(bus, phyaddr, MII_RTL8201F_PSR, 0);
+  if (restore < 0)
+    {
+      nerr("PHY bus %u address %u page restore failed: %d\n",
+           bus, phyaddr, restore);
+    }
+
+  if (ret < 0)
+    {
+      nerr("PHY bus %u address %u initialization failed: %d\n",
+           bus, phyaddr, ret);
+      return ret;
+    }
+
+  return restore;
+}
+
+#endif /* CONFIG_ETH0_PHY_RTL8201F || CONFIG_ETH1_PHY_RTL8201F */
+
+#if defined(CONFIG_ETH0_PHY_RTL8211F) || defined(CONFIG_ETH1_PHY_RTL8211F)
+
+int imxrt_netc_rtl8211f_phyinit(const struct imxrt_netc_port_s *port,
+                              enum imxrt_netc_mdio_e bus, uint8_t phyaddr)
+{
+  uint16_t value;
+  int restore;
+  int ret;
+
+  if (port->mode != IMXRT_NETC_RGMII)
+    {
+      nerr("RTL8211F helper requires RGMII mode\n");
+      return -EINVAL;
+    }
+
+  ret = imxrt_netc_mdio_write(bus, phyaddr, GMII_RTL8211F_PAGSR, 0);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  ret = imxrt_netc_phy_reset(bus, phyaddr);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  ret = imxrt_netc_mdio_write(bus, phyaddr, GMII_RTL8211F_PAGSR,
+                              NETC_PHY_DELAY_PAGE);
+  if (ret == OK)
+    {
+      ret = imxrt_netc_mdio_read(bus, phyaddr, GMII_RTL8211F_MIICR1_D08,
+                                 &value);
+    }
+
+  if (ret == OK)
+    {
+      value &= ~GMII_RTL8211F_MIICR1_TX_DELAY;
+      if (port->phy_tx_delay)
+        {
+          value |= GMII_RTL8211F_MIICR1_TX_DELAY;
+        }
+
+      ret = imxrt_netc_mdio_write(bus, phyaddr, GMII_RTL8211F_MIICR1_D08,
+                                  value);
+    }
+
+  if (ret == OK)
+    {
+      ret = imxrt_netc_mdio_read(bus, phyaddr, GMII_RTL8211F_MIICR2_D08,
+                                 &value);
+    }
+
+  if (ret == OK)
+    {
+      value &= ~GMII_RTL8211F_MIICR2_RX_DELAY;
+      if (port->phy_rx_delay)
+        {
+          value |= GMII_RTL8211F_MIICR2_RX_DELAY;
+        }
+
+      ret = imxrt_netc_mdio_write(bus, phyaddr, GMII_RTL8211F_MIICR2_D08,
+                                  value);
+    }
+
+out:
+  restore = imxrt_netc_mdio_write(bus, phyaddr, GMII_RTL8211F_PAGSR, 0);
+  if (restore < 0)
+    {
+      nerr("PHY bus %u address %u page restore failed: %d\n",
+           bus, phyaddr, restore);
+    }
+
+  if (ret < 0)
+    {
+      nerr("PHY bus %u address %u initialization failed: %d\n",
+           bus, phyaddr, ret);
+      return ret;
+    }
+
+  return restore;
+}
+
+#endif /* CONFIG_ETH0_PHY_RTL8211F || CONFIG_ETH1_PHY_RTL8211F */
+
 int imxrt_netc_port_validate(const struct imxrt_netc_ports_hw_s *hw,
                             const struct imxrt_netc_port_s *config)
 {
@@ -166,6 +361,66 @@ int imxrt_netc_port_validate(const struct imxrt_netc_ports_hw_s *hw,
          config->phy.mbps100 == config->phy.mbps1000))))
     {
       return -EINVAL;
+    }
+
+  if (config->mode == IMXRT_NETC_GMII)
+    {
+      return -EOPNOTSUPP;
+    }
+
+  if (((config->rmii_clk_output || config->phy_rmii_clk_output) &&
+       config->mode != IMXRT_NETC_RMII) ||
+      (config->rmii_clk_output && config->phy_rmii_clk_output) ||
+      ((config->phy_tx_delay || config->phy_rx_delay) &&
+       config->mode != IMXRT_NETC_RGMII))
+    {
+      return -EINVAL;
+    }
+
+  return OK;
+}
+
+int imxrt_netc_port_prepare(const struct imxrt_netc_ports_hw_s *hw,
+                           const struct imxrt_netc_port_s *config)
+{
+  uint32_t mask = NETC_LINK_CFG_MII_PROT_MASK;
+  uint32_t mode;
+  uint32_t clock = NETC_PORT_MISC_RMII_CLK_OUT(hw->reg_idx);
+
+  switch (config->mode)
+    {
+      case IMXRT_NETC_MII:
+        mode = NETC_LINK_CFG_MII;
+        break;
+
+      case IMXRT_NETC_RMII:
+        mode = NETC_LINK_CFG_RMII;
+        break;
+
+      case IMXRT_NETC_RGMII:
+        mode = NETC_LINK_CFG_RGMII;
+        break;
+
+      default:
+        nerr("NETC port %u unsupported interface mode: %u\n",
+             hw->reg_idx, config->mode);
+        return -EOPNOTSUPP;
+    }
+
+  /* REVMII is reserved on ports 0 and 1. */
+
+  if (hw->reg_idx >= 2)
+    {
+      mask |= NETC_LINK_CFG_REVMII;
+    }
+
+  modifyreg32(IMXRT_NETC_PORT_MISC_CFG, clock,
+              config->rmii_clk_output ? clock : 0);
+  modifyreg32(IMXRT_NETC_LINK_CFG(hw->reg_idx), mask, mode);
+
+  if (config->phyreset != NULL)
+    {
+      return config->phyreset(hw->reg_idx);
     }
 
   return OK;

@@ -28,6 +28,7 @@
 #include "imxrt_clockconfig.h"
 #include "imxrt_dtcm.h"
 #include "hardware/imxrt_netc.h"
+#include "hardware/imxrt_src.h"
 #include "hardware/rt118x/imxrt118x_netc.h"
 
 /****************************************************************************
@@ -136,7 +137,7 @@ static const struct imxrt_netc_hw_s g_netc_hw[IMXRT_NETC_NENETC] =
     .ports =
       {
         {
-          .reg_idx = 0,
+          .reg_idx = 4,
           .mdio = IMXRT_NETC_EMDIO,
         },
       }
@@ -1162,6 +1163,7 @@ failed:
 int imxrt_netc_initialize(const struct imxrt_netc_config_s *config)
 {
   uint32_t clock_hz = 0;
+  uint32_t status;
   size_t index;
   int ret;
 
@@ -1175,6 +1177,18 @@ int imxrt_netc_initialize(const struct imxrt_netc_config_s *config)
   if (ret < 0)
     {
       nerr("NETC invalid configuration set: %d\n", ret);
+      goto out;
+    }
+
+  status = getreg32(IMXRT_SRC_SLICE_FUNC_STAT(IMXRT_NETC_MIX_SLICE_BASE));
+  if ((status & (SRC_SLICE_FUNC_STAT_PSW_STAT |
+                 SRC_SLICE_FUNC_STAT_RST_STAT |
+                 SRC_SLICE_FUNC_STAT_ISO_STAT)) !=
+      SRC_SLICE_FUNC_STAT_RST_STAT)
+    {
+      nerr("NETCMIX must be powered, released and deisolated: %#lx\n",
+           (unsigned long)status);
+      ret = -EHOSTDOWN;
       goto out;
     }
 
