@@ -59,11 +59,13 @@ struct imxrt_netc_port_s
   uint8_t linkmodes;             /* Advertised IMXRT_NETC_*_FULL modes */
 
   /* Optional board PHY setup after identification, before advertisement.
+   * Receives the hardware MDIO endpoint and identified PHY address.
    * May call imxrt_netc_mdio_read/write(). Restore the PHY's default page
    * before returning. Board code owns PHY delays and reset sequencing.
    */
 
-  int (*phyinit)(const struct imxrt_netc_port_s *port, uint8_t phyaddr);
+  int (*phyinit)(const struct imxrt_netc_port_s *port,
+                 enum imxrt_netc_mdio_e bus, uint8_t phyaddr);
 };
 
 struct imxrt_netc_enetc_s

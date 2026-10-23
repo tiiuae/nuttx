@@ -108,7 +108,10 @@ before interface initialization. Its fields have the following ownership:
   require one fixed address. A ``status`` value of ``0xffff`` resolves
   negotiation from standard MII/GMII registers instead of vendor status.
 * An optional per-port ``phyinit`` callback runs after identification and
-  before advertisement. It may use the serialized MDIO read/write API
+  before advertisement. It receives the port configuration, hardware-selected
+  MDIO endpoint and resolved PHY address. Each port selects its PHY-specific
+  callback; callbacks must use the supplied endpoint rather than hardcoding
+  an ENETC or switch port. It may use the serialized MDIO read/write API
   for PHY-specific delay setup, and must restore the default PHY page.
 
 The switch references the driver-owned controller configuration and the same

@@ -278,7 +278,7 @@ int imxrt_netc_port_initialize(const struct imxrt_netc_ports_hw_s *hw,
   link->speed = 0;
   if (config->phyinit != NULL)
     {
-      ret = config->phyinit(config, address);
+      ret = config->phyinit(config, hw->mdio, address);
       if (ret < 0)
         {
           return ret;
