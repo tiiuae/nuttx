@@ -42,8 +42,8 @@ Features
 - Two software-controlled user LEDs
 
 The current NuttX configurations provide the serial console, USB device
-support, image generation, and multicore boot flow. The other on-board
-interfaces listed above are not enabled by the supplied configurations.
+support, image generation, and multicore boot flow. The Cortex-M7 ``nsh``
+configuration also enables NETC Ethernet on ETH1.
 
 Buttons and LEDs
 ================
@@ -99,6 +99,82 @@ GPIO_AD_27   GPIO4_IO27    Green user LED D6
 Consult the MIMXRT1180-EVK user manual (UM12021) and schematic, available from
 the NXP product page linked above, for the complete expansion-header pinout and
 any signal-sharing restrictions.
+
+Ethernet
+========
+
+The Cortex-M7 board integration supports direct-PHY ENETC0 and the ENETC1
+switch through the NETC driver. The ``nsh`` configuration enables only
+``CONFIG_IMXRT_NETC_ENETC1_PORT1`` (ETH1), using the RTL8211F PHY driver.
+Board bring-up configures the enabled ports' pins and resets before PHY
+discovery and registers the network interfaces. Hardware acceptance,
+including link negotiation and bidirectional traffic, is still required.
+
+================= ========== ============ ============ ============
+Attachment        Board port PHY          MDIO address Reset GPIO
+================= ========== ============ ============ ============
+ENETC1 port 0     ETH0/J28   RTL8201FI    2            GPIO_AD_25
+ENETC1 port 1     ETH1       RTL8211FDI   5            GPIO_B1_13
+ENETC1 port 2     ETH2       RTL8211FDI   4            GPIO_AD_28
+ENETC1 port 3     ETH3       RTL8211FDI   7            GPIO_B2_01
+ENETC0            ETH4/J32   RTL8201FI    3            GPIO_AD_13
+================= ========== ============ ============ ============
+
+Select additional switch ports with ``CONFIG_IMXRT_NETC_ENETC1_PORT0``
+through ``CONFIG_IMXRT_NETC_ENETC1_PORT3``, or the direct attachment with
+``CONFIG_IMXRT_NETC_ENETC0``. The board selects the required PHY drivers and
+``CONFIG_IMXRT_NETC_PHYINIT`` hardware-reset hook automatically. Ports 1--3
+use RGMII with clock delays selected by the PHY hardware straps. ETH0 and
+ETH4 use RMII with a 50 MHz reference supplied by the MAC and SION enabled
+on the clock pad. GPIO_AD_16 remains an input without internal pulls when
+ETH0 is enabled, preserving its PHY-address strap.
+
+ENETC0's PHY reset shares GPIO_AD_13 with LPUART3 TX; do not enable both.
+For ETH2/3, set J65/J72 and J63/J73 to 2-3 and do not enable SDRAM or
+EtherCAT on their shared GPIO_EMC_B1 pads.
+
+The NETC root uses PLL3 PFD3 at 480 MHz divided by two for 240 MHz.
+MAC1/2/3 use PLL1 DIV2 at 500 MHz divided by four for 125 MHz;
+MAC0/4 divide it by ten for 50 MHz. The boot environment must supply the
+PLL3 PFD3 source with fraction 18 and leave NETCMIX powered, released from
+reset and deisolated, with TRDC access for the Cortex-M7 and NETC DMA.
+The supplied Cortex-M33 bootloader's TRDC policy includes these masters.
+
+Both controllers use 16 TX and 16 RX descriptors by default. The ``nsh``
+configuration provides ``CONFIG_MM_IOB=y`` and 160 IOBs, the minimum pool
+for the 16-descriptor TX selection.
+
+ENETC1 exposes one interface for all enabled switch ports. ENETC0 exposes a
+separate interface and is not bridged to ENETC1. MAC addresses are locally
+administered unicast addresses derived from the chip UID; ENETC0 differs
+from ENETC1 in the low bit of the last byte. With only ENETC1 enabled, its
+interface is ``eth0``. Enabling ENETC0 normally makes ENETC0 ``eth0`` and
+ENETC1 ``eth1``; confirm the mapping with ``ifconfig``.
+
+NSH initializes ``eth0`` to ``192.168.202.1/24`` without a default gateway.
+For the default ETH1 configuration, connect an isolated peer configured as
+``192.168.202.254/24`` and check traffic in both directions:
+
+.. code-block:: console
+
+   nsh> ifconfig
+   nsh> ping 192.168.202.254
+   nsh> ifdown eth0
+   nsh> ifup eth0
+
+Use separate subnets for two-interface tests and do not introduce loops
+between switch ports. ``CONFIG_DEBUG_NET_ERROR`` enables PHY discovery
+and NETC initialization error messages; ``CONFIG_NETDEV_PHY_IOCTL`` enables
+PHY register diagnostics.
+
+.. warning::
+
+   The current NETC driver advertises 10 and 100 Mbps full duplex on the
+   RTL8201FI RMII attachments, although UM12021 excludes 10 Mbps operation
+   on these PHYs. Erratum ERR051651 requires an octet-aligned preamble of
+   at least one byte at 10 Mbps MII/RMII. Until the driver restricts
+   advertisement, use a link partner restricted to 100 Mbps full duplex
+   when enabling ETH0 or ETH4.
 
 Power Supply
 ============
@@ -246,7 +322,8 @@ nsh
 Runs NSH on the Cortex-M7. The output ``nuttx.bin`` is a raw XIP payload that
 must be programmed at offset ``0x80000`` and started by the ``bl``
 configuration. NSH is available on LPUART1 at the MCU-Link virtual COM port.
-This configuration also enables USB CDC/ACM and the ``ostest`` application.
+This configuration also enables USB CDC/ACM, the ``ostest`` application,
+and NETC Ethernet on ETH1 with static IPv4 addressing and ``ping``.
 
 License Exceptions
 ==================

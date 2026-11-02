@@ -28,6 +28,10 @@ ifeq ($(CONFIG_IMXRT_ADC),y)
 CSRCS += imxrt_adc.c
 endif
 
+ifeq ($(CONFIG_IMXRT_NETC),y)
+CSRCS += imxrt_netc.c
+endif
+
 ifeq ($(CONFIG_IMXRT_HYPERRAM),y)
 CSRCS += imxrt_hyperram_setup.c
 endif

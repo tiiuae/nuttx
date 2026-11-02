@@ -38,6 +38,10 @@
 
 int imxrt_bringup(void);
 
+#ifdef CONFIG_IMXRT_NETC
+int imxrt_netc_boardinitialize(void);
+#endif
+
 #ifdef CONFIG_IMXRT_HYPERRAM
 int imxrt_hyperram_setup(void);
 #endif
