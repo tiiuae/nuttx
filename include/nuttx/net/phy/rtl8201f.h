@@ -42,7 +42,7 @@
  * Public Data
  ****************************************************************************/
 
-extern const struct phy_ops_s g_rtl8210f_phy_ops;
+extern const struct phy_ops_s g_rtl8201f_phy_ops;
 
 /****************************************************************************
  * Public Function Prototypes

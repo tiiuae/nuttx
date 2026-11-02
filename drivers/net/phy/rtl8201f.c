@@ -121,7 +121,7 @@ out:
  * Public Data
  ****************************************************************************/
 
-const struct phy_ops_s g_rtl8210f_phy_ops =
+const struct phy_ops_s g_rtl8201f_phy_ops =
 {
   .phyinit = rtl8201f_phy_init,
   .phyreset = rtl8201f_phy_reset,
