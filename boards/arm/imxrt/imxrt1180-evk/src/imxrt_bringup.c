@@ -41,6 +41,9 @@
 #include "imxrt_gpio.h"
 #include "imxrt_usdhc.h"
 #include "imxrt1180-evk.h"
+#ifdef CONFIG_IMXRT_ADC
+#  include "imxrt_adc.h"
+#endif
 #include <arch/board/board.h>  /* Must always be included last */
 
 /****************************************************************************
@@ -91,6 +94,14 @@ static int imxrt_sdmmc_initialize(void)
 int imxrt_bringup(void)
 {
   int ret = OK;
+
+#ifdef CONFIG_IMXRT_ADC
+  ret = imxrt_adc_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: imxrt_adc_initialize() failed: %d\n", ret);
+    }
+#endif
 
 #if defined(CONFIG_ARCH_BOARD_IMXRT1180_EVK) && defined(CONFIG_IMXRT_HYPERRAM)
   ret = imxrt_hyperram_setup();
