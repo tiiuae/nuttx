@@ -521,6 +521,8 @@ static int phy_ethtool_set_link_settings(
       FAR const struct ethtool_link_settings *cmd)
 {
   uint32_t advertising;
+  uint32_t oldadvertising;
+  bool oldautoneg;
   int ret = OK;
 
   if (cmd->link_mode_masks_nwords != PHY_LINK_MODE_MASK_NWORDS)
@@ -546,6 +548,8 @@ static int phy_ethtool_set_link_settings(
       return -EINVAL;
     }
 
+  oldadvertising = phydev->advertising;
+  oldautoneg = phydev->autoneg;
   phydev->advertising = advertising;
   phydev->autoneg = (cmd->autoneg == AUTONEG_ENABLE);
 
@@ -554,6 +558,12 @@ static int phy_ethtool_set_link_settings(
   if (phydev->drv->config_aneg)
     {
       ret = phydev->drv->config_aneg(phydev);
+    }
+
+  if (ret < 0)
+    {
+      phydev->advertising = oldadvertising;
+      phydev->autoneg = oldautoneg;
     }
 
   nxmutex_unlock(&phydev->lock);
