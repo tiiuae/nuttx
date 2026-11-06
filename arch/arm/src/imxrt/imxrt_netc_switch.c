@@ -66,8 +66,8 @@ struct imxrt_netc_switch_s
  * Private Data
  ****************************************************************************/
 
-/* All switch operations, including command submission and PHY paging, run
- * with the network locked. Initialization is also serialized by the caller.
+/* Switch operations and initialization use the network lock. PHYLIB polls
+ * independently and serializes PHY register access with the MDIO bus lock.
  */
 
 static struct imxrt_netc_switch_s g_switch;
@@ -417,8 +417,7 @@ int imxrt_netc_switch_link(uint8_t *linkmask)
           continue;
         }
 
-      ret = imxrt_netc_port_link(&g_switch.config->ports[port],
-                                 &g_switch.link[port], &speed);
+      ret = imxrt_netc_port_link(&g_switch.link[port], &speed);
       if (ret < 0)
         {
           nerr("NETC switch port %u link: %d\n", port, ret);
@@ -431,7 +430,7 @@ int imxrt_netc_switch_link(uint8_t *linkmask)
           ret = imxrt_netc_port_mode(
                   IMXRT_NETC_SW_PORT(g_switch.hw->ports[port].reg_idx),
                   IMXRT_NETC_SW_MAC(g_switch.hw->ports[port].reg_idx),
-                  g_switch.config->ports[port].phy.iftype,
+                  g_switch.config->ports[port].interface,
                   speed);
           if (ret < 0)
             {
@@ -453,11 +452,13 @@ int imxrt_netc_switch_link(uint8_t *linkmask)
   return result;
 }
 
-#ifdef CONFIG_NETDEV_PHY_IOCTL
+#ifdef CONFIG_NETDEV_IOCTL
 int imxrt_netc_switch_ioctl(int cmd, unsigned long arg)
 {
   struct mii_ioctl_data_s *req = (struct mii_ioctl_data_s *)arg;
+  struct mii_ioctl_data_s request;
   unsigned int port;
+  int ret;
 
   if (cmd != SIOCGMIIPHY && cmd != SIOCGMIIREG && cmd != SIOCSMIIREG)
     {
@@ -487,28 +488,25 @@ int imxrt_netc_switch_ioctl(int cmd, unsigned long arg)
 
   if (cmd == SIOCGMIIPHY)
     {
-      req->phy_id = (port << 8) | g_switch.link[port].phyaddr;
+      req->phy_id = (port << 8) | g_switch.link[port].phydev->mdio_addr;
       return OK;
     }
 
-  if ((req->phy_id & 31) != g_switch.link[port].phyaddr ||
+  if ((req->phy_id & 31) != g_switch.link[port].phydev->mdio_addr ||
       req->reg_num > 31)
     {
       return -EINVAL;
     }
 
-  if (cmd == SIOCGMIIREG)
+  request = *req;
+  request.phy_id &= 31;
+  ret = phy_ioctl(g_switch.link[port].phydev, cmd,
+                   (unsigned long)&request);
+  if (ret == OK)
     {
-      return mdio_read(g_switch.link[port].bus, req->phy_id & 31,
-                       req->reg_num, &req->val_out);
+      req->val_out = request.val_out;
     }
 
-  if (cmd == SIOCSMIIREG)
-    {
-      return mdio_write(g_switch.link[port].bus, req->phy_id & 31,
-                        req->reg_num, req->val_in);
-    }
-
-  return -ENOTTY;
+  return ret;
 }
 #endif

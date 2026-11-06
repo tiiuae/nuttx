@@ -22,6 +22,7 @@
 #include <nuttx/mutex.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/net/ethernet.h>
+#include <nuttx/net/mii.h>
 #include <nuttx/net/netdev_lowerhalf.h>
 
 #include "imxrt_netc_priv.h"
@@ -280,9 +281,9 @@ imxrt_netc_shared_initialize(const struct imxrt_netc_config_s *config,
           link = hw->ports[portindex].reg_idx;
           DEBUGASSERT(link < nitems(phyaddr));
           DEBUGASSERT(phyaddr[link] == UINT8_MAX ||
-              phyaddr[link] == port->phy.address_lo);
+              phyaddr[link] == port->phyaddr);
 
-          phyaddr[link] = port->phy.address_lo;
+          phyaddr[link] = port->phyaddr;
         }
     }
 
@@ -392,6 +393,11 @@ static int imxrt_netc_stop(struct imxrt_netc_s *priv)
       /* A failed start may not have enabled register access yet. */
 
       putreg16(NETC_PCI_CMD_ENABLE, priv->hw->function + NETC_PCI_CMD);
+      if (priv->link.phydev != NULL)
+        {
+          phy_stop(priv->link.phydev);
+        }
+
       ret = imxrt_netc_wait(priv->hw->enetc + NETC_COMMON_OSR,
                             NETC_COMMON_STATE, 0);
       if (ret == OK)
@@ -403,7 +409,7 @@ static int imxrt_netc_stop(struct imxrt_netc_s *priv)
           modifyreg32(priv->hw->mac + NETC_MAC_IFMODE,
                       NETC_MAC_IF_HALF, 0);
           ret = imxrt_netc_port_mode(priv->hw->port, priv->hw->mac,
-                                      priv->config.ports[0].phy.iftype, 0);
+                                      priv->config.ports[0].interface, 0);
           if (ret == OK)
             {
               ret = imxrt_netc_wait(priv->hw->port + NETC_PORT_PSR,
@@ -525,8 +531,6 @@ static int imxrt_netc_start(struct imxrt_netc_s *priv)
       priv->link.speed = 0;
       modifyreg32(priv->hw->mac + NETC_MAC_CMD,
                   NETC_MAC_TX | NETC_MAC_RX, NETC_MAC_TXPAD);
-      modifyreg32(priv->hw->mac + NETC_MAC_IFMODE, NETC_MAC_IF_MASK,
-                  priv->config.ports[0].phy.iftype);
       putreg32(NETC_PACKET_SIZE + 4, priv->hw->mac + NETC_MAC_MAXFRM);
       putreg32(64, priv->hw->mac + NETC_MAC_MINFRM);
       imxrt_netc_port_sdu(priv->hw->port);
@@ -597,6 +601,15 @@ static int imxrt_netc_start(struct imxrt_netc_s *priv)
           return ret;
         }
     }
+  else
+    {
+      ret = phy_start(priv->link.phydev);
+      if (ret < 0)
+        {
+          nerr("NETC direct PHY start failed: %d\n", ret);
+          return ret;
+        }
+    }
 
   priv->state = NETC_UP;
   up_enable_irq(priv->irq);
@@ -642,8 +655,7 @@ static uint8_t imxrt_netc_direct_link(struct imxrt_netc_s *priv)
       return 0;
     }
 
-  ret = imxrt_netc_port_link(&priv->config.ports[0],
-                            &priv->link, &speed);
+  ret = imxrt_netc_port_link(&priv->link, &speed);
   if (ret < 0)
     {
       nerr("NETC direct PHY link failed: %d\n", ret);
@@ -654,7 +666,7 @@ static uint8_t imxrt_netc_direct_link(struct imxrt_netc_s *priv)
     {
       netdev_lower_carrier_off(&priv->lower);
       ret = imxrt_netc_port_mode(priv->hw->port, priv->hw->mac,
-                                  priv->config.ports[0].phy.iftype, speed);
+                                  priv->config.ports[0].interface, speed);
       if (ret < 0)
         {
           nerr("NETC direct MAC mode failed: %d\n", ret);
@@ -1022,7 +1034,6 @@ static int imxrt_netc_multicast(struct netdev_lowerhalf_s *lower,
 static int imxrt_netc_ioctl(struct netdev_lowerhalf_s *lower, int cmd,
                             unsigned long arg)
 {
-#ifdef CONFIG_NETDEV_PHY_IOCTL
   struct imxrt_netc_s *priv = (struct imxrt_netc_s *)lower;
   struct mii_ioctl_data_s *req = (struct mii_ioctl_data_s *)arg;
 
@@ -1031,17 +1042,18 @@ static int imxrt_netc_ioctl(struct netdev_lowerhalf_s *lower, int cmd,
       return imxrt_netc_switch_ioctl(cmd, arg);
     }
 
-  if (cmd != SIOCGMIIPHY && cmd != SIOCGMIIREG && cmd != SIOCSMIIREG)
+  if (cmd != SIOCETHTOOL && cmd != SIOCGMIIPHY &&
+      cmd != SIOCGMIIREG && cmd != SIOCSMIIREG)
     {
       return -ENOTTY;
     }
 
-  if (req == NULL || req->phy_id > 31)
+  if (req == NULL)
     {
       return -EINVAL;
     }
 
-  if (priv->state == NETC_UNINITIALIZED || priv->link.phyaddr > 31)
+  if (priv->state == NETC_UNINITIALIZED || priv->link.phydev == NULL)
     {
       return -ENODEV;
     }
@@ -1058,11 +1070,12 @@ static int imxrt_netc_ioctl(struct netdev_lowerhalf_s *lower, int cmd,
 
   if (cmd == SIOCGMIIPHY)
     {
-      req->phy_id = priv->link.phyaddr;
+      req->phy_id = priv->link.phydev->mdio_addr;
       return OK;
     }
 
-  if (req->phy_id != priv->link.phyaddr || req->reg_num > 31)
+  if (cmd != SIOCETHTOOL &&
+      (req->phy_id != priv->link.phydev->mdio_addr || req->reg_num > 31))
     {
       return -EINVAL;
     }
@@ -1077,17 +1090,7 @@ static int imxrt_netc_ioctl(struct netdev_lowerhalf_s *lower, int cmd,
       return -ENETDOWN;
     }
 
-  if (cmd == SIOCGMIIREG)
-    {
-      return mdio_read(priv->link.bus, priv->link.phyaddr, req->reg_num,
-                       &req->val_out);
-    }
-
-  return mdio_write(priv->link.bus, priv->link.phyaddr, req->reg_num,
-                    req->val_in);
-#else
-  return -ENOTTY;
-#endif
+  return phy_ioctl(priv->link.phydev, cmd, arg);
 }
 #endif
 
@@ -1187,7 +1190,6 @@ static int imxrt_netc_register(size_t index,
   priv->hw = &g_netc_hw[index];
   priv->config = *config;
   priv->link.speed = 0;
-  priv->link.phyaddr = UINT8_MAX;
   priv->msgintr = g_msgintr_base[config->msgintr - 1];
   priv->irq = g_msgintr_irq[config->msgintr - 1];
   priv->lower.ops = &g_netc_ops;

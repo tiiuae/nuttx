@@ -616,6 +616,7 @@ config IMXRT_NETC
 	select ARCH_HAVE_PHY
 	select ARCH_HAVE_NETDEV_STATISTICS
 	select MDIO_BUS
+	select NET_PHYLIB
 	select NETDEV_LATEINIT
 	---help---
 		NETDEV lower-half Ethernet interfaces for direct-PHY ENETC0 and
@@ -688,13 +689,15 @@ config IMXRT_NETC_NRXDESC
 	default 64 if IMXRT_NETC_RX64
 
 config IMXRT_NETC_LINK_POLL_MS
-	int "NETC PHY link polling interval (milliseconds)"
+	int "NETC MAC update and watchdog interval (milliseconds)"
 	default 1000
 	range 100 1000
 	---help---
-		ENETC1 switch-link polling continues while its CPU interface is
-		down. ENETC0 polls its direct PHY and applies MAC mode only while
-		its interface is up. Each worker checks for stalled TX and
+		Consume PHYLIB link state and update MAC modes and carrier.
+		ENETC1 external PHYs remain active while its CPU interface is
+		down. ENETC0 starts and stops its PHY with the interface.
+		PHY polling is controlled by NET_PHYLIB_POLL_INTERVAL.
+		Each worker checks for stalled TX and
 		attempts a reset of only the affected CPU function, without a
 		shared NETC reset or reset of the external switch.
 
@@ -709,6 +712,21 @@ config IMXRT_NETC_PHYINIT
 		each enabled port after interface mode and clock-direction setup,
 		before MDIO probing. Complete any required reset delays before
 		returning.
+
+config IMXRT_NETC_PHYRESET
+	bool "Board-specific PHY hardware reset control"
+	default n
+	---help---
+		Enable the MDIO hardware-reset callback. The board must provide
+		board_netc_phyreset(), which receives the MDIO endpoint, PHY
+		address and reset level: nonzero asserts reset, zero releases it.
+		Board code owns GPIO configuration, polarity and the required
+		assert/release delays. The callback runs with the MDIO bus locked
+		and must not perform MDIO transactions.
+
+		This does not replace initial board PHY setup. Any reset needed
+		before PHY discovery must still be completed before MDIO probing,
+		for example through IMXRT_NETC_PHYINIT.
 
 endmenu # "NETC settings"
 endif

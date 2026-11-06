@@ -17,6 +17,7 @@
 #include <nuttx/nuttx.h>
 #include <nuttx/net/gmii.h>
 #include <nuttx/net/mdio.h>
+#include <nuttx/ethtool.h>
 
 #include "imxrt_netc_priv.h"
 #include "hardware/imxrt_netc.h"
@@ -44,14 +45,18 @@ static int imxrt_netc_mdio_read(struct mdio_lowerhalf_s *lower,
 static int imxrt_netc_mdio_write(struct mdio_lowerhalf_s *lower,
                                 uint8_t phyaddr, uint8_t reg,
                                 uint16_t value);
+#ifdef CONFIG_IMXRT_NETC_PHYRESET
+static int imxrt_netc_mdio_reset(struct mdio_lowerhalf_s *lower,
+                                uint8_t phyaddr, int value);
+#endif
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
-/* Lock order: network lock, MDIO upper-half lock, then hardware lock.
- * The network lock also excludes other PHY users during paged sequences
- * and protects endpoint registration and reference counts.
+/* Lock order: network/device lock, PHY lock, MDIO lock, hardware lock.
+ * Endpoint registration and reference counts use the network lock.
+ * PHYLIB serializes paged accesses with the MDIO bus lock.
  */
 
 static mutex_t g_mdiolock = NXMUTEX_INITIALIZER;
@@ -61,7 +66,11 @@ static const struct mdio_ops_s g_mdio_ops =
 {
   .read = imxrt_netc_mdio_read,
   .write = imxrt_netc_mdio_write,
+#ifdef CONFIG_IMXRT_NETC_PHYRESET
+  .reset = imxrt_netc_mdio_reset
+#else
   .reset = NULL
+#endif
 };
 
 /****************************************************************************
@@ -174,6 +183,25 @@ static int imxrt_netc_mdio_write(struct mdio_lowerhalf_s *lower,
   return imxrt_netc_mdio(priv, phyaddr, reg, &value, false);
 }
 
+#ifdef CONFIG_IMXRT_NETC_PHYRESET
+static int imxrt_netc_mdio_reset(struct mdio_lowerhalf_s *lower,
+                                uint8_t phyaddr, int value)
+{
+  struct imxrt_netc_mdio_s *priv =
+    container_of(lower, struct imxrt_netc_mdio_s, lower);
+  int ret;
+
+  ret = board_netc_phyreset(priv->id, phyaddr, value);
+  if (ret < 0)
+    {
+      nerr("MDIO bus %u PHY %u reset level %d failed: %d\n",
+           priv->id, phyaddr, value, ret);
+    }
+
+  return ret;
+}
+#endif
+
 static int imxrt_netc_mdio_initialize(enum imxrt_netc_mdio_e id,
                                      uint32_t clock_hz,
                                      struct mdio_bus_s **bus)
@@ -227,8 +255,13 @@ void imxrt_netc_port_uninitialize(const struct imxrt_netc_ports_hw_s *hw,
   priv = &g_mdio[hw->mdio];
   DEBUGASSERT(priv->users > 0 && priv->bus == link->bus);
 
+  if (link->phydev != NULL)
+    {
+      phy_disconnect(link->phydev);
+      link->phydev = NULL;
+    }
+
   link->bus = NULL;
-  link->phyaddr = UINT8_MAX;
   link->speed = 0;
   if (--priv->users == 0)
     {
@@ -244,23 +277,27 @@ int imxrt_netc_port_prepare(const struct imxrt_netc_ports_hw_s *hw,
   uint32_t mode;
   uint32_t clock = NETC_PORT_MISC_RMII_CLK_OUT(hw->reg_idx);
 
-  switch (config->phy.iftype)
+  switch (config->interface)
     {
-      case PHY_TYPE_MII:
+      case PHY_INTERFACE_MII:
         mode = NETC_LINK_CFG_MII;
         break;
 
-      case PHY_TYPE_RMII:
+      case PHY_INTERFACE_RMII:
+      case PHY_INTERFACE_RMII_PHY_CLK_OUT:
         mode = NETC_LINK_CFG_RMII;
         break;
 
-      case PHY_TYPE_RGMII:
+      case PHY_INTERFACE_RGMII:
+      case PHY_INTERFACE_RGMII_ID:
+      case PHY_INTERFACE_RGMII_TXID:
+      case PHY_INTERFACE_RGMII_RXID:
         mode = NETC_LINK_CFG_RGMII;
         break;
 
       default:
         nerr("NETC port %u unsupported interface mode: %u\n",
-             hw->reg_idx, config->phy.iftype);
+             hw->reg_idx, config->interface);
         return -EOPNOTSUPP;
     }
 
@@ -272,7 +309,8 @@ int imxrt_netc_port_prepare(const struct imxrt_netc_ports_hw_s *hw,
     }
 
   modifyreg32(IMXRT_NETC_PORT_MISC_CFG, clock,
-              config->phy.rmii_phy_clk_out ? 0 : clock);
+              config->interface == PHY_INTERFACE_RMII_PHY_CLK_OUT ?
+              0 : clock);
   modifyreg32(IMXRT_NETC_LINK_CFG(hw->reg_idx), mask, mode);
 
 #ifdef CONFIG_IMXRT_NETC_PHYINIT
@@ -287,23 +325,17 @@ int imxrt_netc_port_initialize(const struct imxrt_netc_ports_hw_s *hw,
                               struct imxrt_netc_link_s *link,
                               uint32_t clock_hz)
 {
-  struct phy_desc_s phy = config->phy;
-  unsigned int last = config->phy.address_high;
-  unsigned int address;
-  uint16_t id1;
-  uint16_t id2;
-  uint16_t advertise;
-  uint16_t control;
+  struct phy_device_s *phydev;
+  uint32_t supported;
   int ret;
 
-  if (last == UINT16_MAX)
+  if (config->phyaddr > 31)
     {
-      last = config->phy.address_lo;
+      nerr("NETC port %u invalid PHY address: %u\n",
+           hw->reg_idx, config->phyaddr);
+      return -EINVAL;
     }
 
-  DEBUGASSERT(phy.clause == 22);
-  DEBUGASSERT(phy.address_lo <= 31 && last <= 31 &&
-              last >= phy.address_lo);
   DEBUGASSERT(link->bus == NULL);
 
   ret = imxrt_netc_mdio_initialize(hw->mdio, clock_hz, &link->bus);
@@ -312,262 +344,132 @@ int imxrt_netc_port_initialize(const struct imxrt_netc_ports_hw_s *hw,
       return ret;
     }
 
-  for (address = config->phy.address_lo; address <= last; address++)
+  phydev = phy_device_create(link->bus, config->phyaddr);
+  if (phydev == NULL)
     {
-      ret = mdio_read(link->bus, address, MII_PHYID1, &id1);
-      if (ret == -ENODEV)
-        {
-          nerr("PHY %s MDIO bus %u address %u: no response to PHYID1\n",
-               config->phy.name, hw->mdio, address);
-          continue;
-        }
-
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      ret = mdio_read(link->bus, address, MII_PHYID2, &id2);
-      if (ret < 0)
-        {
-          nerr("PHY %s MDIO bus %u address %u: PHYID2 read failed: %d\n",
-               config->phy.name, hw->mdio, address, ret);
-          return ret;
-        }
-
-      if (id1 == config->phy.id1 &&
-          (id2 & ~MII_PHYID2_REV_MASK) ==
-          (config->phy.id2 & ~MII_PHYID2_REV_MASK) &&
-          id1 != UINT16_MAX && (id1 != 0 || id2 != 0))
-        {
-          break;
-        }
-
-      nerr("PHY %s MDIO bus %u address %u: ID %04x:%04x, "
-           "expected %04x:%04x (revision ignored)\n",
-           config->phy.name, hw->mdio, address,
-           id1, id2, config->phy.id1, config->phy.id2);
+      nerr("NETC port %u PHY creation failed on bus %u address %u\n",
+           hw->reg_idx, hw->mdio, config->phyaddr);
+      ret = -ENODEV;
+      goto failed;
     }
 
-  if (address > last)
+  phydev->interface = config->interface;
+  ret = phy_connect(phydev, NULL);
+  if (ret < 0)
     {
-      nerr("PHY %s not found on MDIO bus %u\n",
-           config->phy.name, hw->mdio);
-      return -ENODEV;
+      phy_device_free(phydev);
+      goto failed;
     }
 
-  link->phyaddr = address;
+  link->phydev = phydev;
+
+  /* NETC supports full duplex only. Limit both capabilities and advertising
+   * so ethtool cannot request a mode that the MAC cannot implement.
+   */
+
+  supported = SUPPORTED_10BASET_FULL | SUPPORTED_100BASET_FULL |
+              SUPPORTED_AUTONEG | SUPPORTED_TP | SUPPORTED_MII;
+  if (config->interface == PHY_INTERFACE_RGMII ||
+      config->interface == PHY_INTERFACE_RGMII_ID ||
+      config->interface == PHY_INTERFACE_RGMII_TXID ||
+      config->interface == PHY_INTERFACE_RGMII_RXID)
+    {
+      supported |= SUPPORTED_1000BASET_FULL;
+    }
+
+  phydev->supported &= supported;
+  phydev->advertising = phydev->supported;
   link->speed = 0;
-  phy.address_lo = address;
-  phy.address_high = address;
-  if (phy.ops != NULL && phy.ops->phyinit != NULL)
+
+  if (hw->reg_idx < IMXRT_NETC_SW0_NPORTS)
     {
-      ret = phy.ops->phyinit(&phy, link->bus);
+      ret = phy_start(phydev);
       if (ret < 0)
         {
-          nerr("PHY %s MDIO bus %u address %u initialization failed: %d\n",
-               phy.name, hw->mdio, address, ret);
-          return ret;
+          goto failed;
         }
-    }
-
-  ret = mdio_read(link->bus, address, MII_MCR, &control);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  if ((control & MII_MCR_RESET) != 0)
-    {
-      return -EBUSY;
-    }
-
-  advertise = MII_ADVERTISE_CSMA |
-    MII_ADVERTISE_10BASETXFULL |
-    MII_ADVERTISE_100BASETXFULL;
-
-  ret = mdio_write(link->bus, address, MII_ADVERTISE, advertise);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  ret = mdio_read(link->bus, address, MII_MSR, &control);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  if ((control & MII_MSR_ANEGABLE) == 0)
-    {
-      return -EOPNOTSUPP;
-    }
-
-  if ((control & MII_MSR_ESTATEN) != 0)
-    {
-      ret = mdio_read(link->bus, address, MII_ESTATUS, &control);
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      if ((control & MII_ESTATUS_1000BASETFULL) != 0 &&
-          (config->phy.iftype == PHY_TYPE_GMII ||
-           config->phy.iftype == PHY_TYPE_RGMII))
-        {
-          advertise = GMII_1000BTCR_1000BASETFULL;
-          ret = mdio_write(link->bus, address, GMII_1000BTCR, advertise);
-          if (ret < 0)
-            {
-              return ret;
-            }
-        }
-    }
-
-  return mdio_write(link->bus, address, MII_MCR,
-                    MII_MCR_ANENABLE | MII_MCR_ANRESTART);
-}
-
-int imxrt_netc_port_link(const struct imxrt_netc_port_s *config,
-                        struct imxrt_netc_link_s *link, uint16_t *speed)
-{
-  uint16_t status;
-  uint16_t local;
-  uint16_t partner;
-  uint16_t mode;
-  int ret;
-
-  *speed = 0;
-
-  /* BMSR link is latched low; always read twice. */
-
-  ret = mdio_read(link->bus, link->phyaddr, MII_MSR, &status);
-  if (ret == OK)
-    {
-      ret = mdio_read(link->bus, link->phyaddr, MII_MSR, &status);
-    }
-
-  if (ret < 0 || (status & (MII_MSR_LINKSTATUS | MII_MSR_ANEGCOMPLETE)) !=
-                (MII_MSR_LINKSTATUS | MII_MSR_ANEGCOMPLETE))
-    {
-      return ret;
-    }
-
-  ret = mdio_read(link->bus, link->phyaddr, MII_MCR, &local);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  if ((local & MII_MCR_ANENABLE) == 0)
-    {
-      return -EPROTO;
-    }
-
-  if (config->phy.status != UINT16_MAX)
-    {
-      ret = mdio_read(link->bus, link->phyaddr, config->phy.status, &status);
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      if ((status & config->phy.duplex) == 0)
-        {
-          return -EPROTO;
-        }
-
-      mode = status & config->phy.speed_mask;
-      if (mode == config->phy.mbps1000)
-        {
-          *speed = 1000;
-        }
-      else if (mode == config->phy.mbps100)
-        {
-          *speed = 100;
-        }
-      else if (mode == config->phy.mbps10)
-        {
-          *speed = 10;
-        }
-      else
-        {
-          return -EPROTO;
-        }
-
-      return OK;
-    }
-
-  if (config->phy.iftype == PHY_TYPE_GMII ||
-      config->phy.iftype == PHY_TYPE_RGMII)
-    {
-      ret = mdio_read(link->bus, link->phyaddr, GMII_1000BTCR, &local);
-      if (ret == OK)
-        {
-          ret = mdio_read(link->bus, link->phyaddr, GMII_1000BTSR, &partner);
-        }
-
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      if ((partner & GMII_1000BTSR_MSFAULT) != 0)
-        {
-          return -EPROTO;
-        }
-
-      if ((local & GMII_1000BTCR_1000BASETFULL) != 0 &&
-          (partner & GMII_1000BTSR_LP1000BASETFULL) != 0)
-        {
-          *speed = 1000;
-          return OK;
-        }
-    }
-
-  ret = mdio_read(link->bus, link->phyaddr, MII_ADVERTISE, &local);
-  if (ret == OK)
-    {
-      ret = mdio_read(link->bus, link->phyaddr, MII_LPA, &partner);
-    }
-
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  mode = local & partner;
-  if ((mode & MII_ADVERTISE_100BASETXFULL) != 0)
-    {
-      *speed = 100;
-    }
-  else if ((mode & MII_ADVERTISE_10BASETXFULL) != 0)
-    {
-      *speed = 10;
-    }
-  else
-    {
-      return -EPROTO;
     }
 
   return OK;
+
+failed:
+  nerr("NETC port %u PHY initialization failed: %d\n", hw->reg_idx, ret);
+  imxrt_netc_port_uninitialize(hw, link);
+  return ret;
+}
+
+int imxrt_netc_port_link(struct imxrt_netc_link_s *link, uint16_t *speed)
+{
+  struct phy_device_s *phydev = link->phydev;
+  int ret;
+
+  *speed = 0;
+  if (phydev == NULL)
+    {
+      return -ENODEV;
+    }
+
+  ret = nxmutex_lock(&phydev->lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  if (phydev->state == PHY_ERROR)
+    {
+      ret = -EIO;
+    }
+  else if (phydev->state == PHY_RUNNING && phydev->link)
+    {
+      if (phydev->duplex != DUPLEX_FULL ||
+          (phydev->speed != 10 && phydev->speed != 100 &&
+           phydev->speed != 1000))
+        {
+          ret = -EPROTO;
+        }
+      else
+        {
+          *speed = phydev->speed;
+        }
+    }
+
+  nxmutex_unlock(&phydev->lock);
+
+  if (ret == -EIO)
+    {
+      /* PHYLIB halts polling after an MDIO error. Retry on the next NETC
+       * update rather than leaving a transient bus failure unrecoverable.
+       */
+
+      nerr("NETC PHY %u restarting after an MDIO error\n",
+           phydev->mdio_addr);
+      phy_stop(phydev);
+      ret = phy_start(phydev);
+      return ret < 0 ? ret : -EIO;
+    }
+
+  return ret;
 }
 
 int imxrt_netc_port_mode(uintptr_t port, uintptr_t mac,
-                        enum phy_iftype_e mode, uint16_t speed)
+                        enum phy_interface_e mode, uint16_t speed)
 {
   uint32_t interface;
   int ret;
 
   switch (mode)
     {
-      case PHY_TYPE_MII:
+      case PHY_INTERFACE_MII:
         interface = NETC_MAC_IF_MII;
         break;
-      case PHY_TYPE_RMII:
+      case PHY_INTERFACE_RMII:
+      case PHY_INTERFACE_RMII_PHY_CLK_OUT:
         interface = NETC_MAC_IF_RMII;
         break;
-      case PHY_TYPE_RGMII:
+      case PHY_INTERFACE_RGMII:
+      case PHY_INTERFACE_RGMII_ID:
+      case PHY_INTERFACE_RGMII_TXID:
+      case PHY_INTERFACE_RGMII_RXID:
         interface = NETC_MAC_IF_RGMII;
         break;
       default:

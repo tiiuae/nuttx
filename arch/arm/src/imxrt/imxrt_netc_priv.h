@@ -83,8 +83,8 @@ struct imxrt_netc_hw_s
 struct imxrt_netc_link_s
 {
   struct mdio_bus_s *bus;         /* Registered endpoint, shared by PHYs */
+  struct phy_device_s *phydev;
   uint16_t speed;                 /* Zero means link down */
-  uint8_t phyaddr;                /* Resolved, not configured PHY address */
 };
 
 static_assert(
@@ -102,8 +102,6 @@ int imxrt_netc_wait(uintptr_t reg, uint32_t mask, uint32_t value);
 int imxrt_netc_reset(uintptr_t function, uintptr_t common);
 void *imxrt_netc_alloc(size_t size, uint32_t *dma_bus);
 
-int imxrt_netc_port_validate(const struct imxrt_netc_ports_hw_s *hw,
-                            const struct imxrt_netc_port_s *config);
 int imxrt_netc_port_prepare(const struct imxrt_netc_ports_hw_s *hw,
                            const struct imxrt_netc_port_s *config);
 int imxrt_netc_port_initialize(const struct imxrt_netc_ports_hw_s *hw,
@@ -112,10 +110,9 @@ int imxrt_netc_port_initialize(const struct imxrt_netc_ports_hw_s *hw,
                               uint32_t clock_hz);
 void imxrt_netc_port_uninitialize(const struct imxrt_netc_ports_hw_s *hw,
                                  struct imxrt_netc_link_s *link);
-int imxrt_netc_port_link(const struct imxrt_netc_port_s *config,
-                        struct imxrt_netc_link_s *link, uint16_t *speed);
+int imxrt_netc_port_link(struct imxrt_netc_link_s *link, uint16_t *speed);
 int imxrt_netc_port_mode(uintptr_t port, uintptr_t mac,
-                        enum phy_iftype_e mode, uint16_t speed);
+                        enum phy_interface_e mode, uint16_t speed);
 void imxrt_netc_port_sdu(uintptr_t port);
 void imxrt_netc_pseudo(uintptr_t port);
 
@@ -126,7 +123,7 @@ int imxrt_netc_switch_uninitialize(void);
 int imxrt_netc_switch_cpu(bool enable, const uint8_t *mac);
 int imxrt_netc_switch_link(uint8_t *linkmask);
 
-#ifdef CONFIG_NETDEV_PHY_IOCTL
+#ifdef CONFIG_NETDEV_IOCTL
 int imxrt_netc_switch_ioctl(int cmd, unsigned long arg);
 #endif
 

@@ -12,7 +12,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <nuttx/net/mii.h>
+#include <nuttx/net/phy.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <arch/imxrt/chip.h>
@@ -37,7 +37,7 @@
  * Per-port endpoints require a fixed PHY address matching the
  * corresponding IERB LINKn_BCR PHY address field. If IERB is already
  * locked, that field must already match the configured address.
- * EMDIO accesses the external MDIO bus and supports PHY address probing.
+ * EMDIO accesses the external MDIO bus.
  */
 
 enum imxrt_netc_mdio_e
@@ -54,7 +54,8 @@ enum imxrt_netc_mdio_e
 struct imxrt_netc_port_s
 {
   bool enabled;
-  struct phy_desc_s phy;
+  uint8_t phyaddr;
+  enum phy_interface_e interface;
 };
 
 struct imxrt_netc_enetc_s
@@ -102,6 +103,31 @@ extern "C"
 #ifdef CONFIG_IMXRT_NETC_PHYINIT
 int board_netc_phyinit(unsigned int if_idx,
                        const struct imxrt_netc_port_s *config);
+#endif
+
+/****************************************************************************
+ * Function: board_netc_phyreset
+ *
+ * Description:
+ *   Control a PHY hardware reset line when CONFIG_IMXRT_NETC_PHYRESET is
+ *   enabled. Board code maps the MDIO endpoint and PHY address to its GPIO,
+ *   handles configuration and polarity, and waits for the required
+ *   assert/release settling time. This controls a level, not a reset pulse.
+ *   Called with the MDIO bus locked; do not perform MDIO transactions.
+ *
+ * Input Parameters:
+ *   mdio    - NETC MDIO access endpoint.
+ *   phyaddr - PHY address on that endpoint (0..31).
+ *   value   - Nonzero asserts reset; zero releases reset.
+ *
+ * Returned Value:
+ *   OK on success; negated errno on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_IMXRT_NETC_PHYRESET
+int board_netc_phyreset(enum imxrt_netc_mdio_e mdio, uint8_t phyaddr,
+                        int value);
 #endif
 
 /****************************************************************************
