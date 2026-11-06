@@ -141,25 +141,18 @@ together; shared IERB setup runs once.
 PHY configuration
 """""""""""""""""
 
-Each enabled port must supply a ``phy_desc_s`` in its ``phy`` field.
-The ``CONFIG_ETH0_PHY_*`` and ``CONFIG_ETH1_PHY_*`` model selections, or
-equivalent board Kconfig selections, enable PHY driver compilation; they
-do not populate these descriptors. Both the compiled PHY drivers and the
-per-port configuration are needed.
-Configure each descriptor to match the board wiring and PHY:
+Each enabled port must supply its strapped ``phyaddr`` (0--31) and
+``interface`` in ``imxrt_netc_port_s``. NETC selects PHYLIB; board Kconfig
+must enable the corresponding PHY drivers. PHYLIB matches drivers by the
+hardware PHY ID and owns model-specific initialization and link decoding.
+MDIO endpoints are hardware-selected, not board-selectable.
 
-* Set ``iftype`` to ``PHY_TYPE_MII``, ``PHY_TYPE_RMII`` or
-  ``PHY_TYPE_RGMII``, and ``clause`` to 22. For RMII, set
-  ``rmii_phy_clk_out`` to ``true`` if the PHY drives the reference clock,
-  or ``false`` if the MAC drives it.
-* Supply the expected ``id1`` and ``id2`` register values; discovery ignores
-  the PHY revision nibble. Set ``address_lo`` to the strapped PHY address
-  and ``address_high`` to the same address or ``0xffff`` for a fixed address.
-  MDIO endpoints are hardware-selected, not board-selectable. Only shared
-  EMDIO supports address-range probing; port MDIO requires a fixed address.
-* Set ``status = 0xffff`` to decode negotiation using standard registers.
-  Otherwise supply the vendor status register and its ``speed_mask``,
-  ``mbps10``, ``mbps100``, ``mbps1000`` and ``duplex`` decoding values.
+Set ``interface`` to ``PHY_INTERFACE_MII``, ``PHY_INTERFACE_RMII``,
+``PHY_INTERFACE_RMII_PHY_CLK_OUT``, or an appropriate
+``PHY_INTERFACE_RGMII`` variant. For RMII, use ``PHY_INTERFACE_RMII`` when
+NETC supplies the 50 MHz reference clock, or
+``PHY_INTERFACE_RMII_PHY_CLK_OUT`` when the PHY supplies it. NETC and the
+PHY driver derive clock direction from this single interface setting.
 
 Enable ``CONFIG_IMXRT_NETC_PHYINIT`` only if the board needs the optional
 ``board_netc_phyinit(unsigned int if_idx,
