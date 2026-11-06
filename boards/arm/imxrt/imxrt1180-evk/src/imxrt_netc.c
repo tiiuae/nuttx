@@ -17,9 +17,7 @@
 #include <syslog.h>
 
 #include <nuttx/arch.h>
-#include <nuttx/net/gmii.h>
-#include <nuttx/net/phy/rtl8201f.h>
-#include <nuttx/net/phy/rtl8211f.h>
+#include <nuttx/net/realtek_phy.h>
 
 #include "arm_internal.h"
 #include "imxrt_clockconfig.h"
@@ -34,40 +32,17 @@
  ****************************************************************************/
 
 #define BOARD_RTL8201F_PHY(addr) \
-{ \
-  .name = MII_RTL8201F_NAME, \
-  .id1 = MII_PHYID1_RTL8201F, \
-  .id2 = MII_PHYID2_RTL8201F, \
-  .status = MII_MCR, \
-  .address_lo = (addr), \
-  .address_high = UINT16_MAX, \
-  .mbps10 = MII_RTL8201F_MCR_10MBPS, \
-  .mbps100 = MII_RTL8201F_MCR_100MBPS, \
-  .duplex = MII_RTL8201F_MCR_DUPLEX, \
-  .clause = 22, \
-  .speed_mask = MII_RTL8201F_MCR_SPEED_MASK, \
-  .iftype = PHY_TYPE_RMII, \
-  .rmii_phy_clk_out = false, \
-  .ops = &g_rtl8201f_phy_ops \
-}
+  .phyaddr = (addr), \
+  .interface = PHY_INTERFACE_RMII
 
 #define BOARD_RTL8211F_PHY(addr) \
-{ \
-  .name = GMII_RTL8211F_NAME, \
-  .id1 = GMII_PHYID1_RTL8211F, \
-  .id2 = GMII_PHYID2_RTL8211F_STD, \
-  .status = GMII_RTL8211F_PHYSR_A43, \
-  .address_lo = (addr), \
-  .address_high = UINT16_MAX, \
-  .mbps10 = GMII_RTL8211F_PHYSR_10MBPS, \
-  .mbps100 = GMII_RTL8211F_PHYSR_100MBPS, \
-  .duplex = GMII_RTL8211F_PHYSR_DUPLEX, \
-  .clause = 22, \
-  .mbps1000 = GMII_RTL8211F_PHYSR_1000MBPS, \
-  .speed_mask = GMII_RTL8211F_PHYSR_SPEED_MASK, \
-  .iftype = PHY_TYPE_RGMII, \
-  .ops = &g_rtl8211f_phy_ops \
-}
+  .phyaddr = (addr), \
+  .interface = PHY_INTERFACE_RGMII_ID
+
+#define RTL8201F_RESET_DELAY_MS       10
+#define RTL8201F_RESET_POST_DELAY_MS  150
+#define RTL8211F_RESET_DELAY_MS       10
+#define RTL8211F_RESET_POST_DELAY_MS  50
 
 /****************************************************************************
  * Private Types
@@ -145,7 +120,7 @@ static const struct imxrt_netc_config_s g_netc_config =
         [0] =
         {
           .enabled = true,
-          .phy = BOARD_RTL8201F_PHY(3)
+          BOARD_RTL8201F_PHY(3)
         }
       }
 #endif
@@ -165,28 +140,28 @@ static const struct imxrt_netc_config_s g_netc_config =
         [0] =
         {
           .enabled = true,
-          .phy = BOARD_RTL8201F_PHY(2)
+          BOARD_RTL8201F_PHY(2)
         },
 #endif
 #ifdef CONFIG_IMXRT_NETC_ENETC1_PORT1
         [1] =
         {
           .enabled = true,
-          .phy = BOARD_RTL8211F_PHY(5)
+          BOARD_RTL8211F_PHY(5)
         },
 #endif
 #ifdef CONFIG_IMXRT_NETC_ENETC1_PORT2
         [2] =
         {
           .enabled = true,
-          .phy = BOARD_RTL8211F_PHY(4)
+          BOARD_RTL8211F_PHY(4)
         },
 #endif
 #ifdef CONFIG_IMXRT_NETC_ENETC1_PORT3
         [3] =
         {
           .enabled = true,
-          .phy = BOARD_RTL8211F_PHY(7)
+          BOARD_RTL8211F_PHY(7)
         },
 #endif
       }
@@ -207,12 +182,11 @@ int board_netc_phyinit(unsigned int if_idx,
   uint32_t mask;
   int ret;
 
-  if (config == NULL || !config->enabled || if_idx >= nitems(g_netc_ports))
-    {
-      syslog(LOG_ERR, "NETC: invalid PHY reset port %u\n", if_idx);
-      return -EINVAL;
-    }
+  /* config not used */
 
+  (void) config;
+
+  DEBUGASSERT(if_idx < nitems(g_netc_ports));
   port = &g_netc_ports[if_idx];
   ret = imxrt_config_gpio(port->reset | GPIO_SION_ENABLE);
   if (ret < 0)
@@ -334,6 +308,31 @@ int imxrt_netc_boardinitialize(void)
   memcpy(config.enetc[0].mac, config.enetc[1].mac,
          sizeof(config.enetc[0].mac));
   config.enetc[0].mac[5] ^= 1;
+
+#ifdef CONFIG_NET_PHY_REALTEK_RTL8201F
+  ret = rtl8201f_register();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "NETC: RTL8201F registration failed: %d\n", ret);
+      return ret;
+    }
+#endif
+
+#ifdef CONFIG_NET_PHY_REALTEK_RTL8211F
+  ret = rtl8211f_register();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "NETC: RTL8211F registration failed: %d\n", ret);
+      return ret;
+    }
+#endif
+
+  /* Perform PHY resets */
+
+  for (i = 0; i < IMXRT_NETC_PHY_PORT_COUNT; i++)
+    {
+      board_netc_phyinit(i, NULL);
+    }
 
   return imxrt_netc_initialize(&config);
 }
