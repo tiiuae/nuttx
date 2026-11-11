@@ -904,6 +904,35 @@ config NET_PHY_REALTEK_RTL9000B
 		Support for the Realtek RTL9000B 100BASE-T1 automotive PHY.
 		Enable only on boards that use an RTL9000B.
 
+config NET_PHY_TI_DP83867
+	bool "TI DP83867E Gigabit PHY"
+	---help---
+		Support for the TI DP83867E RGMII PHY, including internal RX
+		and TX delays. Uses Clause 22 MDIO and polling for link changes.
+		SGMII and PHY interrupts are not supported.
+
+if NET_PHY_TI_DP83867
+
+config NET_PHY_TI_DP83867_RX_DELAY
+	int "RGMII receive clock delay"
+	default 7
+	range 0 15
+	---help---
+		Receive clock delay code: delay = (code + 1) * 250 ps.
+		The default code 7 selects 2 ns. Applied only in RGMII_ID and
+		RGMII_RXID modes. Choose according to the board timing budget.
+
+config NET_PHY_TI_DP83867_TX_DELAY
+	int "RGMII transmit clock delay"
+	default 7
+	range 0 15
+	---help---
+		Transmit clock delay code: delay = (code + 1) * 250 ps.
+		The default code 7 selects 2 ns. Applied only in RGMII_ID and
+		RGMII_TXID modes. Choose according to the board timing budget.
+
+endif # NET_PHY_TI_DP83867
+
 endif # NET_PHYLIB
 
 endif # NETDEVICES

@@ -27,3 +27,28 @@ link-status resolution and power control. Register-page operations are
 serialized by the PHYLIB paged-access helpers. These drivers use polling
 and auto-negotiation; forced link modes and PHY interrupts are not
 implemented.
+
+TI DP83867E
+===========
+
+``CONFIG_NET_PHY_TI_DP83867`` enables the DP83867E RGMII driver. Call
+``dp83867_register()`` from ``<nuttx/net/ti_phy.h>`` before
+``phy_device_create()``, then set ``phydev->interface`` before
+``phy_connect()``.
+
+Select ``PHY_INTERFACE_RGMII`` for no internal delay, ``RGMII_ID`` for
+both delays, ``RGMII_TXID`` for TX delay only, or ``RGMII_RXID`` for RX
+delay only. ``CONFIG_NET_PHY_TI_DP83867_RX_DELAY`` and
+``CONFIG_NET_PHY_TI_DP83867_TX_DELAY`` select delay codes from 0 to 15:
+each delay is ``(code + 1) * 250 ps``. Both default to code 7 (2 ns).
+Choose these values to match the board timing budget, accounting for
+delays already provided by the MAC and PCB.
+
+The driver disables SGMII, enables RGMII, and clears the internal test
+mode associated with RX_CTRL strap modes 1/2. Other strap settings,
+including clock output, impedance and port mirroring, are preserved.
+Extended-register transactions use indirect Clause 22 access with the
+MDIO bus locked across address selection and read-modify-write; native
+Clause 45 support is not required. Generic PHYLIB operations provide
+capability discovery, auto-negotiation, link status and power control.
+Link monitoring uses polling; SGMII and PHY interrupts are not implemented.
