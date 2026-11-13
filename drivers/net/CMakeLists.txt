@@ -96,6 +96,10 @@ if(CONFIG_NET)
     list(APPEND SRCS phy/rtl8211f.c)
   endif()
 
+  if(CONFIG_NET_PHY_DP83867)
+    list(APPEND SRCS phy/dp83867.c)
+  endif()
+
   if(CONFIG_NET_E1000)
     list(APPEND SRCS e1000.c)
   endif()

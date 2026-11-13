@@ -107,6 +107,12 @@ ifeq ($(CONFIG_NET_PHY_RTL8211F),y)
   VPATH += :net/phy
 endif
 
+ifeq ($(CONFIG_NET_PHY_DP83867),y)
+  CSRCS += dp83867.c
+  DEPPATH += --dep-path net/phy
+  VPATH += :net/phy
+endif
+
 ifeq ($(CONFIG_NET_E1000),y)
   CSRCS += e1000.c
 endif

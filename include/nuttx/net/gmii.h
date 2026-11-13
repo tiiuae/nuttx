@@ -98,6 +98,14 @@
 #define GMII_RTL8211F_MIICR2_D08      21      /* MII Control Register 2 */
 #define GMII_RTL8211F_INTBCR_D40      22      /* INTB Pin Control Register */
 
+/* Texas Instruments DP838 PHY Extended Registers. */
+
+#define GMII_DP83867_NAME             "DP83867"
+#define GMII_DP83867_PHYCR            16
+#define GMII_DP83867_CFG4             0x0031
+#define GMII_DP83867_RGMIICTL         0x0032
+#define GMII_DP83867_RGMIIDCTL        0x0086
+
 /* MII register bit settings ************************************************/
 
 /* MII Control register bit definitions */
@@ -312,6 +320,19 @@
 #define GMII_RTL8211F_PHYSR_DUPLEX     0x8
 #define GMII_RTL8211F_MIICR1_TX_DELAY  (1 << 8) /* Enable PHY internal TX delay */
 #define GMII_RTL8211F_MIICR2_RX_DELAY  (1 << 3) /* Enable PHY internal RX delay */
+
+/* DP83867 register bit settings ********************************************/
+
+#define GMII_PHYOD1_DP83867                  0x2000
+#define GMII_PHYOD2_DP83867                  0xa231
+#define GMII_DP83867_PHYCR_SGMII_EN          (1 << 11)
+#define GMII_DP83867_CFG4_INT_TST_MODE_1     (1 << 7)
+#define GMII_DP83867_RGMIICTL_RGMII_EN       (1 << 7)
+#define GMII_DP83867_RGMIICTL_TX_DELAY_EN    (1 << 1)
+#define GMII_DP83867_RGMIICTL_RX_DELAY_EN    (1 << 0)
+#define GMII_DP83867_RGMIIDCTL_TX_SHIFT      4
+#define GMII_DP83867_RGMIIDCTL_TX_MASK       (15 << GMII_DP83867_RGMIIDCTL_TX_SHIFT)
+#define GMII_DP83867_RGMIIDCTL_RX_MASK       15
 
 /****************************************************************************
  * Type Definitions

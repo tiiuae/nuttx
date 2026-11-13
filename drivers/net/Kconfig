@@ -578,6 +578,9 @@ config NET_PHY_RTL8201F
 config NET_PHY_RTL8211F
 	bool
 
+config NET_PHY_DP83867
+	bool
+
 choice
 	prompt "Board PHY Selection (ETH0)"
 	default ETH0_PHY_NONE
@@ -657,6 +660,10 @@ config ETH0_PHY_RTL8211F
 	bool "Realtek RTL8211F PHY"
 	select NET_PHY_RTL8211F
 
+config ETH0_PHY_DP83867
+	bool "Realtek DP83867 PHY"
+	select NET_PHY_DP83867
+
 config ETH0_PHY_DM9161
 	bool "Davicom DM9161 PHY"
 
@@ -718,6 +725,10 @@ config ETH1_PHY_RTL8211F
 	bool "Realtek RTL8211F PHY"
 	select NET_PHY_RTL8211F
 
+config ETH1_PHY_DP83867
+	bool "Realtek DP83867 PHY"
+	select NET_PHY_DP83867
+
 config ETH1_PHY_DM9161
 	bool "Davicom DM9161 PHY"
 
@@ -725,6 +736,20 @@ config ETH1_PHY_YT8512
 	bool "Motorcomm YT8512 PHY"
 
 endchoice
+
+if (NET_PHY_DP83867)
+
+config NET_PHY_TI_DP83867_RX_DELAY
+	int "TI DP83867 RX delay"
+	default 7
+	range 0 15
+
+config NET_PHY_TI_DP83867_TX_DELAY
+	int "TI DP83867 RX delay"
+	default 7
+	range 0 15
+
+endif
 
 config ARCH_PHY_100BASE_T1
 	bool
