@@ -800,12 +800,19 @@ static ssize_t imx9_flexspi_nor_read(struct mtd_dev_s *dev,
   struct imx9_flexspi_nor_dev_s *priv =
                   (struct imx9_flexspi_nor_dev_s *)dev;
   uint8_t *src;
+  int ret;
 
   finfo("Read offset: %08lx nbytes: %d\n", (long)offset, (int)nbytes);
 
   if (priv->port >= FLEXSPI_PORT_COUNT)
     {
       return -EIO;
+    }
+
+  ret = FLEXSPI_LOCK(priv->flexspi, true);
+  if (ret < 0)
+    {
+      return ret;
     }
 
   src = priv->ahb_base + offset;
@@ -818,6 +825,9 @@ static ssize_t imx9_flexspi_nor_read(struct mtd_dev_s *dev,
     }
 
   finfo("return nbytes: %d\n", (int)nbytes);
+
+  FLEXSPI_LOCK(priv->flexspi, false);
+
   return (ssize_t)nbytes;
 }
 
@@ -859,6 +869,13 @@ static ssize_t imx9_flexspi_nor_bwrite(struct mtd_dev_s *dev,
   off_t offset = startblock << priv->subsectorshift;
 
   int i = 0;
+  int ret;
+
+  ret = FLEXSPI_LOCK(priv->flexspi, true);
+  if (ret < 0)
+    {
+      return ret;
+    }
 
   up_clean_dcache((uintptr_t)src, (uintptr_t)src +
                   ALIGN_UP(len, ARMV8A_DCACHE_LINESIZE));
@@ -877,6 +894,8 @@ static ssize_t imx9_flexspi_nor_bwrite(struct mtd_dev_s *dev,
       len -= i;
     }
 
+  FLEXSPI_LOCK(priv->flexspi, false);
+
   return nblocks;
 }
 
@@ -886,6 +905,15 @@ static int imx9_flexspi_nor_erase(struct mtd_dev_s *dev,
 {
   struct imx9_flexspi_nor_dev_s *priv =
                   (struct imx9_flexspi_nor_dev_s *)dev;
+
+  int ret;
+
+  ret = FLEXSPI_LOCK(priv->flexspi, true);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   size_t blocksleft = nblocks;
 
   finfo("startblock: %08lx nblocks: %d\n", (long)startblock, (int)nblocks);
@@ -902,6 +930,8 @@ static int imx9_flexspi_nor_erase(struct mtd_dev_s *dev,
       startblock++;
     }
 
+  FLEXSPI_LOCK(priv->flexspi, false);
+
   return (int)nblocks;
 }
 
@@ -911,7 +941,15 @@ static int imx9_flexspi_nor_ioctl(struct mtd_dev_s *dev,
 {
   struct imx9_flexspi_nor_dev_s *priv =
                   (struct imx9_flexspi_nor_dev_s *)dev;
-  int ret = -EINVAL; /* Assume good command with bad parameters */
+  int ret;
+
+  ret = FLEXSPI_LOCK(priv->flexspi, true);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = -EINVAL; /* Assume good command with bad parameters */
 
   switch (cmd)
     {
@@ -1006,6 +1044,8 @@ static int imx9_flexspi_nor_ioctl(struct mtd_dev_s *dev,
         break;
     }
 
+  FLEXSPI_LOCK(priv->flexspi, false);
+
   return ret;
 }
 
@@ -1045,7 +1085,19 @@ int imx9_flexspi_nor_reset_memory(struct mtd_dev_s *dev)
   struct imx9_flexspi_nor_dev_s *priv =
                   (struct imx9_flexspi_nor_dev_s *)dev;
 
-  return imx9_flexspi_nor_reset_memory_private(priv);
+  int ret;
+
+  ret = FLEXSPI_LOCK(priv->flexspi, true);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = imx9_flexspi_nor_reset_memory_private(priv);
+
+  FLEXSPI_LOCK(priv->flexspi, false);
+
+  return ret;
 }
 
 /****************************************************************************
